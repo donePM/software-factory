@@ -53,9 +53,11 @@ Use this in an existing git repo. You decide each feature.
    `/factory:rework <job-id> <note>` to send it back to the builder.
 6. **Check the whole repo.** `/factory:audit [part]` writes `factory/audit.md`
    with Must / Should / Nice findings. You pick the numbers to queue.
-7. **Watch it.** `cd factory && python3 -m http.server 8000`, then open
+7. **Review a pull request.** `/factory:review <pr>` runs the 4 reviewers on a
+   GitHub PR and writes a comment you can post (see below).
+8. **Watch it.** `cd factory && python3 -m http.server 8000`, then open
    http://localhost:8000/dashboard.html.
-8. **Push.** Merges stay local in `main`. The factory never pushes. Review the
+9. **Push.** Merges stay local in `main`. The factory never pushes. Review the
    merges, then push them yourself.
 
 | Command | |
@@ -174,6 +176,7 @@ factory/
   board.json                       # job state, drives the dashboard
   dashboard.html                   # copied from the plugin
   jobs/<id>/                       # feature.md, spec.md, build.md, round-N/review-*.md, decision.md
+  jobs/pr-<n>/                     # PR review: feature.md, round-N/review-*.md, review.md
   audit.md                         # latest /factory:audit report
 ```
 
