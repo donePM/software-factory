@@ -67,8 +67,19 @@ Use this in an existing git repo. You decide each feature.
 | `/factory:rework <job-id> <note>` | Sends a job back to the builder with your feedback |
 | `/factory:audit [part]` | Audits the repo into `factory/audit.md`, then queues the findings you pick |
 | `/factory:import <github\|jira> <query>` | Adds open GitHub issues or Jira tickets to the backlog |
+| `/factory:review <pr>` | Reviews a GitHub pull request with the 4 reviewers, read-only |
 | `/factory:product <idea>` | Plans a product, asks you to confirm, then runs the loop (Guide 2) |
 | `/factory:loop [max]` | Runs the backlog until it is empty (Guide 2) |
+
+### Pull request review
+
+`/factory:review 42` (or a PR URL) checks out the PR head in its own worktree
+and runs the 4 reviewers on it. The PR description is the spec. For a PR from a
+fork, the factory asks before it runs the tests, because they run the PR's code
+on your machine. The result is `factory/jobs/pr-42/review.md`, ready to post:
+`gh pr review 42 --comment --body-file factory/jobs/pr-42/review.md`. The factory
+doesn't post it for you. Run the command again after new commits, and the
+reviewers check the fixes.
 
 ### Tickets
 
@@ -173,7 +184,7 @@ factory/
 plugins/factory/
   .claude-plugin/plugin.json
   orchestrator.md                  # the whole loop: edit this to change the factory
-  skills/{init,run,next,approve,rework,audit,import,product,loop}/SKILL.md   # thin entry points into orchestrator.md
+  skills/{init,run,next,approve,rework,audit,import,review,product,loop}/SKILL.md   # thin entry points into orchestrator.md
   agents/*.md                      # one subagent per box (planner, spec-writer, builder, 4 reviewers, approver, auditor)
   assets/                          # dashboard.html, backlog.md and project.md templates
 ```

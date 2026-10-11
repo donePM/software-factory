@@ -60,7 +60,7 @@
   .card .id { font-family: var(--mono); font-size: 11px; color: var(--muted); }
   .card .title { font-weight: 600; margin: 2px 0 6px; }
   .card .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
-  .card.merged { opacity: .7; }
+  .card.merged, .card.reviewed { opacity: .7; }
   .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
     border-radius: 99px; margin-left: 4px; }
   .badge.human { background: var(--human); color: var(--panel); }
@@ -146,7 +146,7 @@ const STAGES = [
   ["build", "Build", "builder"],
   ["review", "Review", "4 reviewers"],
   ["approve", "Approve", "approver"],
-  ["merged", "Merged", ""],
+  ["merged", "Done", ""],
 ];
 const REVIEWERS = [["security", "SEC"], ["ux", "UX"], ["ui", "UI"], ["code", "CODE"]];
 const $ = id => document.getElementById(id);
@@ -197,7 +197,7 @@ function render() {
       <div class="cards">${human.map(card).join("")}</div></section>`;
   }
   html += `<div class="board">` + STAGES.map(([key, label, agent]) => {
-    const list = jobs.filter(j => j.stage === key);
+    const list = jobs.filter(j => j.stage === key || (key === "merged" && j.stage === "reviewed"));
     if (key === "merged") list.reverse();
     return `<section class="col"><h2>${label} <span class="agent">${agent}</span><span class="count">${list.length}</span></h2>
       <div class="cards">${list.length ? list.map(card).join("") : `<div class="empty-col"></div>`}</div></section>`;
@@ -245,7 +245,7 @@ async function listFiles(job) {
   const base = `jobs/${job.id}/`;
   const groups = [];
   const jobFiles = [];
-  for (const f of ["feature.md", "spec.md", "build.md", "decision.md"]) {
+  for (const f of ["feature.md", "spec.md", "build.md", "decision.md", "review.md"]) {
     const t = await getFile(base + f);
     if (t !== null) jobFiles.push({ path: base + f, label: f.replace(".md", ""), text: t });
   }

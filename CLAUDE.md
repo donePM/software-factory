@@ -25,8 +25,8 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
 ## Architecture
 
 - `plugins/factory/orchestrator.md` holds the whole loop: Init, Preflight, steps 1
-  to 7, Rework, Audit, Tickets, Product, Loop, and the `board.json` schema. The skills
-  (`/factory:init|run|next|approve|rework|audit|import|product|loop`)
+  to 7, Rework, Audit, PR review, Product, Loop, Tickets, and the `board.json` schema. The skills
+  (`/factory:init|run|next|approve|rework|audit|import|review|product|loop`)
   are thin entry points. Each passes `${CLAUDE_PLUGIN_ROOT}` and tells the session
   to read `orchestrator.md`, because Claude Code namespaces plugin skills: one skill
   named `factory` would be `/factory:factory`.
@@ -36,6 +36,9 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
   (stack, allowed dependencies, ordered slices). After the human confirms, the
   slices go into `backlog.md` and Loop runs `next` until done. spec-writer,
   builder, and approver read `product.md` when it exists.
+- PR review: `/factory:review <pr>` runs the 4 reviewers on a detached worktree of
+  the PR head (`- Mode: pr-review` in `feature.md`, no spec.md or build.md). The
+  orchestrator writes `<job>/review.md`. Nothing goes back to GitHub.
 - `plugins/factory/assets/` holds what `/factory:init` copies into a target repo:
   `dashboard.html` (always overwritten), and the `backlog.md` and `project.md`
   templates (`{{…}}` placeholders, filled in by inspecting the repo).
