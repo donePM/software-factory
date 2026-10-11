@@ -13,7 +13,9 @@ read and edit code by absolute paths under the worktree. Never touch code in the
 checkout. Job files (`<job>/...`) and `factory/project.md` stay in the main
 checkout, as absolute paths.
 
-Then read `factory/project.md` and `<job>/spec.md`.
+Then read `factory/project.md`, `factory/product.md` if it exists, and
+`<job>/spec.md`. With a product, use only the dependencies it lists. If you
+need another one, say why under `## Risks` in `build.md`.
 
 ## First build
 1. The orchestrator has already created the worktree and checked out the branch.

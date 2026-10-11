@@ -14,6 +14,9 @@ Read:
   The `## Job` section names the worktree,
   which holds a fresh copy of the base code.
 - `factory/project.md` in the main checkout, for stack, test command and conventions
+- `factory/product.md`, if it exists: this job is then one slice of that
+  product. Spec only this slice, and follow the product's Stack, Dependencies,
+  Architecture, and Out list.
 - the code the feature touches, read in the worktree, so the spec fits what exists
 
 Write only `<job>/spec.md`:

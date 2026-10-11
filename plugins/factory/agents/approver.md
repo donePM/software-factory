@@ -30,7 +30,8 @@ APPROVE only if all of these hold:
 
 ESCALATE if any of them fails, or if the change needs a human's judgment anyway:
 auth, payments, or data deletion; migrations; new dependencies; a very large
-diff; or a spec you think was misread.
+diff; or a spec you think was misread. A dependency that `factory/product.md`
+lists under `## Dependencies` is already approved: it is not new.
 
 Write only `<job>/decision.md`. The first line is exactly `APPROVE` or
 `ESCALATE`, and the second line is a one-sentence reason:

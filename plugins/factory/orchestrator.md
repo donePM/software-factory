@@ -3,7 +3,7 @@
 Every `/factory:*` command loads this file. The session running it is the
 orchestrator. You run the loop, spawn every
 agent, and you are the **only writer** of `factory/board.json`, `factory/backlog.md`,
-`factory/project.md`, and each job's `feature.md` and `rework-*.md`. You never
+`factory/project.md`, `factory/idea.md`, and each job's `feature.md` and `rework-*.md`. You never
 write product code or another agent's file.
 
 | Command | What to do |
@@ -15,6 +15,8 @@ write product code or another agent's file.
 | `/factory:rework <job-id> <note>` | Send a job back to its builder (see Rework) |
 | `/factory:audit [part]` | Audit the repo, then queue chosen findings (see Audit) |
 | `/factory:import <github\|jira> <query>` | Queue open tickets in the backlog (see Tickets) |
+| `/factory:product <idea>` | Plan a product, confirm it with the human, then Loop (see Product) |
+| `/factory:loop [max]` | Run `next` until the backlog is empty (see Loop) |
 
 Paths: `<plugin>` is the plugin root that the command passed you (assets live in
 `<plugin>/assets/`). `<root>` is `git rev-parse --show-toplevel` of the main checkout.
@@ -42,6 +44,7 @@ feature → spec-writer → builder → [security · ux · ui · code] → WAIT 
 | review | `factory:code-reviewer` | sonnet | `<job>/round-N/review-code.md` |
 | approve | `factory:approver` | opus | `<job>/decision.md` |
 | audit | `factory:auditor` | opus | `factory/audit.md` |
+| product | `factory:planner` | opus | `factory/product.md` |
 
 Agents get context from **files, never from this conversation**. Each spawn
 prompt names only the job folder, plus the round folder where relevant. The job's
@@ -72,8 +75,8 @@ worktree, branch, and base are in `<job>/feature.md`.
    Then run `git ls-files factory/board.json factory/jobs factory/dashboard.html factory/audit.md .claude/worktrees`.
    If any of these are already tracked, tell the user to run
    `git rm -r --cached <path>`. Don't run it yourself.
-   `factory/backlog.md` and `factory/project.md` stay tracked: they are shared
-   team input.
+   `factory/backlog.md`, `factory/project.md`, `factory/idea.md`, and
+   `factory/product.md` stay tracked: they are shared team input.
 4. **Files.** Create these in `<root>/factory/`:
    - `board.json` → `{ "jobs": [] }`, only if missing
    - `backlog.md` ← `<plugin>/assets/backlog.md`, only if missing
@@ -254,6 +257,36 @@ set `decision` to match.
    numbers to queue ("2 and 5", "all must fix", or none).
 3. Append each chosen finding to `factory/backlog.md` as
    `- [ ] <title>: <fix> (audit #<n>, <file:line>)`. Then `/factory:next` builds them.
+
+## Product
+
+`/factory:product <idea>`:
+1. Write the idea verbatim to `factory/idea.md` under `# Idea`. If the file
+   exists, ask the user first: replace it, or add the text as feedback (step 4).
+2. Spawn `factory:planner`: "Repo root: <root>. Write factory/product.md."
+3. Show the user Goal, Scope, Stack, Dependencies, the slice list, and the open
+   questions. Ask: "Start the build, or what should change?"
+4. Changes: append them to `factory/idea.md` as `## Feedback K`, spawn the
+   planner again, and go back to step 3.
+5. Start: append each slice that isn't in `factory/backlog.md` yet as
+   `- [ ] S<n> <title>: <outcome>`. Then run Loop.
+
+This is the only human checkpoint before the build. Never skip it.
+
+## Loop
+
+`/factory:loop [max]` (default max = 10 jobs; `/factory:product` uses the default):
+1. Stop if any board job is `needs-human`. Tell the user which one, and that
+   `/factory:approve` or `/factory:rework` unblocks the loop.
+2. Take the first `- [ ]` item in `factory/backlog.md` and run it like
+   `/factory:next` (steps 1 to 7). After each job, tell the user one line:
+   id, stage, and how many items are left.
+3. Repeat from 1 until the backlog has no `- [ ]` item or max jobs ran.
+4. Backlog empty, `factory/product.md` exists, and the backlog has no
+   `(audit #` line yet: run Audit on the whole repo once. Queue every
+   **Must fix** finding without asking, then go on with 1.
+5. At the end, tell the user what was built (the `## Summary` sections of the
+   merged jobs, merged into one short list), what is left, and why the loop stopped.
 
 ## Tickets
 
