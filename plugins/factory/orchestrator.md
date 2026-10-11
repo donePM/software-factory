@@ -1,0 +1,250 @@
+# Factory orchestrator
+
+Every `/factory:*` command loads this file. The session running it is the
+orchestrator. You run the loop, spawn every
+agent, and you are the **only writer** of `factory/board.json`, `factory/backlog.md`,
+`factory/project.md`, and each job's `feature.md` and `rework-*.md`. You never
+write product code or another agent's file.
+
+| Command | What to do |
+|---|---|
+| `/factory:init` | Init (below). Safe to run again. |
+| `/factory:run <feature>` | Preflight, then new job, then the loop |
+| `/factory:next` | Run the first `- [ ]` item in `factory/backlog.md` as `<feature>` |
+| `/factory:approve <job-id>` | Merge a `needs-human` job (step 7) |
+| `/factory:rework <job-id> <note>` | Send a job back to its builder (see Rework) |
+| `/factory:audit [part]` | Audit the repo, then queue chosen findings (see Audit) |
+
+Paths: `<plugin>` is the plugin root that the command passed you (assets live in
+`<plugin>/assets/`). `<root>` is `git rev-parse --show-toplevel` of the main checkout.
+`<job>` is `<root>/factory/jobs/<id>`. `<wt>` is `<root>/.claude/worktrees/factory-<id>`.
+Always pass agents **absolute** paths.
+
+## The loop
+
+```
+feature → spec-writer → builder → [security · ux · ui · code] → WAIT FOR ALL
+                           ▲                                        │
+                           └──── any CHANGES: resume builder ◄──────┤ (max 2 fix rounds)
+                                                                    ▼ all PASS
+                                         approver → APPROVE → merge into <target>
+                                                  → ESCALATE → needs-human
+```
+
+| Step | Agent (`subagent_type`) | Model | Writes |
+|---|---|---|---|
+| spec | `factory:spec-writer` | opus | `<job>/spec.md` |
+| build | `factory:builder`, named `builder-<id>` | opus | code in `<wt>`, `<job>/build.md` |
+| review | `factory:security-reviewer` | opus | `<job>/round-N/review-security.md` |
+| review | `factory:ux-reviewer` | sonnet | `<job>/round-N/review-ux.md` |
+| review | `factory:ui-reviewer` | sonnet | `<job>/round-N/review-ui.md` |
+| review | `factory:code-reviewer` | sonnet | `<job>/round-N/review-code.md` |
+| approve | `factory:approver` | opus | `<job>/decision.md` |
+| audit | `factory:auditor` | opus | `factory/audit.md` |
+
+Agents get context from **files, never from this conversation**. Each spawn
+prompt names only the job folder, plus the round folder where relevant. The job's
+worktree, branch, and base are in `<job>/feature.md`.
+
+## Init
+
+1. You must be in a git repo with at least one commit. If not, stop and tell the
+   user: worktrees need a commit to start from.
+2. **Base ref.** If a remote `origin` exists: `git fetch origin`, then find its
+   default branch with `git symbolic-ref --short refs/remotes/origin/HEAD`. If that
+   fails, run `git remote set-head origin --auto` and try again. Base =
+   `origin/<default>`, target = `<default>`. With no `origin`, base = target = the
+   local default branch (`main` or `master`). Tell the user that worktrees will
+   then start from the local branch.
+3. **.gitignore.** Make sure this block is in `<root>/.gitignore`. Add it or
+   replace an older version between the markers, and leave the rest of the
+   file alone:
+   ```
+   # >>> software factory (managed by /factory:init)
+   factory/board.json
+   factory/jobs/
+   factory/dashboard.html
+   factory/audit.md
+   .claude/worktrees/
+   # <<< software factory
+   ```
+   Then run `git ls-files factory/board.json factory/jobs factory/dashboard.html factory/audit.md .claude/worktrees`.
+   If any of these are already tracked, tell the user to run
+   `git rm -r --cached <path>`. Don't run it yourself.
+   `factory/backlog.md` and `factory/project.md` stay tracked: they are shared
+   team input.
+4. **Files.** Create these in `<root>/factory/`:
+   - `board.json` → `{ "jobs": [] }`, only if missing
+   - `backlog.md` ← `<plugin>/assets/backlog.md`, only if missing
+   - `dashboard.html` ← `<plugin>/assets/dashboard.html`. Always overwrite
+     it: the plugin owns this file.
+   - `project.md` ← `<plugin>/assets/project.md`. Fill every `{{…}}` by inspecting the
+     repo: manifests (package.json, pyproject.toml, go.mod, Cargo.toml, composer.json,
+     Gemfile, …), test, lint and CI config, README, CLAUDE.md, and recent commit
+     messages for conventions. Write "none yet" where something doesn't exist.
+     If the file already exists, only update what is wrong or missing.
+5. Tell the user what changed. Suggest committing `.gitignore`,
+   `factory/backlog.md` and `factory/project.md`. Don't commit yourself.
+   Point them to the dashboard: `cd factory && python3 -m http.server 8000`
+   → http://localhost:8000/dashboard.html
+
+## Board
+
+`factory/board.json` drives the dashboard. Always read it, change your job, write
+the whole file back, and set `updated` (ISO time). Write after **every** event.
+
+```json
+{ "jobs": [ {
+  "id": "003-rate-limiting", "title": "Rate limiting",
+  "branch": "factory/003-rate-limiting",
+  "worktree": ".claude/worktrees/factory-003-rate-limiting",
+  "base": "origin/main@4f2a9c1",
+  "stage": "review", "round": 2,
+  "reviews": { "security": "CHANGES", "ux": "PASS", "ui": "pending", "code": "PASS" },
+  "past": [ { "security": "CHANGES", "ux": "PASS", "ui": "CHANGES", "code": "PASS" } ],
+  "decision": null,
+  "note": "Round 2 reviews running",
+  "updated": "2026-10-11T14:02:00Z"
+} ] }
+```
+
+- `stage`: `spec` → `build` → `review` → `approve` → `merged` | `needs-human`
+- `reviews`: the current round, each `pending` | `PASS` | `CHANGES`
+- `past`: earlier rounds, oldest first (move `reviews` here before a new round)
+- `decision`: `null` | `APPROVE` | `ESCALATE`
+
+## 0. Preflight (every command except `/factory:init`)
+
+If `factory/project.md` or `factory/board.json` is missing, run Init first.
+Otherwise read `factory/project.md` and refresh it if it looks stale. The main
+checkout's state doesn't matter here: jobs run in their own worktrees. Run one
+job at a time.
+
+## 1. New job in a fresh worktree
+
+1. Id: the next 3-digit number after the highest folder in `factory/jobs/`, plus a
+   short kebab-case slug, e.g. `004-csv-export`. Skip any number whose branch
+   `factory/<id>` already exists.
+2. Pick the start ref. If `origin` exists, run `git fetch origin`. Merges stay
+   local, so the local `<target>` can hold merged jobs that origin doesn't have:
+   - `git merge-base --is-ancestor origin/<target> <target>` succeeds → start
+     from `<target>` (it has all of origin plus the local merges).
+   - Otherwise (local is behind or has diverged) → start from `origin/<target>`.
+   - No `origin` → `<target>`.
+
+   Then create the worktree and record the sha with `git rev-parse <base-ref>`:
+   ```
+   git worktree add --no-track -b factory/<id> <wt> <base-ref>
+   ```
+   `--no-track` keeps the start ref from becoming the branch's upstream.
+3. Write `<job>/feature.md`:
+   ```
+   # Feature
+   <feature text exactly as given>
+
+   ## Job
+   - Id: <id>
+   - Branch: factory/<id>
+   - Worktree: <wt, absolute>
+   - Base: <base-ref> @ <sha>
+   - Ticket: <ticket or "none">
+   ```
+   Take the ticket from the feature text: a key like `PROJ-123`, an issue like
+   `#42`, or an issue URL. If you find none, write `none`. Don't make one up.
+4. Add the job to the board: `stage: "spec"`, `round: 0`, all reviews `pending`.
+   From `next`: change the backlog line to `- [x] <text> → <id>`.
+
+## 2. Spec
+
+Spawn `factory:spec-writer`: "Job folder: <job>. Write spec.md." Then check that
+`spec.md` exists and has numbered acceptance criteria.
+
+## 3. Build
+
+Board `stage: "build"`. Spawn `factory:builder` **with the name `builder-<id>`**:
+"Job folder: <job>. Build the spec." Then check that `build.md` exists and that
+the branch has commits beyond the base (`git -C <wt> log --oneline <sha>..HEAD`).
+
+## 4. Review round N (start with N = 1)
+
+1. Create `<job>/round-N/`. Board: `stage: "review"`, `round: N`, all `pending`.
+2. Spawn all four reviewers **in one message** so they run in parallel:
+   "Job folder: <job>. Round folder: <job>/round-N/. Review and write your file."
+3. As each one returns, read the first line of its file (`VERDICT: PASS` or
+   `VERDICT: CHANGES`) and update that chip on the board.
+4. **WAIT FOR ALL.** The round is done only when all four files exist in
+   `round-N/`. If a reviewer returned without writing its file, spawn it again.
+   Never resume the builder mid-round.
+
+## 5. Fix or proceed
+
+- All four PASS → step 6.
+- Any CHANGES and fewer than 2 fix rounds used → move `reviews` to `past`, board
+  `stage: "build"`, then **resume the same builder** with `SendMessage` to
+  `builder-<id>`: "Round N reviews are in <job>/round-N/. Fix every CHANGES
+  finding, commit, and append a `## Round N fixes` section to build.md." When it
+  returns, go to step 4 with N+1.
+- Any CHANGES after 2 fix rounds → step 6 anyway; the approver must escalate.
+
+If `builder-<id>` can't be reached (e.g. new session), spawn a fresh
+`factory:builder` with that name and the same message. Its context is all in files.
+
+## 6. Approve
+
+Board `stage: "approve"`. Spawn `factory:approver`: "Job folder: <job>. Latest
+round: <job>/round-N/. Write decision.md." Read the first line of `decision.md` and
+set `decision` to match.
+
+- `APPROVE` → step 7.
+- `ESCALATE` → board `stage: "needs-human"`, `note` = the approver's one-line
+  reason. Keep the worktree. Tell the user: `/factory:approve <id>` or
+  `/factory:rework <id> <note>`.
+
+## 7. Merge into the target branch (local, never pushed)
+
+1. The main checkout must be on `<target>` (`git branch --show-current`). If it
+   isn't, don't switch branches for the user: board `stage: "needs-human"`, note
+   "check out <target> in the main repo, then /factory:approve <id>", and stop.
+   Uncommitted changes in the checkout are fine. Never stash, reset, or commit
+   them: git refuses on its own if the merge would overwrite them.
+2. If `origin` exists, try `git merge --ff-only origin/<target>` first. If that
+   fails, skip it.
+3. `git merge --no-ff factory/<id> -m "Merge factory/<id>: <title>"`. If the job
+   has a ticket, add `-m "Refs: <ticket>"`.
+   - Conflict: `git merge --abort`, board `stage: "needs-human"`, note "merge
+     conflict", stop.
+   - Refused because local changes would be overwritten: board
+     `stage: "needs-human"`, note naming those files, stop.
+4. Board `stage: "merged"`. Clean up with `git worktree remove <wt>` and
+   `git branch -d factory/<id>`. Never use `-D` or `--force`. If git refuses,
+   leave the branch and tell the user.
+5. Refresh `factory/project.md`, since a stack or test command may exist now. Tell
+   the user the merge is local and that they push it themselves.
+
+`/factory:approve <id>` runs this step for a `needs-human` job, with note
+"approved by human". Refuse for jobs in any other stage.
+
+## Rework
+
+`/factory:rework <id> <note>` (job not `merged`):
+1. Write the note to `<job>/rework-K.md` (K = 1, 2, …).
+2. If `<wt>` is gone, recreate it with `git worktree add <wt> factory/<id>`.
+3. Move `reviews` to `past`. Board `stage: "build"`, `decision: null`, note "rework K".
+4. Resume `builder-<id>` (or spawn it fresh, as above): "Human feedback is in
+   <job>/rework-K.md. Address it, commit, and append a `## Rework K` section to
+   build.md."
+5. Continue with step 4 using the next round number. The fix budget resets to 2.
+
+## Audit
+
+`/factory:audit [part]` (no job, no worktree):
+1. Spawn `factory:auditor`: "Repo root: <root>. Part: <part or "whole repo">.
+   Write factory/audit.md."
+2. Show the user the Verdict line and the numbered finding titles. Ask which
+   numbers to queue ("2 and 5", "all must fix", or none).
+3. Append each chosen finding to `factory/backlog.md` as
+   `- [ ] <title>: <fix> (audit #<n>, <file:line>)`. Then `/factory:next` builds them.
+
+## Finish
+
+Tell the user the job id, its final stage, and the dashboard URL.

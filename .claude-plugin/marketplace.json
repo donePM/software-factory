@@ -1,0 +1,14 @@
+{
+  "name": "software-factory",
+  "description": "Software factory plugin for Claude Code.",
+  "owner": {
+    "name": "Robert Kummer"
+  },
+  "plugins": [
+    {
+      "name": "factory",
+      "source": "./plugins/factory",
+      "description": "Visual software factory: spec → build → 4 reviews → approve → merge."
+    }
+  ]
+}

@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Software Factory</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --line: #e4e3df; --text: #1c1c1a; --muted: #6f6e69;
+    --pass: #1f8a4c; --pass-bg: #e3f4ea; --changes: #c2410c; --changes-bg: #fdeadf;
+    --pending: #8a8983; --pending-bg: #efeeea; --human: #b45309; --human-bg: #fff4e0;
+    --merged: #4b5563; --accent: #2f5bd3; --shadow: 0 1px 2px rgba(0,0,0,.05);
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141413; --panel: #1d1d1b; --line: #2e2e2b; --text: #ecebe6; --muted: #9a9993;
+      --pass: #4ade80; --pass-bg: #14301f; --changes: #fb923c; --changes-bg: #3a1f10;
+      --pending: #8a8983; --pending-bg: #262624; --human: #fbbf24; --human-bg: #33270d;
+      --merged: #9ca3af; --accent: #7c9cf5; --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141413; --panel: #1d1d1b; --line: #2e2e2b; --text: #ecebe6; --muted: #9a9993;
+    --pass: #4ade80; --pass-bg: #14301f; --changes: #fb923c; --changes-bg: #3a1f10;
+    --pending: #8a8983; --pending-bg: #262624; --human: #fbbf24; --human-bg: #33270d;
+    --merged: #9ca3af; --accent: #7c9cf5; --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 18px 24px;
+    border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  header .status { margin-left: auto; color: var(--muted); font-size: 12px;
+    display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pass); }
+  .dot.off { background: var(--changes); }
+  main { padding: 20px 24px 40px; }
+
+  .lane-human { background: var(--human-bg); border: 1px solid var(--human);
+    border-radius: 10px; padding: 12px; margin-bottom: 20px; }
+  .lane-human h2 { color: var(--human); }
+  .lane-human .cards { display: flex; flex-wrap: wrap; gap: 10px; }
+  .lane-human .card { width: 280px; border-color: var(--human); }
+
+  .board { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 10px;
+    color: var(--muted); font-weight: 600; display: flex; gap: 6px; align-items: baseline; }
+  h2 .agent { text-transform: none; letter-spacing: 0; font-weight: 400; font-family: var(--mono); font-size: 11px; }
+  h2 .count { margin-left: auto; font-family: var(--mono); }
+  .col { min-height: 120px; }
+  .col .cards { display: flex; flex-direction: column; gap: 10px; }
+  .empty-col { border: 1px dashed var(--line); border-radius: 10px; height: 64px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; box-shadow: var(--shadow); cursor: pointer; text-align: left;
+    color: inherit; font: inherit; width: 100%; transition: border-color .15s; }
+  .card:hover, .card:focus-visible { border-color: var(--accent); outline: none; }
+  .card .id { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .card .title { font-weight: 600; margin: 2px 0 6px; }
+  .card .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .card.merged { opacity: .7; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
+    border-radius: 99px; margin-left: 4px; }
+  .badge.human { background: var(--human); color: var(--panel); }
+
+  .rounds { display: flex; flex-direction: column; gap: 4px; }
+  .round { display: flex; align-items: center; gap: 4px; }
+  .round .r { font-family: var(--mono); font-size: 10px; color: var(--muted); width: 20px; }
+  .chip { font-family: var(--mono); font-size: 10px; font-weight: 600; padding: 2px 6px;
+    border-radius: 5px; background: var(--pending-bg); color: var(--pending); }
+  .chip.PASS { background: var(--pass-bg); color: var(--pass); }
+  .chip.CHANGES { background: var(--changes-bg); color: var(--changes); }
+  .chip.pending { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { .chip.pending { animation: none; } }
+
+  .empty { text-align: center; color: var(--muted); padding: 60px 16px; }
+  .empty code, .md code { font-family: var(--mono); font-size: 12.5px;
+    background: var(--pending-bg); padding: 1px 5px; border-radius: 4px; }
+
+  /* drawer */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: none; }
+  .scrim.open { display: block; }
+  aside { position: fixed; top: 0; right: 0; bottom: 0; width: min(720px, 100%);
+    background: var(--panel); border-left: 1px solid var(--line); display: flex;
+    flex-direction: column; transform: translateX(100%); transition: transform .2s ease; }
+  aside.open { transform: none; }
+  aside .head { padding: 16px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: flex-start; gap: 12px; }
+  aside .head .meta { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+  aside .close { margin-left: auto; background: none; border: 1px solid var(--line);
+    color: var(--text); border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit; }
+  .files { padding: 10px 20px; border-bottom: 1px solid var(--line); display: flex;
+    flex-direction: column; gap: 6px; }
+  .files .group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .files .label { font-size: 11px; color: var(--muted); width: 60px; }
+  .tab { font: 12px var(--mono); padding: 3px 9px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--line); background: none; color: var(--text); }
+  .tab.PASS, .tab.APPROVE { border-color: var(--pass); color: var(--pass); }
+  .tab.CHANGES { border-color: var(--changes); color: var(--changes); }
+  .tab.ESCALATE { border-color: var(--human); color: var(--human); }
+  .tab.active { background: var(--text); color: var(--panel); border-color: var(--text); }
+  .md { padding: 16px 20px 40px; overflow-y: auto; flex: 1; }
+  .md h1 { font-size: 20px; } .md h2 { font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--text); margin-top: 20px; }
+  .md h3 { font-size: 14px; }
+  .md pre { background: var(--pending-bg); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
+  .md pre code { background: none; padding: 0; }
+  .md table { border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
+  .md th, .md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+  .md .verdict { display: inline-block; font: 600 12px var(--mono); padding: 3px 10px; border-radius: 6px; }
+  .verdict.PASS, .verdict.APPROVE { background: var(--pass-bg); color: var(--pass); }
+  .verdict.CHANGES { background: var(--changes-bg); color: var(--changes); }
+  .verdict.ESCALATE { background: var(--human-bg); color: var(--human); }
+
+  @media (max-width: 900px) {
+    header, main { padding-left: 16px; padding-right: 16px; }
+    .board { grid-template-columns: 1fr; }
+    .lane-human .card { width: 100%; }
+    .empty-col { height: 36px; }
+    .col { min-height: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Software Factory</h1>
+  <span class="status"><span class="dot" id="dot"></span><span id="status">connecting…</span></span>
+</header>
+<main id="app"></main>
+
+<div class="scrim" id="scrim"></div>
+<aside id="drawer" aria-hidden="true">
+  <div class="head">
+    <div><div class="meta" id="d-meta"></div><div style="font-weight:650;font-size:16px" id="d-title"></div></div>
+    <button class="close" id="d-close">Close</button>
+  </div>
+  <div class="files" id="d-files"></div>
+  <div class="md" id="d-body"></div>
+</aside>
+
+<script>
+const STAGES = [
+  ["spec", "Spec", "spec-writer"],
+  ["build", "Build", "builder"],
+  ["review", "Review", "4 reviewers"],
+  ["approve", "Approve", "approver"],
+  ["merged", "Merged", ""],
+];
+const REVIEWERS = [["security", "SEC"], ["ux", "UX"], ["ui", "UI"], ["code", "CODE"]];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+let board = { jobs: [] }, lastJson = "", openJob = null, openFile = null;
+
+function ago(iso) {
+  if (!iso) return "";
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
+}
+
+function chips(reviews) {
+  return REVIEWERS.map(([k, label]) => {
+    const v = (reviews || {})[k] || "pending";
+    return `<span class="chip ${esc(v)}" title="${k}: ${esc(v)}">${label}</span>`;
+  }).join("");
+}
+
+function card(job) {
+  const rounds = [...(job.past || [])];
+  if (job.round > 0) rounds.push(job.reviews);
+  const rows = rounds.map((r, i) =>
+    `<div class="round"><span class="r">R${i + 1}</span>${chips(r)}</div>`).join("");
+  const human = job.stage === "needs-human" ? `<span class="badge human">needs human</span>` : "";
+  return `<button class="card ${esc(job.stage)}" data-id="${esc(job.id)}">
+    <div class="id">${esc(job.id)}${human}</div>
+    <div class="title">${esc(job.title || job.id)}</div>
+    ${rows ? `<div class="rounds">${rows}</div>` : ""}
+    <div class="note">${esc(job.note || "")}${job.updated ? " · " + ago(job.updated) : ""}</div>
+  </button>`;
+}
+
+function render() {
+  const jobs = board.jobs || [];
+  if (!jobs.length) {
+    $("app").innerHTML = `<div class="empty">No jobs yet.<br><br>Run <code>/factory:init</code>, then <code>/factory:run &lt;feature&gt;</code> or <code>/factory:next</code> in Claude Code.</div>`;
+    return;
+  }
+  const human = jobs.filter(j => j.stage === "needs-human");
+  let html = "";
+  if (human.length) {
+    html += `<section class="lane-human"><h2>Needs human <span class="agent">/factory:approve · /factory:rework</span><span class="count">${human.length}</span></h2>
+      <div class="cards">${human.map(card).join("")}</div></section>`;
+  }
+  html += `<div class="board">` + STAGES.map(([key, label, agent]) => {
+    const list = jobs.filter(j => j.stage === key);
+    if (key === "merged") list.reverse();
+    return `<section class="col"><h2>${label} <span class="agent">${agent}</span><span class="count">${list.length}</span></h2>
+      <div class="cards">${list.length ? list.map(card).join("") : `<div class="empty-col"></div>`}</div></section>`;
+  }).join("") + `</div>`;
+  $("app").innerHTML = html;
+}
+
+async function poll() {
+  try {
+    const res = await fetch("board.json?t=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    const text = await res.text();
+    $("dot").className = "dot";
+    $("status").textContent = "live · " + new Date().toLocaleTimeString();
+    if (text !== lastJson) {
+      lastJson = text;
+      board = JSON.parse(text);
+      render();
+      if (openJob) refreshDrawer();
+    } else if (!$("app").contains(document.activeElement)) {
+      render(); // keep "x ago" fresh without stealing keyboard focus
+    }
+  } catch (e) {
+    $("dot").className = "dot off";
+    $("status").textContent = "can't read board.json (serve factory/ with python3 -m http.server)";
+  }
+}
+
+/* ---------- drawer ---------- */
+
+async function getFile(path) {
+  try {
+    const res = await fetch(path + "?t=" + Date.now(), { cache: "no-store" });
+    return res.ok ? await res.text() : null;
+  } catch { return null; }
+}
+
+function verdictOf(text) {
+  const first = (text || "").trim().split("\n")[0].trim();
+  const m = first.match(/^(?:VERDICT:\s*)?(PASS|CHANGES|APPROVE|ESCALATE)\b/);
+  return m ? m[1] : "";
+}
+
+async function listFiles(job) {
+  const base = `jobs/${job.id}/`;
+  const groups = [];
+  const jobFiles = [];
+  for (const f of ["feature.md", "spec.md", "build.md", "decision.md"]) {
+    const t = await getFile(base + f);
+    if (t !== null) jobFiles.push({ path: base + f, label: f.replace(".md", ""), text: t });
+  }
+  for (let k = 1; k <= 9; k++) {
+    const t = await getFile(`${base}rework-${k}.md`);
+    if (t === null) break;
+    jobFiles.push({ path: `${base}rework-${k}.md`, label: `rework-${k}`, text: t });
+  }
+  groups.push(["Job", jobFiles]);
+  for (let r = 1; r <= (job.round || 0); r++) {
+    const files = [];
+    for (const [k, label] of REVIEWERS) {
+      const p = `${base}round-${r}/review-${k}.md`;
+      const t = await getFile(p);
+      if (t !== null) files.push({ path: p, label, text: t });
+    }
+    groups.push([`Round ${r}`, files]);
+  }
+  return groups;
+}
+
+async function refreshDrawer() {
+  const job = (board.jobs || []).find(j => j.id === openJob);
+  if (!job) return;
+  $("d-meta").textContent = [job.id, job.branch, job.base, job.stage].filter(Boolean).join(" · ");
+  $("d-title").textContent = job.title || job.id;
+  const groups = await listFiles(job);
+  const all = groups.flatMap(g => g[1]);
+  if (!all.find(f => f.path === openFile)) openFile = all.length ? all[all.length - 1].path : null;
+  $("d-files").innerHTML = groups.map(([name, files]) =>
+    `<div class="group"><span class="label">${name}</span>${files.length
+      ? files.map(f => `<button class="tab ${verdictOf(f.text)} ${f.path === openFile ? "active" : ""}" data-path="${esc(f.path)}">${esc(f.label)}</button>`).join("")
+      : `<span class="label" style="width:auto">waiting…</span>`}</div>`).join("");
+  const cur = all.find(f => f.path === openFile);
+  $("d-body").innerHTML = cur ? md(cur.text) : `<p style="color:var(--muted)">No files yet.</p>`;
+}
+
+function openDrawer(id) {
+  openJob = id; openFile = null;
+  history.replaceState(null, "", "#" + id);
+  $("drawer").classList.add("open"); $("scrim").classList.add("open");
+  $("drawer").setAttribute("aria-hidden", "false");
+  refreshDrawer();
+}
+function closeDrawer() {
+  openJob = null;
+  history.replaceState(null, "", location.pathname);
+  $("drawer").classList.remove("open"); $("scrim").classList.remove("open");
+  $("drawer").setAttribute("aria-hidden", "true");
+}
+
+document.addEventListener("click", e => {
+  const c = e.target.closest(".card");
+  if (c) return openDrawer(c.dataset.id);
+  const t = e.target.closest(".tab");
+  if (t) { openFile = t.dataset.path; return refreshDrawer(); }
+});
+$("scrim").onclick = closeDrawer;
+$("d-close").onclick = closeDrawer;
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+
+/* ---------- tiny markdown ---------- */
+
+function inline(s) {
+  return esc(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => /^(https?:|#|\.|\/)/.test(u) ? `<a href="${u}">${t}</a>` : m);
+}
+
+function md(src) {
+  const lines = src.replace(/\r/g, "").split("\n");
+  let out = "", i = 0;
+  const v = verdictOf(src);
+  if (v) { out += `<p><span class="verdict ${v}">${esc(lines[0].trim())}</span></p>`; i = 1; }
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^```/.test(l)) {
+      const buf = []; i++;
+      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+      i++; out += `<pre><code>${esc(buf.join("\n"))}</code></pre>`; continue;
+    }
+    let m;
+    if ((m = l.match(/^(#{1,4})\s+(.*)/))) { out += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`; i++; continue; }
+    if (/^\s*(---|\*\*\*)\s*$/.test(l)) { out += "<hr>"; i++; continue; }
+    if (/^\s*\|/.test(l)) {
+      const rows = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(lines[i++]);
+      const cells = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      const body = rows.filter((r, k) => !(k === 1 && /^[\s|:-]+$/.test(r)));
+      out += "<table>" + body.map((r, k) => "<tr>" + cells(r).map(c => k === 0 ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join("") + "</tr>").join("") + "</table>";
+      continue;
+    }
+    if (/^\s*([-*]|\d+\.)\s+/.test(l)) {
+      const ordered = /^\s*\d+\./.test(l), items = [];
+      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ""));
+      const tag = ordered ? "ol" : "ul";
+      out += `<${tag}>${items.map(t => `<li>${inline(t.replace(/^\[( |x)\]\s*/, (m, x) => x === "x" ? "☑ " : "☐ "))}</li>`).join("")}</${tag}>`;
+      continue;
+    }
+    if (!l.trim()) { i++; continue; }
+    const buf = [];
+    while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|\s*\||\s*([-*]|\d+\.)\s)/.test(lines[i])) buf.push(lines[i++]);
+    out += `<p>${inline(buf.join(" "))}</p>`;
+  }
+  return out;
+}
+
+poll().then(() => { if (location.hash.length > 1) openDrawer(decodeURIComponent(location.hash.slice(1))); });
+setInterval(poll, 2000);
+</script>
+</body>
+</html>
