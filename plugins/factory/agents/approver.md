@@ -49,7 +49,17 @@ Adds a new dependency (redis) that the repo didn't have before.
 
 ## For the human
 <what to look at before running /factory:approve, or what to put in a rework note>
+
+## Summary
+Done:
+- <one line per user-visible change, at most 5>
+
+Test it by hand:
+1. <a command to run or a page to open, starting in the main checkout after the merge>
+2. <what you should see>
 ```
+Keep the summary short. Write test steps that a person can do in two minutes.
+Try them in the worktree when you can.
 
 List the shortcuts with
 `git diff <base>...HEAD | grep -E '^\+.*(#|//|/[*]) ?shortcut:'`. Write "none" if there

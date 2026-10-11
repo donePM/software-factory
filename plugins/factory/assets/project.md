@@ -13,6 +13,10 @@ refreshes it after each merge.
 - Test command: `{{TEST_CMD}}`
 - Lint / format: `{{LINT_CMD}}`
 
+## Sources
+- GitHub issues: {{GITHUB_REPO}}
+- Jira: {{JIRA}}
+
 ## Conventions
 {{CONVENTIONS}}
 

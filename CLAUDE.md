@@ -25,7 +25,7 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
 ## Architecture
 
 - `plugins/factory/orchestrator.md` holds the whole loop: Init, Preflight, steps 1
-  to 7, Rework, and the `board.json` schema. The five skills (`/factory:init|run|next|approve|rework`)
+  to 7, Rework, Audit, Tickets, and the `board.json` schema. The skills (`/factory:init|run|next|approve|rework|audit|import`)
   are thin entry points. Each passes `${CLAUDE_PLUGIN_ROOT}` and tells the session
   to read `orchestrator.md`, because Claude Code namespaces plugin skills: one skill
   named `factory` would be `/factory:factory`.
@@ -49,6 +49,7 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
   first lines, so change them together.
 - WAIT FOR ALL four review files before resuming `builder-<id>` via SendMessage.
 - Merges are local `--no-ff` into the target branch, and the factory never pushes.
+  Never `branch -D`. `worktree remove --force` only when the worktree has nothing but untracked files.
 - Commit, code-style, and Simplified Technical English (STE) rules live in `agents/builder.md` (Code style, Commits)
   and are enforced in `agents/code-reviewer.md`. Change them in both places. The
   ticket comes from the feature text into `feature.md` (`- Ticket:`).

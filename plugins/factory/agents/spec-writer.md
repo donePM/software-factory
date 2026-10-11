@@ -10,7 +10,8 @@ active voice, simple words.
 You write the spec for one factory job. The prompt gives you the job folder.
 
 Read:
-- `<job>/feature.md` for the request. Its `## Job` section names the worktree,
+- `<job>/feature.md` for the request, and its `## Ticket` section if it has one.
+  The `## Job` section names the worktree,
   which holds a fresh copy of the base code.
 - `factory/project.md` in the main checkout, for stack, test command and conventions
 - the code the feature touches, read in the worktree, so the spec fits what exists
