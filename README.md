@@ -6,13 +6,29 @@ All coordination happens through markdown files, and the builder works in its ow
 git worktree. The worktree starts from local `main` when it contains `origin/main`
 (so it sees earlier, unpushed factory merges), else from `origin/main`.
 
-```
-feature → spec-writer → builder → [security · ux · ui · code] → WAIT FOR ALL
-  (opus)       (opus)       ▲       (opus · sonnet · sonnet · sonnet)    │
-                            └──── any CHANGES: resume builder ◄──────────┤ max 2 fix rounds
-                                                                         ▼ all PASS
-                                         approver (opus) → APPROVE → merge into main
-                                                         → ESCALATE → needs-human
+```mermaid
+flowchart LR
+  F(["Feature or ticket"]) --> S["spec-writer<br/><i>opus</i>"]
+  S --> B["builder<br/><i>opus · own worktree</i>"]
+  B --> SEC & UX & UI & CODE
+  subgraph R ["4 reviewers in parallel · wait for all"]
+    SEC["security<br/><i>opus</i>"]
+    UX["ux<br/><i>sonnet</i>"]
+    UI["ui<br/><i>sonnet</i>"]
+    CODE["code<br/><i>sonnet</i>"]
+  end
+  SEC & UX & UI & CODE --> G{"all PASS?"}
+  G -- "CHANGES<br/>max 2 fix rounds" --> B
+  G -- "PASS" --> A["approver<br/><i>opus</i>"]
+  A -- "APPROVE" --> M(["merge into main<br/>local, never pushed"])
+  A -- "ESCALATE" --> H(["needs human"])
+  H -- "Approve" --> M
+  H -- "Rework + note" --> B
+
+  classDef human fill:#fff4e0,stroke:#b45309,color:#1c1c1a
+  classDef done fill:#e3f4ea,stroke:#1f8a4c,color:#1c1c1a
+  class H human
+  class M done
 ```
 
 You can use it in two ways:
@@ -141,16 +157,31 @@ feature text (`PROJ-123`, `#42`, or a URL) and every commit footer gets
 
 Use this to build a whole product from one idea.
 
+```mermaid
+flowchart TD
+  I(["Your idea"]) --> P["planner<br/><i>opus</i>"]
+  P --> PM["factory/product.md<br/>stack · scope · slices"]
+  PM --> C{"You confirm?"}
+  C -- "change" --> P
+  C -- "start" --> BL[("factory/backlog.md")]
+  BL --> PAR["1 to 4 independent slices<br/>each runs the feature loop"]
+  PAR --> MG["merge into main<br/>one at a time"]
+  MG --> E{"Backlog empty?"}
+  E -- "no" --> BL
+  E -- "yes, first time" --> AU["audit<br/><i>opus</i>"]
+  AU -- "Must fix findings" --> BL
+  E -- "yes, audit done" --> D(["Report: what was built"])
+  PAR -. "ESCALATE" .-> H(["needs human"])
+  H -. "dashboard button<br/>or command" .-> PAR
+
+  classDef human fill:#fff4e0,stroke:#b45309,color:#1c1c1a
+  classDef done fill:#e3f4ea,stroke:#1f8a4c,color:#1c1c1a
+  class H human
+  class D done
 ```
-idea → planner (opus) → product.md → you confirm → slices into backlog.md
-                                                         │
-          ┌──────────────────────────────────────────────┘
-          ▼
-   1-4 independent slices → feature loops → merges ─┬─ backlog empty → audit once → Must fixes → loop
-          ▲                                         │
-          └─────────────────────────────────────────┤  waits for you: only needs-human jobs left
-                                                    │  stops: nothing left, or max jobs reached
-```
+
+The loop stops when nothing is left or at the job limit. When only
+`needs-human` jobs are left, it waits up to 30 minutes for a dashboard button.
 
 1. **Make a repo.** The factory needs a git repo with at least one commit:
 
