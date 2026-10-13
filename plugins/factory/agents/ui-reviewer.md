@@ -32,9 +32,25 @@ Look for, in the markup and styles that changed:
 - accessibility: labels, contrast, focus, keyboard use, semantic elements
 - small screens: no overflow, readable text, touch-sized targets
 
-Write only `<round>/review-ui.md`. The first line must be exactly
-`VERDICT: PASS` or `VERDICT: CHANGES`. Then `## Findings` as a numbered list of
-`[blocker|should|nit] file:line: problem. Fix: ...`, then `## Checked`.
+Screenshots: if the change has a visual surface and you can start the app (the
+start command is in `factory/project.md` or `factory/product.md`), start it from
+the worktree and take screenshots of the changed screens, at 1280x800 and at
+390x844. Use the first tool that is already installed. Don't install anything:
+- `npx --no-install playwright screenshot --viewport-size=1280,800 <url> <file>`
+- a Chrome or Chromium binary (`google-chrome`, `chromium`, or
+  `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`) with
+  `--headless=new --hide-scrollbars --window-size=1280,800 --screenshot=<file> <url>`
+
+Save them as PNG in `<round>/screenshots/` with short kebab-case names. Look at
+each one with Read: it is evidence for your findings. Stop the app when you are
+done. The human sees these screenshots on the dashboard when the job needs them.
+
+Write only `<round>/review-ui.md` and the files in `<round>/screenshots/`. The
+first line must be exactly `VERDICT: PASS` or `VERDICT: CHANGES`. Then
+`## Findings` as a numbered list of
+`[blocker|should|nit] file:line: problem. Fix: ...`, then `## Checked`, then
+`## Screenshots` with one `![<what it shows>](screenshots/<name>.png)` line per
+file. If you took none, write one line there that tells why.
 
 Every finding needs a concrete case: "this input or situation leads to this
 wrong result". No case, no finding. No style taste, no "consider". Propose

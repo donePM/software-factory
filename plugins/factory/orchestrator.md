@@ -17,7 +17,8 @@ write product code or another agent's file.
 | `/factory:import <github\|jira> <query>` | Queue open tickets in the backlog (see Tickets) |
 | `/factory:review <pr>` | Review a GitHub pull request, read-only (see PR review) |
 | `/factory:product <idea>` | Plan a product, confirm it with the human, then Loop (see Product) |
-| `/factory:loop [max]` | Run `next` until the backlog is empty (see Loop) |
+| `/factory:loop [max]` | Run the backlog, up to 4 jobs at a time, until it is empty (see Loop) |
+| `/factory:inbox` | Handle the requests from the dashboard buttons (see Inbox) |
 
 Paths: `<plugin>` is the plugin root that the command passed you (assets live in
 `<plugin>/assets/`). `<root>` is `git rev-parse --show-toplevel` of the main checkout.
@@ -69,20 +70,22 @@ worktree, branch, and base are in `<job>/feature.md`.
    factory/board.json
    factory/jobs/
    factory/dashboard.html
+   factory/serve.py
+   factory/inbox/
    factory/audit.md
    .claude/worktrees/
    # <<< software factory
    ```
-   Then run `git ls-files factory/board.json factory/jobs factory/dashboard.html factory/audit.md .claude/worktrees`.
+   Then run `git ls-files factory/board.json factory/jobs factory/dashboard.html factory/serve.py factory/inbox factory/audit.md .claude/worktrees`.
    If any of these are already tracked, tell the user to run
    `git rm -r --cached <path>`. Don't run it yourself.
    `factory/backlog.md`, `factory/project.md`, `factory/idea.md`, and
    `factory/product.md` stay tracked: they are shared team input.
 4. **Files.** Create these in `<root>/factory/`:
-   - `board.json` → `{ "jobs": [] }`, only if missing
+   - `board.json` → `{ "runner": null, "jobs": [] }`, only if missing
    - `backlog.md` ← `<plugin>/assets/backlog.md`, only if missing
-   - `dashboard.html` ← `<plugin>/assets/dashboard.html`. Always overwrite
-     it: the plugin owns this file.
+   - `dashboard.html` ← `<plugin>/assets/dashboard.html` and `serve.py` ←
+     `<plugin>/assets/serve.py`. Always overwrite them: the plugin owns these files.
    - `project.md` ← `<plugin>/assets/project.md`. Fill every `{{…}}` by inspecting the
      repo: manifests (package.json, pyproject.toml, go.mod, Cargo.toml, composer.json,
      Gemfile, …), test, lint and CI config, README, CLAUDE.md, and recent commit
@@ -93,8 +96,9 @@ worktree, branch, and base are in `<job>/feature.md`.
      (see Tickets), and its site URL. Write "none" for a source you can't reach.
 5. Tell the user what changed. Suggest committing `.gitignore`,
    `factory/backlog.md` and `factory/project.md`. Don't commit yourself.
-   Point them to the dashboard: `cd factory && python3 -m http.server 8000`
-   → http://localhost:8000/dashboard.html
+   Point them to the dashboard: `python3 factory/serve.py` →
+   http://localhost:8000/dashboard.html. Its buttons queue requests (see Inbox).
+   With `--run`, the server starts `claude -p "/factory:inbox"` for them.
 
 ## Board
 
@@ -102,7 +106,8 @@ worktree, branch, and base are in `<job>/feature.md`.
 the whole file back, and set `updated` (ISO time). Write after **every** event.
 
 ```json
-{ "jobs": [ {
+{ "runner": "loop", "heartbeat": "2026-10-11T14:02:00Z",
+  "jobs": [ {
   "id": "003-rate-limiting", "title": "Rate limiting",
   "branch": "factory/003-rate-limiting",
   "worktree": ".claude/worktrees/factory-003-rate-limiting",
@@ -121,13 +126,19 @@ the whole file back, and set `updated` (ISO time). Write after **every** event.
 - `reviews`: the current round, each `pending` | `PASS` | `CHANGES`
 - `past`: earlier rounds, oldest first (move `reviews` here before a new round)
 - `decision`: `null` | `APPROVE` | `ESCALATE`
+- `runner`: the command that runs now (`loop`, `inbox`, `run`, …) or `null`.
+  `heartbeat`: the time of your last write. Set both in Preflight, refresh
+  `heartbeat` on every write, and set `runner: null` when the command ends.
+  `serve.py` starts a headless runner only when `runner` is `null` or the
+  heartbeat is older than 60 minutes, so two orchestrators never write the board.
 
 ## 0. Preflight (every command except `/factory:init`)
 
 If `factory/project.md` or `factory/board.json` is missing, run Init first.
 Otherwise read `factory/project.md` and refresh it if it looks stale. The main
-checkout's state doesn't matter here: jobs run in their own worktrees. Run one
-job at a time.
+checkout's state doesn't matter here: jobs run in their own worktrees. Set the
+board `runner` (see Board). `/factory:run` and `/factory:next` run one job. Loop
+and Inbox can run up to 4 (see Parallel jobs).
 
 ## 1. New job in a fresh worktree
 
@@ -223,7 +234,14 @@ set `decision` to match.
    fails, skip it.
 3. `git merge --no-ff factory/<id> -m "Merge factory/<id>: <title>"`. If the job
    has a ticket, add `-m "Refs: <ticket>"`.
-   - Conflict: `git merge --abort`, board `stage: "needs-human"`, note "merge
+   - Conflict: `git merge --abort`. This happens when another job merged first.
+     If the job had no conflict fix yet: set the `- Base:` line in
+     `feature.md` and the board `base` to `<target> @ <sha of <target>>`, board
+     `stage: "build"`, and resume `builder-<id>` (as in step 5): "The base moved,
+     see the Base line in <job>/feature.md. Merge that sha into your branch,
+     resolve the conflicts, run the tests, commit, and append a `## Conflict fix`
+     section to build.md." Then step 4 with the next round number (no new fix
+     budget). After a second conflict: board `stage: "needs-human"`, note "merge
      conflict", stop.
    - Refused because local changes would be overwritten: board
      `stage: "needs-human"`, note naming those files, stop.
@@ -331,20 +349,85 @@ reviews: no build, no approve, no merge, and it writes nothing to GitHub.
 
 This is the only human checkpoint before the build. Never skip it.
 
+## Parallel jobs
+
+Loop and Inbox run up to 4 jobs at the same time. You decide how many, each
+time a slot is free:
+- **Order.** Take open backlog items top-down. You can start a later item
+  before an earlier one only if it is independent of it.
+- **Independent** means: it doesn't need a running, open, or `needs-human` job
+  (product slices name this as "Needs S2" in `factory/product.md`; a ticket can
+  name another one), and it will most likely not change the same files (judge
+  from the item text, `## Architecture` in `product.md`, and the code). If you
+  are not sure, it is not independent: wait.
+- **Alone.** A walking skeleton (S1), and every item while `factory/project.md`
+  has no test command yet, run with no other job.
+- **How many.** 2 when the items touch neighbouring parts, up to 4 when they are
+  clearly apart. Write the reason into the board note when a job starts, e.g.
+  "parallel 3: separate modules".
+
+Each job runs steps 1 to 7 on its own:
+- Spawn the agents of different jobs in one message where you can, and move a
+  job on as soon as its agent returns. Never wait for another job. WAIT FOR ALL
+  stays per job and round.
+- You stay the only writer of `board.json`: one change, one write, in the order
+  the events come.
+- Run step 7 (Merge) for one job at a time. A job that started from an older
+  target can conflict: step 7 handles it.
+
+## Inbox
+
+The dashboard buttons (served by `factory/serve.py`) write one request per file
+into `factory/inbox/*.json`. The server checked the job stage or backlog line
+when the human clicked. The file names sort by time.
+```json
+{ "action": "approve", "job": "003-rate-limiting", "at": "…" }
+{ "action": "rework", "job": "003-rate-limiting", "note": "…", "at": "…" }
+{ "action": "start", "item": "<text of an open backlog line, without - [ ]>", "at": "…" }
+```
+The note and the item come from the human, the same as a command argument.
+
+Handle a request (oldest first):
+1. Claim it: move the file to `factory/inbox/done/` before you act, so no other
+   runner takes it.
+2. Check it again against the board and the backlog. If it no longer fits (the
+   job moved on, the line is already `- [x]`), skip it and tell the user why.
+3. `approve` → as `/factory:approve <job>`. `rework` → as `/factory:rework <job>
+   <note>`, then the job runs on. `start` → step 1 to 7 with that backlog line,
+   as `/factory:next` does for the first line. It takes the next free slot,
+   before other backlog items, and still follows the independence rules.
+
+`/factory:inbox`: handle every request in `factory/inbox/`, and run the jobs that
+come from them to the end (Parallel jobs). Look again for new requests after each
+event. Stop when the inbox is empty and no job runs. Don't start other backlog
+items. The last report is as in Loop step 5.
+
+Every other command: if `factory/inbox/` has requests at the end, tell the user
+to run `/factory:inbox`.
+
 ## Loop
 
-`/factory:loop [max]` (default max = 10 jobs; `/factory:product` uses the default):
-1. Stop if any board job is `needs-human`. Tell the user which one, and that
-   `/factory:approve` or `/factory:rework` unblocks the loop.
-2. Take the first `- [ ]` item in `factory/backlog.md` and run it like
-   `/factory:next` (steps 1 to 7). After each job, tell the user one line:
-   id, stage, and how many items are left.
-3. Repeat from 1 until the backlog has no `- [ ]` item or max jobs ran.
-4. Backlog empty, `factory/product.md` exists, and the backlog has no
-   `(audit #` line yet: run Audit on the whole repo once. Queue every
-   **Must fix** finding without asking, then go on with 1.
-5. At the end, tell the user what was built (the `## Summary` sections of the
-   merged jobs, merged into one short list), what is left, and why the loop stopped.
+`/factory:loop [max]` (default max = 10 started jobs; `/factory:product` uses the default):
+1. Fill the free slots (see Parallel jobs): Inbox requests first, then open
+   backlog items. A `needs-human` job doesn't stop the loop. Only items that
+   need it wait.
+2. On each event (an agent returns): move that job on, handle new Inbox
+   requests, and fill the free slots again. When a job ends (`merged` or
+   `needs-human`), tell the user one line: id, stage, how many items are left.
+3. No job runs and nothing can start:
+   - Backlog empty, `factory/product.md` exists, and the backlog has no
+     `(audit #` line yet: run Audit on the whole repo once. Queue every
+     **Must fix** finding without asking, then go on with 1.
+   - A job is `needs-human`: tell the user which one, and that the dashboard
+     buttons, `/factory:approve`, or `/factory:rework` unblock it. Then wait for
+     an Inbox request for up to 30 minutes, in Bash calls of at most 10 minutes:
+     `for i in $(seq 55); do ls factory/inbox/*.json >/dev/null 2>&1 && break; sleep 10; done`.
+     Keep `heartbeat` fresh between the calls. A request came: go on with 1.
+   - Else, or max jobs started: stop.
+4. Never start a job when max jobs already started. Running jobs finish.
+5. At the end, set `runner: null` and tell the user what was built (the
+   `## Summary` sections of the merged jobs, merged into one short list), what
+   is left, and why the loop stopped.
 
 ## Tickets
 
@@ -387,5 +470,5 @@ you added. `/factory:next` fetches the full ticket when the job starts.
 
 ## Finish
 
-Tell the user the job id, its final stage, and the dashboard URL. Then copy the
+Set board `runner: null`. Tell the user the job id, its final stage, and the dashboard URL. Then copy the
 `## Summary` section of `decision.md` (what was done, how to test it by hand).

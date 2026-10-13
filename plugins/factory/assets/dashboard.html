@@ -44,7 +44,7 @@
   .lane-human .cards { display: flex; flex-wrap: wrap; gap: 10px; }
   .lane-human .card { width: 280px; border-color: var(--human); }
 
-  .board { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+  .board { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 10px;
     color: var(--muted); font-weight: 600; display: flex; gap: 6px; align-items: baseline; }
   h2 .agent { text-transform: none; letter-spacing: 0; font-weight: 400; font-family: var(--mono); font-size: 11px; }
@@ -55,7 +55,7 @@
 
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
     padding: 12px; box-shadow: var(--shadow); cursor: pointer; text-align: left;
-    color: inherit; font: inherit; width: 100%; transition: border-color .15s; }
+    color: inherit; font: inherit; width: 100%; transition: border-color .15s; overflow-wrap: anywhere; }
   .card:hover, .card:focus-visible { border-color: var(--accent); outline: none; }
   .card .id { font-family: var(--mono); font-size: 11px; color: var(--muted); }
   .card .title { font-weight: 600; margin: 2px 0 6px; }
@@ -64,6 +64,33 @@
   .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px;
     border-radius: 99px; margin-left: 4px; }
   .badge.human { background: var(--human); color: var(--panel); }
+
+  .btn { font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1; padding: 7px 12px; min-height: 30px;
+    border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  .btn:hover, .btn:focus-visible { border-color: var(--accent); outline: none; }
+  .btn.primary { background: var(--pass); border-color: var(--pass); color: var(--panel); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .queued { margin-top: 10px; font: 600 11px var(--mono); color: var(--accent); }
+  .shots { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .shots a { display: block; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .shots a:hover, .shots a:focus-visible { border-color: var(--accent); outline: none; }
+  .shots img { display: block; width: 76px; height: 52px; object-fit: cover; object-position: top; }
+
+  .item { background: var(--panel); border: 1px dashed var(--line); border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; overflow-wrap: anywhere; }
+  .item .actions { margin-top: 8px; }
+  .done-count { color: var(--muted); font-size: 12px; }
+
+  dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text);
+    padding: 16px; width: min(520px, calc(100% - 32px)); }
+  dialog::backdrop { background: rgba(0,0,0,.35); }
+  dialog h3 { margin: 0 0 4px; font-size: 15px; }
+  dialog p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+  dialog textarea { width: 100%; min-height: 120px; font: inherit; color: inherit; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px; resize: vertical; }
+  dialog textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  dialog .actions { justify-content: flex-end; }
 
   .rounds { display: flex; flex-direction: column; gap: 4px; }
   .round { display: flex; align-items: center; gap: 4px; }
@@ -109,11 +136,13 @@
   .md pre code { background: none; padding: 0; }
   .md table { border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
   .md th, .md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+  .md img { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; }
   .md .verdict { display: inline-block; font: 600 12px var(--mono); padding: 3px 10px; border-radius: 6px; }
   .verdict.PASS, .verdict.APPROVE { background: var(--pass-bg); color: var(--pass); }
   .verdict.CHANGES { background: var(--changes-bg); color: var(--changes); }
   .verdict.ESCALATE { background: var(--human-bg); color: var(--human); }
 
+  @media (max-width: 1300px) { .board { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 900px) {
     header, main { padding-left: 16px; padding-right: 16px; }
     .board { grid-template-columns: 1fr; }
@@ -136,9 +165,23 @@
     <div><div class="meta" id="d-meta"></div><div style="font-weight:650;font-size:16px" id="d-title"></div></div>
     <button class="close" id="d-close">Close</button>
   </div>
+  <div class="files" id="d-actions" hidden></div>
   <div class="files" id="d-files"></div>
   <div class="md" id="d-body"></div>
 </aside>
+
+<dialog id="rework">
+  <form method="dialog">
+    <h3 id="rw-title">Rework</h3>
+    <p>The builder gets this note, fixes the job, and the four reviewers check it again.</p>
+    <label for="rw-note" class="done-count">Note for the builder</label>
+    <textarea id="rw-note" required maxlength="4000"></textarea>
+    <div class="actions">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="send" id="rw-send">Send to builder</button>
+    </div>
+  </form>
+</dialog>
 
 <script>
 const STAGES = [
@@ -153,6 +196,8 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 let board = { jobs: [] }, lastJson = "", openJob = null, openFile = null;
+let backlog = "", api = false, inbox = { pending: [], runner: "off" }, lastInbox = "";
+const shots = {}; // job id → { key, list: [{ src, alt }] }
 
 function ago(iso) {
   if (!iso) return "";
@@ -170,33 +215,72 @@ function chips(reviews) {
   }).join("");
 }
 
+function queuedFor(key, value) {
+  return (inbox.pending || []).find(q => q[key] === value);
+}
+
+function jobActions(job) {
+  if (job.stage !== "needs-human") return "";
+  if (!api) return "";
+  const q = queuedFor("job", job.id);
+  if (q) return `<div class="queued">queued: ${esc(q.action)}</div>`;
+  return `<div class="actions">
+    <button class="btn primary act" data-act="approve" data-id="${esc(job.id)}">Approve</button>
+    <button class="btn act" data-act="rework" data-id="${esc(job.id)}">Rework…</button>
+  </div>`;
+}
+
+function shotStrip(job) {
+  const list = (shots[job.id] || {}).list || [];
+  return list.length ? `<div class="shots">${list.map(x =>
+    `<a href="${esc(x.src)}" target="_blank" rel="noopener" title="${esc(x.alt)}"><img src="${esc(x.src)}" alt="${esc(x.alt)}" loading="lazy"></a>`).join("")}</div>` : "";
+}
+
 function card(job) {
   const rounds = [...(job.past || [])];
   if (job.round > 0) rounds.push(job.reviews);
   const rows = rounds.map((r, i) =>
     `<div class="round"><span class="r">R${i + 1}</span>${chips(r)}</div>`).join("");
-  const human = job.stage === "needs-human" ? `<span class="badge human">needs human</span>` : "";
-  return `<button class="card ${esc(job.stage)}" data-id="${esc(job.id)}">
-    <div class="id">${esc(job.id)}${human}</div>
+  const human = job.stage === "needs-human";
+  return `<div class="card ${esc(job.stage)}" data-id="${esc(job.id)}" role="button" tabindex="0">
+    <div class="id">${esc(job.id)}${human ? `<span class="badge human">needs human</span>` : ""}</div>
     <div class="title">${esc(job.title || job.id)}</div>
     ${rows ? `<div class="rounds">${rows}</div>` : ""}
     <div class="note">${esc(job.note || "")}${job.updated ? " · " + ago(job.updated) : ""}</div>
-  </button>`;
+    ${human ? shotStrip(job) + jobActions(job) : ""}
+  </div>`;
+}
+
+function backlogItems() {
+  return [...backlog.matchAll(/^- \[( |x)\] (.+)$/gm)].map(m => ({ done: m[1] === "x", text: m[2].trim() }));
+}
+
+function backlogCol() {
+  const items = backlogItems(), open = items.filter(i => !i.done), done = items.length - open.length;
+  const list = open.map(i => {
+    const q = queuedFor("item", i.text);
+    const act = !api ? "" : q ? `<div class="queued">queued: start</div>`
+      : `<div class="actions"><button class="btn act" data-act="start" data-item="${esc(i.text)}">Start</button></div>`;
+    return `<div class="item">${inline(i.text)}${act}</div>`;
+  }).join("");
+  return `<section class="col"><h2>Backlog <span class="agent">backlog.md</span><span class="count">${open.length}</span></h2>
+    <div class="cards">${list || `<div class="empty-col"></div>`}
+    ${done ? `<div class="done-count">${done} done</div>` : ""}</div></section>`;
 }
 
 function render() {
   const jobs = board.jobs || [];
-  if (!jobs.length) {
+  if (!jobs.length && !backlogItems().length) {
     $("app").innerHTML = `<div class="empty">No jobs yet.<br><br>Run <code>/factory:init</code>, then <code>/factory:run &lt;feature&gt;</code> or <code>/factory:next</code> in Claude Code.</div>`;
     return;
   }
   const human = jobs.filter(j => j.stage === "needs-human");
   let html = "";
   if (human.length) {
-    html += `<section class="lane-human"><h2>Needs human <span class="agent">/factory:approve · /factory:rework</span><span class="count">${human.length}</span></h2>
+    html += `<section class="lane-human"><h2>Needs human <span class="agent">${api ? "buttons below" : "/factory:approve · /factory:rework"}</span><span class="count">${human.length}</span></h2>
       <div class="cards">${human.map(card).join("")}</div></section>`;
   }
-  html += `<div class="board">` + STAGES.map(([key, label, agent]) => {
+  html += `<div class="board">` + backlogCol() + STAGES.map(([key, label, agent]) => {
     const list = jobs.filter(j => j.stage === key || (key === "merged" && j.stage === "reviewed"));
     if (key === "merged") list.reverse();
     return `<section class="col"><h2>${label} <span class="agent">${agent}</span><span class="count">${list.length}</span></h2>
@@ -205,24 +289,103 @@ function render() {
   $("app").innerHTML = html;
 }
 
+/* ---------- screenshots (from the latest review-ui.md) ---------- */
+
+const IMG = /!\[([^\]]*)\]\(([^)\s]+)\)/g;
+const safeRel = u => /^[\w./-]+$/.test(u) && !u.includes("..") && !u.startsWith("/");
+
+async function loadShots() {
+  let changed = false;
+  for (const job of (board.jobs || []).filter(j => j.stage === "needs-human")) {
+    const key = `${job.round}:${job.updated}`;
+    if ((shots[job.id] || {}).key === key) continue;
+    let list = [];
+    for (let r = job.round || 0; r >= 1 && !list.length; r--) {
+      const dir = `jobs/${job.id}/round-${r}/`;
+      const t = await getFile(dir + "review-ui.md");
+      if (t) list = [...t.matchAll(IMG)].filter(m => safeRel(m[2])).map(m => ({ alt: m[1], src: dir + m[2] }));
+    }
+    shots[job.id] = { key, list };
+    changed = true;
+  }
+  if (changed) render();
+}
+
+/* ---------- actions (factory/serve.py) ---------- */
+
+function statusText() {
+  if (!api) return "read-only · run python3 factory/serve.py for buttons";
+  const n = (inbox.pending || []).length;
+  const runner = {
+    session: "a factory session handles it",
+    running: "claude -p /factory:inbox runs",
+    idle: "waiting for runner",
+    failed: "runner failed, see factory/inbox/runner.log",
+    off: "run /factory:inbox or /factory:loop",
+  }[inbox.runner] || inbox.runner;
+  return n ? `${n} queued · ${runner}` : "";
+}
+
+async function post(body) {
+  try {
+    const res = await fetch("api/actions", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) alert("Not queued: " + (out.error || res.status));
+  } catch (e) {
+    alert("Not queued: the dashboard server is not reachable.");
+  }
+  poll();
+}
+
+function act(btn) {
+  const { act: a, id, item } = btn.dataset;
+  if (a === "approve") {
+    if (confirm(`Merge ${id} into the target branch? The merge stays local, nothing is pushed.`)) post({ action: "approve", job: id });
+  } else if (a === "rework") {
+    $("rework").dataset.id = id;
+    $("rw-title").textContent = "Rework " + id;
+    $("rw-note").value = "";
+    $("rework").returnValue = "";
+    $("rework").showModal();
+  } else if (a === "start") {
+    post({ action: "start", item });
+  }
+}
+
+$("rework").addEventListener("close", () => {
+  const note = $("rw-note").value.trim();
+  if ($("rework").returnValue === "send" && note) post({ action: "rework", job: $("rework").dataset.id, note });
+});
+
 async function poll() {
   try {
-    const res = await fetch("board.json?t=" + Date.now(), { cache: "no-store" });
+    const [res, bl, ib] = await Promise.all([
+      fetch("board.json?t=" + Date.now(), { cache: "no-store" }),
+      getFile("backlog.md"),
+      fetch("api/inbox?t=" + Date.now(), { cache: "no-store" }).catch(() => null),
+    ]);
     if (!res.ok) throw new Error(res.status);
     const text = await res.text();
+    api = !!(ib && ib.ok);
+    const inboxText = api ? await ib.text() : "";
     $("dot").className = "dot";
-    $("status").textContent = "live · " + new Date().toLocaleTimeString();
-    if (text !== lastJson) {
-      lastJson = text;
+    const extra = statusText();
+    $("status").textContent = "live · " + new Date().toLocaleTimeString() + (extra ? " · " + extra : "");
+    if (text !== lastJson || (bl || "") !== backlog || inboxText !== lastInbox) {
+      lastJson = text; backlog = bl || ""; lastInbox = inboxText;
       board = JSON.parse(text);
+      inbox = api ? JSON.parse(inboxText) : { pending: [], runner: "off" };
       render();
+      loadShots();
       if (openJob) refreshDrawer();
     } else if (!$("app").contains(document.activeElement)) {
       render(); // keep "x ago" fresh without stealing keyboard focus
     }
   } catch (e) {
     $("dot").className = "dot off";
-    $("status").textContent = "can't read board.json (serve factory/ with python3 -m http.server)";
+    $("status").textContent = "can't read board.json (run python3 factory/serve.py)";
   }
 }
 
@@ -272,6 +435,9 @@ async function refreshDrawer() {
   if (!job) return;
   $("d-meta").textContent = [job.id, job.branch, job.base, job.stage].filter(Boolean).join(" · ");
   $("d-title").textContent = job.title || job.id;
+  const acts = jobActions(job);
+  $("d-actions").hidden = !acts;
+  $("d-actions").innerHTML = acts;
   const groups = await listFiles(job);
   const all = groups.flatMap(g => g[1]);
   if (!all.find(f => f.path === openFile)) openFile = all.length ? all[all.length - 1].path : null;
@@ -280,7 +446,7 @@ async function refreshDrawer() {
       ? files.map(f => `<button class="tab ${verdictOf(f.text)} ${f.path === openFile ? "active" : ""}" data-path="${esc(f.path)}">${esc(f.label)}</button>`).join("")
       : `<span class="label" style="width:auto">waiting…</span>`}</div>`).join("");
   const cur = all.find(f => f.path === openFile);
-  $("d-body").innerHTML = cur ? md(cur.text) : `<p style="color:var(--muted)">No files yet.</p>`;
+  $("d-body").innerHTML = cur ? md(cur.text, cur.path.slice(0, cur.path.lastIndexOf("/") + 1)) : `<p style="color:var(--muted)">No files yet.</p>`;
 }
 
 function openDrawer(id) {
@@ -298,6 +464,9 @@ function closeDrawer() {
 }
 
 document.addEventListener("click", e => {
+  const b = e.target.closest(".act");
+  if (b) return act(b);
+  if (e.target.closest(".shots a")) return;
   const c = e.target.closest(".card");
   if (c) return openDrawer(c.dataset.id);
   const t = e.target.closest(".tab");
@@ -305,19 +474,24 @@ document.addEventListener("click", e => {
 });
 $("scrim").onclick = closeDrawer;
 $("d-close").onclick = closeDrawer;
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !$("rework").open) return closeDrawer();
+  const c = e.target.closest && e.target.closest(".card");
+  if (c && e.target === c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDrawer(c.dataset.id); }
+});
 
 /* ---------- tiny markdown ---------- */
 
-function inline(s) {
+function inline(s, base = "") {
   return esc(s)
+    .replace(IMG, (m, a, u) => safeRel(u) ? `<img src="${base + u}" alt="${a}" loading="lazy">` : m)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g, "$1<em>$2</em>")
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => /^(https?:|#|\.|\/)/.test(u) ? `<a href="${u}">${t}</a>` : m);
 }
 
-function md(src) {
+function md(src, base = "") {
   const lines = src.replace(/\r/g, "").split("\n");
   let out = "", i = 0;
   const v = verdictOf(src);
@@ -330,27 +504,27 @@ function md(src) {
       i++; out += `<pre><code>${esc(buf.join("\n"))}</code></pre>`; continue;
     }
     let m;
-    if ((m = l.match(/^(#{1,4})\s+(.*)/))) { out += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`; i++; continue; }
+    if ((m = l.match(/^(#{1,4})\s+(.*)/))) { out += `<h${m[1].length}>${inline(m[2], base)}</h${m[1].length}>`; i++; continue; }
     if (/^\s*(---|\*\*\*)\s*$/.test(l)) { out += "<hr>"; i++; continue; }
     if (/^\s*\|/.test(l)) {
       const rows = [];
       while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(lines[i++]);
       const cells = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
       const body = rows.filter((r, k) => !(k === 1 && /^[\s|:-]+$/.test(r)));
-      out += "<table>" + body.map((r, k) => "<tr>" + cells(r).map(c => k === 0 ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join("") + "</tr>").join("") + "</table>";
+      out += "<table>" + body.map((r, k) => "<tr>" + cells(r).map(c => k === 0 ? `<th>${inline(c, base)}</th>` : `<td>${inline(c, base)}</td>`).join("") + "</tr>").join("") + "</table>";
       continue;
     }
     if (/^\s*([-*]|\d+\.)\s+/.test(l)) {
       const ordered = /^\s*\d+\./.test(l), items = [];
       while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ""));
       const tag = ordered ? "ol" : "ul";
-      out += `<${tag}>${items.map(t => `<li>${inline(t.replace(/^\[( |x)\]\s*/, (m, x) => x === "x" ? "☑ " : "☐ "))}</li>`).join("")}</${tag}>`;
+      out += `<${tag}>${items.map(t => `<li>${inline(t.replace(/^\[( |x)\]\s*/, (m, x) => x === "x" ? "☑ " : "☐ "), base)}</li>`).join("")}</${tag}>`;
       continue;
     }
     if (!l.trim()) { i++; continue; }
     const buf = [];
     while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|\s*\||\s*([-*]|\d+\.)\s)/.test(lines[i])) buf.push(lines[i++]);
-    out += `<p>${inline(buf.join(" "))}</p>`;
+    out += `<p>${inline(buf.join(" "), base)}</p>`;
   }
   return out;
 }

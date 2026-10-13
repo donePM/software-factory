@@ -25,6 +25,9 @@ Plan like a lazy senior developer: the smallest product that does the core job.
 - Slice 1 is a walking skeleton: the stack, a test runner, one passing test,
   and the command to start the product.
 - Order the slices so that each one needs only earlier slices. Use 3 to 15 slices.
+- End every slice after S1 with "Needs S<n>, …" (or "Needs S1" at least). The
+  factory runs slices in parallel when they don't need each other, so name
+  every real need and no more.
 
 Write only `factory/product.md`:
 

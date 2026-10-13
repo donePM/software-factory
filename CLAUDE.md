@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The source of the `factory` Claude Code plugin plus a local marketplace
 (`.claude-plugin/marketplace.json`) that publishes it. The plugin lives in
 `plugins/factory/`. There's no build step and no product code: everything is
-markdown, one HTML file, and two JSON manifests. `README.md` covers install and
+markdown, one HTML file, one stdlib Python server, and two JSON manifests. `README.md` covers install and
 usage. `INITIAL_PROMPT.md` holds the original design brief.
 
 ## Commands
@@ -25,8 +25,8 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
 ## Architecture
 
 - `plugins/factory/orchestrator.md` holds the whole loop: Init, Preflight, steps 1
-  to 7, Rework, Audit, PR review, Product, Loop, Tickets, and the `board.json` schema. The skills
-  (`/factory:init|run|next|approve|rework|audit|import|review|product|loop`)
+  to 7, Rework, Audit, PR review, Product, Parallel jobs, Inbox, Loop, Tickets, and the `board.json` schema. The skills
+  (`/factory:init|run|next|approve|rework|audit|import|review|product|loop|inbox`)
   are thin entry points. Each passes `${CLAUDE_PLUGIN_ROOT}` and tells the session
   to read `orchestrator.md`, because Claude Code namespaces plugin skills: one skill
   named `factory` would be `/factory:factory`.
@@ -40,8 +40,15 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
   the PR head (`- Mode: pr-review` in `feature.md`, no spec.md or build.md). The
   orchestrator writes `<job>/review.md`. Nothing goes back to GitHub.
 - `plugins/factory/assets/` holds what `/factory:init` copies into a target repo:
-  `dashboard.html` (always overwritten), and the `backlog.md` and `project.md`
-  templates (`{{…}}` placeholders, filled in by inspecting the repo).
+  `dashboard.html` and `serve.py` (always overwritten), and the `backlog.md` and
+  `project.md` templates (`{{…}}` placeholders, filled in by inspecting the repo).
+- Dashboard buttons: `serve.py` (127.0.0.1 only) validates a click and writes
+  `factory/inbox/<time>.json` (`approve|rework|start`). The orchestrator claims
+  requests by moving them to `inbox/done/` (Inbox section). `serve.py --run`
+  starts `claude -p "/factory:inbox"` when board `runner` is null or stale.
+- Parallel: Loop and Inbox run up to 4 jobs; the orchestrator picks independent
+  items (Parallel jobs section). Merges stay serial; a conflict resumes the
+  builder once to merge the moved target, then reviews run again.
 
 ## Invariants (keep them when editing)
 
@@ -52,6 +59,13 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
   created from the local default branch when it contains `origin/<default>`
   (it then holds unpushed factory merges), else from `origin/<default>`. Agents run commands in the worktree and write job
   files in the main checkout.
+- `serve.py` never writes `board.json`, `backlog.md`, or job files: the
+  orchestrator stays their only writer. Request JSON fields and board
+  `runner`/`heartbeat` are shared by `serve.py`, `dashboard.html`, and the
+  orchestrator: change them together.
+- Screenshots: ui-reviewer writes `round-N/screenshots/*.png` and lists them as
+  `![…](screenshots/…)` under `## Screenshots` in `review-ui.md`. The dashboard
+  parses those image lines.
 - Review files start with `VERDICT: PASS|CHANGES`. `decision.md` starts with
   `APPROVE|ESCALATE`. The orchestrator and `dashboard.html` both parse these
   first lines, so change them together.
