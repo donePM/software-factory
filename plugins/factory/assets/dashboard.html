@@ -156,6 +156,7 @@
 <header>
   <h1>Software Factory</h1>
   <span class="status"><span class="dot" id="dot"></span><span id="status">connecting…</span></span>
+  <button class="btn act" data-act="stop" id="stop" hidden>Stop loop</button>
 </header>
 <main id="app"></main>
 
@@ -326,6 +327,14 @@ function statusText() {
   return n ? `${n} queued · ${runner}` : "";
 }
 
+function stopButton() {
+  const b = $("stop");
+  b.hidden = !api || !["session", "running"].includes(inbox.runner);
+  const queued = !!queuedFor("action", "stop");
+  b.disabled = queued;
+  b.textContent = queued ? "Stopping…" : "Stop loop";
+}
+
 async function post(body) {
   try {
     const res = await fetch("api/actions", {
@@ -351,6 +360,8 @@ function act(btn) {
     $("rework").showModal();
   } else if (a === "start") {
     post({ action: "start", item });
+  } else if (a === "stop") {
+    if (confirm("Stop the factory runner? It starts no new jobs. Running jobs finish first.")) post({ action: "stop" });
   }
 }
 
@@ -377,6 +388,7 @@ async function poll() {
       lastJson = text; backlog = bl || ""; lastInbox = inboxText;
       board = JSON.parse(text);
       inbox = api ? JSON.parse(inboxText) : { pending: [], runner: "off" };
+      stopButton();
       render();
       loadShots();
       if (openJob) refreshDrawer();
@@ -385,6 +397,7 @@ async function poll() {
     }
   } catch (e) {
     $("dot").className = "dot off";
+    $("stop").hidden = true;
     $("status").textContent = "can't read board.json (run python3 factory/serve.py)";
   }
 }

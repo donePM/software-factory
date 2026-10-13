@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The source of the `factory` Claude Code plugin plus a local marketplace
 (`.claude-plugin/marketplace.json`) that publishes it. The plugin lives in
 `plugins/factory/`. There's no build step and no product code: everything is
-markdown, one HTML file, one stdlib Python server, and two JSON manifests. `README.md` covers install and
+markdown, one HTML file, one stdlib Python server, one sh launcher, and two JSON manifests. `README.md` covers install and
 usage. `INITIAL_PROMPT.md` holds the original design brief.
 
 ## Commands
@@ -25,8 +25,8 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
 ## Architecture
 
 - `plugins/factory/orchestrator.md` holds the whole loop: Init, Preflight, steps 1
-  to 7, Rework, Audit, PR review, Product, Parallel jobs, Inbox, Loop, Tickets, and the `board.json` schema. The skills
-  (`/factory:init|run|next|approve|rework|audit|import|review|product|loop|inbox`)
+  to 7, Rework, Audit, PR review, Product, Parallel jobs, Inbox, Loop, Stop, Tickets, and the `board.json` schema. The skills
+  (`/factory:init|run|next|approve|rework|audit|import|review|product|loop|inbox|stop`)
   are thin entry points. Each passes `${CLAUDE_PLUGIN_ROOT}` and tells the session
   to read `orchestrator.md`, because Claude Code namespaces plugin skills: one skill
   named `factory` would be `/factory:factory`.
@@ -34,13 +34,16 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
   calls them as `factory:<name>`. Models and tools are set in their frontmatter.
 - Product loop: `factory:planner` turns `factory/idea.md` into `factory/product.md`
   (stack, allowed dependencies, ordered slices). After the human confirms, the
-  slices go into `backlog.md` and Loop runs `next` until done. spec-writer,
-  builder, and approver read `product.md` when it exists.
+  slices go into `backlog.md` and Loop runs with no job limit until done or
+  `/factory:stop` (a `stop` request in `factory/inbox/`). The planner and
+  spec-writer cut small jobs with few needs; spec-writer's `## Split` items go
+  into `backlog.md` as `Needs <id>` lines. spec-writer, builder, and approver
+  read `product.md` when it exists.
 - PR review: `/factory:review <pr>` runs the 4 reviewers on a detached worktree of
   the PR head (`- Mode: pr-review` in `feature.md`, no spec.md or build.md). The
   orchestrator writes `<job>/review.md`. Nothing goes back to GitHub.
 - `plugins/factory/assets/` holds what `/factory:init` copies into a target repo:
-  `dashboard.html` and `serve.py` (always overwritten), and the `backlog.md` and
+  `dashboard.html`, `serve.py`, and the `dashboard` launcher (always overwritten), and the `backlog.md` and
   `project.md` templates (`{{…}}` placeholders, filled in by inspecting the repo).
 - Dashboard buttons: `serve.py` (127.0.0.1 only) validates a click and writes
   `factory/inbox/<time>.json` (`approve|rework|start`). The orchestrator claims

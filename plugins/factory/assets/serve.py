@@ -6,8 +6,9 @@ factory/inbox/. The orchestrator handles them (/factory:inbox or /factory:loop).
 This server never writes board.json, backlog.md, or job files.
 
 Run it from anywhere:
-    python3 factory/serve.py [--port 8000]
+    python3 factory/serve.py [--port 8000] [--open]
     python3 factory/serve.py --run [-- <extra claude args>]
+    factory/dashboard [...]          # the same, with --open
 
 With --run, a new request starts `claude -p "/factory:inbox"` in the repo root
 when no factory session is running.
@@ -19,6 +20,7 @@ import re
 import secrets
 import subprocess
 import threading
+import webbrowser
 from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -100,7 +102,7 @@ def maybe_spawn(run_args):
         child = state["child"]
         if child and child.poll() is None:
             return
-        reqs = pending()
+        reqs = [r for r in pending() if r.get("action") != "stop"]  # stop is for a live runner only
         if not reqs or session_active(read_board()):
             return
         names = tuple(r["file"] for r in reqs)
@@ -150,6 +152,13 @@ def validate(req):
         if any(q.get("item") == item for q in queued):
             return None, "item is already queued"
         return {"action": action, "item": item}, None
+    if action == "stop":
+        child = state["child"]
+        if not session_active(board) and not (child and child.poll() is None):
+            return None, "no factory runner is running"
+        if any(q.get("action") == "stop" for q in queued):
+            return None, "stop is already queued"
+        return {"action": action}, None
     return None, "unknown action"
 
 
@@ -232,16 +241,23 @@ def main():
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--run", action="store_true",
                     help='start `claude -p "/factory:inbox"` for new requests when no factory session runs')
+    ap.add_argument("--open", action="store_true", help="open the dashboard in the browser")
     ap.add_argument("claude_args", nargs="*", help="extra args for claude, after --")
     args = ap.parse_args()
     INBOX.mkdir(exist_ok=True)
     Handler.run_args = args.claude_args if args.run else None
     Handler.allowed = {f"localhost:{args.port}", f"127.0.0.1:{args.port}"}
-    srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(f"Factory dashboard: http://localhost:{args.port}/dashboard.html")
+    url = f"http://localhost:{args.port}/dashboard.html"
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    except OSError as e:
+        raise SystemExit(f"Port {args.port} is not free ({e.strerror}). Is the dashboard already running? Try --port.")
+    print(f"Factory dashboard: {url}")
     print("Buttons queue requests in factory/inbox/. " + (
         "New requests start claude -p /factory:inbox." if args.run
         else "Run /factory:inbox or /factory:loop in Claude Code to handle them."))
+    if args.open:
+        webbrowser.open(url)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

@@ -19,6 +19,7 @@ write product code or another agent's file.
 | `/factory:product <idea>` | Plan a product, confirm it with the human, then Loop (see Product) |
 | `/factory:loop [max]` | Run the backlog, up to 4 jobs at a time, until it is empty (see Loop) |
 | `/factory:inbox` | Handle the requests from the dashboard buttons (see Inbox) |
+| `/factory:stop` | Ask the running Loop or Inbox to stop after its running jobs (see Stop) |
 
 Paths: `<plugin>` is the plugin root that the command passed you (assets live in
 `<plugin>/assets/`). `<root>` is `git rev-parse --show-toplevel` of the main checkout.
@@ -71,12 +72,13 @@ worktree, branch, and base are in `<job>/feature.md`.
    factory/jobs/
    factory/dashboard.html
    factory/serve.py
+   factory/dashboard
    factory/inbox/
    factory/audit.md
    .claude/worktrees/
    # <<< software factory
    ```
-   Then run `git ls-files factory/board.json factory/jobs factory/dashboard.html factory/serve.py factory/inbox factory/audit.md .claude/worktrees`.
+   Then run `git ls-files factory/board.json factory/jobs factory/dashboard.html factory/serve.py factory/dashboard factory/inbox factory/audit.md .claude/worktrees`.
    If any of these are already tracked, tell the user to run
    `git rm -r --cached <path>`. Don't run it yourself.
    `factory/backlog.md`, `factory/project.md`, `factory/idea.md`, and
@@ -84,8 +86,9 @@ worktree, branch, and base are in `<job>/feature.md`.
 4. **Files.** Create these in `<root>/factory/`:
    - `board.json` → `{ "runner": null, "jobs": [] }`, only if missing
    - `backlog.md` ← `<plugin>/assets/backlog.md`, only if missing
-   - `dashboard.html` ← `<plugin>/assets/dashboard.html` and `serve.py` ←
-     `<plugin>/assets/serve.py`. Always overwrite them: the plugin owns these files.
+   - `dashboard.html`, `serve.py`, and `dashboard` ← the same files in
+     `<plugin>/assets/`. Always overwrite them: the plugin owns these files.
+     Then `chmod +x factory/dashboard factory/serve.py`.
    - `project.md` ← `<plugin>/assets/project.md`. Fill every `{{…}}` by inspecting the
      repo: manifests (package.json, pyproject.toml, go.mod, Cargo.toml, composer.json,
      Gemfile, …), test, lint and CI config, README, CLAUDE.md, and recent commit
@@ -96,8 +99,8 @@ worktree, branch, and base are in `<job>/feature.md`.
      (see Tickets), and its site URL. Write "none" for a source you can't reach.
 5. Tell the user what changed. Suggest committing `.gitignore`,
    `factory/backlog.md` and `factory/project.md`. Don't commit yourself.
-   Point them to the dashboard: `python3 factory/serve.py` →
-   http://localhost:8000/dashboard.html. Its buttons queue requests (see Inbox).
+   Point them to the dashboard: `factory/dashboard` starts the server and opens
+   http://localhost:8000/dashboard.html in the browser. Its buttons queue requests (see Inbox).
    With `--run`, the server starts `claude -p "/factory:inbox"` for them.
 
 ## Board
@@ -132,12 +135,13 @@ the whole file back, and set `updated` (ISO time). Write after **every** event.
   `serve.py` starts a headless runner only when `runner` is `null` or the
   heartbeat is older than 60 minutes, so two orchestrators never write the board.
 
-## 0. Preflight (every command except `/factory:init`)
+## 0. Preflight (every command except `/factory:init` and `/factory:stop`)
 
 If `factory/project.md` or `factory/board.json` is missing, run Init first.
 Otherwise read `factory/project.md` and refresh it if it looks stale. The main
 checkout's state doesn't matter here: jobs run in their own worktrees. Set the
-board `runner` (see Board). `/factory:run` and `/factory:next` run one job. Loop
+board `runner` (see Board). Then move every `stop` request in `factory/inbox/`
+to `factory/inbox/done/`: it was for an earlier runner. `/factory:run` and `/factory:next` run one job. Loop
 and Inbox can run up to 4 (see Parallel jobs).
 
 ## 1. New job in a fresh worktree
@@ -181,6 +185,13 @@ and Inbox can run up to 4 (see Parallel jobs).
 
 Spawn `factory:spec-writer`: "Job folder: <job>. Write spec.md." Then check that
 `spec.md` exists and has numbered acceptance criteria.
+
+If `spec.md` has a `## Split` section, append each item to `factory/backlog.md`
+as `- [ ] <ticket, if the job has one> <title>: <outcome>. Needs <id>` (leave
+out "Needs" when the item says "none"). Put them under the job's backlog line
+(or at the end when it has none), in their order, and skip items that are
+already in the backlog. Tell the user one line: how many items the split added.
+They run like other backlog items (`/factory:next`, Loop), not in this job.
 
 ## 3. Build
 
@@ -345,7 +356,8 @@ reviews: no build, no approve, no merge, and it writes nothing to GitHub.
 4. Changes: append them to `factory/idea.md` as `## Feedback K`, spawn the
    planner again, and go back to step 3.
 5. Start: append each slice that isn't in `factory/backlog.md` yet as
-   `- [ ] S<n> <title>: <outcome>`. Then run Loop.
+   `- [ ] S<n> <title>: <outcome>`. Then run Loop with no max: it runs until
+   the backlog is empty or `/factory:stop`.
 
 This is the only human checkpoint before the build. Never skip it.
 
@@ -356,10 +368,11 @@ time a slot is free:
 - **Order.** Take open backlog items top-down. You can start a later item
   before an earlier one only if it is independent of it.
 - **Independent** means: it doesn't need a running, open, or `needs-human` job
-  (product slices name this as "Needs S2" in `factory/product.md`; a ticket can
-  name another one), and it will most likely not change the same files (judge
-  from the item text, `## Architecture` in `product.md`, and the code). If you
-  are not sure, it is not independent: wait.
+  (product slices name this as "Needs S2" in `factory/product.md`; a split
+  item ends with "Needs <id>"; a ticket can name another one), and it will
+  most likely not change the same files (judge from the item text,
+  `## Architecture` in `product.md`, and the code). If you are not sure, it is
+  not independent: wait.
 - **Alone.** A walking skeleton (S1), and every item while `factory/project.md`
   has no test command yet, run with no other job.
 - **How many.** 2 when the items touch neighbouring parts, up to 4 when they are
@@ -384,7 +397,10 @@ when the human clicked. The file names sort by time.
 { "action": "approve", "job": "003-rate-limiting", "at": "…" }
 { "action": "rework", "job": "003-rate-limiting", "note": "…", "at": "…" }
 { "action": "start", "item": "<text of an open backlog line, without - [ ]>", "at": "…" }
+{ "action": "stop", "at": "…" }
 ```
+The **Stop loop** button and `/factory:stop` write `stop` requests (see Stop).
+`serve.py` takes one only while a runner is live, and never starts a runner for it.
 The note and the item come from the human, the same as a command argument.
 
 Handle a request (oldest first):
@@ -396,6 +412,7 @@ Handle a request (oldest first):
    <note>`, then the job runs on. `start` → step 1 to 7 with that backlog line,
    as `/factory:next` does for the first line. It takes the next free slot,
    before other backlog items, and still follows the independence rules.
+   `stop` → see Stop.
 
 `/factory:inbox`: handle every request in `factory/inbox/`, and run the jobs that
 come from them to the end (Parallel jobs). Look again for new requests after each
@@ -407,7 +424,8 @@ to run `/factory:inbox`.
 
 ## Loop
 
-`/factory:loop [max]` (default max = 10 started jobs; `/factory:product` uses the default):
+`/factory:loop [max]` (default max = 10 started jobs; `/factory:product` runs it
+with no max):
 1. Fill the free slots (see Parallel jobs): Inbox requests first, then open
    backlog items. A `needs-human` job doesn't stop the loop. Only items that
    need it wait.
@@ -424,10 +442,28 @@ to run `/factory:inbox`.
      `for i in $(seq 55); do ls factory/inbox/*.json >/dev/null 2>&1 && break; sleep 10; done`.
      Keep `heartbeat` fresh between the calls. A request came: go on with 1.
    - Else, or max jobs started: stop.
-4. Never start a job when max jobs already started. Running jobs finish.
+4. Never start a job when max jobs already started, or after a `stop` request.
+   Running jobs finish.
 5. At the end, set `runner: null` and tell the user what was built (the
    `## Summary` sections of the merged jobs, merged into one short list), what
    is left, and why the loop stopped.
+
+## Stop
+
+`/factory:stop` doesn't run Preflight and never writes `board.json`:
+1. Read `factory/board.json`. If `runner` is `null` or `heartbeat` is older than
+   60 minutes, tell the user that no factory command runs, and stop.
+2. Else write `factory/inbox/<UTC time as %Y%m%dT%H%M%S%f>-stop.json` with
+   `{ "action": "stop", "at": "<now>" }` (write a `.tmp` file first, then
+   rename it). Tell the user: the runner stops after its running jobs. To stop
+   at once, press Esc or Ctrl+C in the session that runs it.
+
+The runner (Loop or Inbox) handles a `stop` request like this:
+- Start no new job, skip the final audit, and don't wait for `needs-human` jobs.
+- Running jobs go on to `merged` or `needs-human`. Leave other requests in
+  `factory/inbox/` for the next runner.
+- When no job runs, do the end report (Loop step 5) and say that
+  `/factory:stop` stopped it.
 
 ## Tickets
 

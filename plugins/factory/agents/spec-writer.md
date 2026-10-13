@@ -39,10 +39,35 @@ One or two sentences: who gets what, and why.
 - Security: <what is sensitive, or "nothing special">
 - UX: <who uses it and how: CLI, API, page>
 - UI: <visual surface, or "none">
+
+## Split
+- <title>: <one-line outcome>. Needs <this job's id, or "none">.
 ```
 
+Leave out `## Split` when the job is small enough as it is.
+
+Cut small. Many small jobs with few needs are better than one big job: the
+factory runs independent jobs in parallel, and a small job is faster to review.
+- One job is one change that a reviewer can check in one read: a few files,
+  3 to 5 criteria. If the request has more than one part that can work alone,
+  spec only one part and put each other part under `## Split`.
+- Spec the part that other parts need first (e.g. the data model before the
+  views). If no part needs another, spec the most valuable one.
+- Cut along file and module lines, so that two jobs most likely don't change
+  the same files. Don't split one change across jobs that must merge together
+  to work.
+- Each split part must work and be testable on its own after this job. Write
+  "Needs none" when it doesn't need this job. Name a need only when it is real:
+  each need makes a job wait.
+- If many parts must touch one shared file (a router, a registry, a menu), put
+  that change into this job, so the split parts only add new files.
+- Put each split part under Out too, as "→ Split".
+- This feature can itself come from a split. Then keep its scope: split it
+  again only if it is still too big.
+
 Rules:
-- Each criterion must be checkable by an automated test. Use 3 to 8 of them.
+- Each criterion must be checkable by an automated test. Use 3 to 5 of them,
+  at most 8.
 - Write the smallest version that does the core job. Question each part of the
   request: if the need doesn't justify it, put it under Out with a one-line reason.
   Options, flexibility, and "for later" features go under Out too.

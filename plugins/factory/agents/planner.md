@@ -21,13 +21,23 @@ Plan like a lazy senior developer: the smallest product that does the core job.
   for them. Every dependency needs a one-line reason.
 - Cut the product into vertical slices. Each slice gives one visible result,
   works end to end, and is testable on its own. One slice is one factory job:
-  a few files, a few hundred lines at most.
+  a few files, 3 to 5 acceptance criteria, a few hundred lines at most.
+- Cut small. Many small slices with few needs are better than few big ones:
+  the factory runs up to 4 slices in parallel when they don't need each other.
+  If a slice has two parts that can work alone, make two slices.
+- Make the plan wide, not deep. Most slices should need only S1 or one early
+  slice. Avoid long chains (S2 → S3 → S4 …): put what many slices need into
+  one early slice, and let the others build on it side by side.
+- Cut along file and module lines, so that slices in parallel most likely
+  don't change the same files. Put shared files (a router, a registry, a menu,
+  the data model) into S1 or one early slice, so that later slices only add
+  new files.
 - Slice 1 is a walking skeleton: the stack, a test runner, one passing test,
-  and the command to start the product.
-- Order the slices so that each one needs only earlier slices. Use 3 to 15 slices.
-- End every slice after S1 with "Needs S<n>, …" (or "Needs S1" at least). The
-  factory runs slices in parallel when they don't need each other, so name
-  every real need and no more.
+  the command to start the product, and the shared files the other slices
+  plug into.
+- Order the slices so that each one needs only earlier slices. Use 3 to 20 slices.
+- End every slice after S1 with "Needs S<n>, …" (or "Needs S1" at least). Name
+  every real need and no more: each need makes a slice wait.
 
 Write only `factory/product.md`:
 
@@ -48,7 +58,7 @@ Write only `factory/product.md`:
 - <package>: <why the platform can't do it>   (or "none")
 
 ## Architecture
-<at most 10 lines: main parts and how data flows>
+<at most 10 lines: main parts, the files or modules each part owns, and how data flows>
 
 ## Slices
 1. S1 Walking skeleton: <one-line outcome>

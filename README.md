@@ -72,8 +72,8 @@ Use this in an existing git repo. You decide each feature.
    with Must / Should / Nice findings. You pick the numbers to queue.
 7. **Review a pull request.** `/factory:review <pr>` runs the 4 reviewers on a
    GitHub PR and writes a comment you can post (see below).
-8. **Watch and steer it.** `python3 factory/serve.py`, then open
-   http://localhost:8000/dashboard.html (see Dashboard).
+8. **Watch and steer it.** `factory/dashboard` starts the server and opens
+   http://localhost:8000/dashboard.html in the browser (see Dashboard).
 9. **Push.** Merges stay local in `main`. The factory never pushes. Review the
    merges, then push them yourself.
 
@@ -89,11 +89,14 @@ Use this in an existing git repo. You decide each feature.
 | `/factory:review <pr>` | Reviews a GitHub pull request with the 4 reviewers, read-only |
 | `/factory:product <idea>` | Plans a product, asks you to confirm, then runs the loop (Guide 2) |
 | `/factory:loop [max]` | Runs the backlog until it is empty, up to 4 jobs at a time (Guide 2) |
+| `/factory:stop` | Stops the running loop after its running jobs: no new jobs start |
 | `/factory:inbox` | Handles the requests from the dashboard buttons |
 
 ### Dashboard
 
-`python3 factory/serve.py [--port 8000]` serves `factory/` on 127.0.0.1 only.
+`factory/dashboard [--port 8000]` serves `factory/` on 127.0.0.1 only and opens
+the dashboard in the browser. It runs `python3 factory/serve.py --open`, so
+both take the same arguments.
 The dashboard shows:
 - a **Backlog** column with the open items of `factory/backlog.md`. **Start**
   sends an item to the spec writer.
@@ -101,6 +104,8 @@ The dashboard shows:
   screenshots of the UI reviewer (click to enlarge), and **Approve** (merge) and
   **Rework…** (send a note to the builder) buttons.
 - a drawer with every job file, when you click a card.
+- a **Stop loop** button in the header while a factory runner is live. It works
+  like `/factory:stop`: no new job starts, and the running jobs finish.
 
 The buttons don't run anything themselves. They write one request per click
 into `factory/inbox/`. A running `/factory:loop` picks them up after each step,
@@ -108,7 +113,7 @@ and also waits for them when only `needs-human` jobs are left. Otherwise run
 `/factory:inbox`. Or let the server start a headless session for new requests:
 
 ```bash
-python3 factory/serve.py --run -- --permission-mode acceptEdits
+factory/dashboard --run -- --permission-mode acceptEdits
 ```
 
 Arguments after `--` go to `claude -p "/factory:inbox"`. The headless session
@@ -180,7 +185,8 @@ flowchart TD
   class D done
 ```
 
-The loop stops when nothing is left or at the job limit. When only
+The loop stops when nothing is left, at the job limit, or on `/factory:stop`.
+After `/factory:product` it has no job limit. When only
 `needs-human` jobs are left, it waits up to 30 minutes for a dashboard button.
 
 1. **Make a repo.** The factory needs a git repo with at least one commit:
@@ -194,13 +200,14 @@ The loop stops when nothing is left or at the job limit. When only
 2. **Give the idea.** Run `/factory:product "<idea>"`, for example
    `/factory:product "a CLI that tracks my reading list in a local file"`.
    The idea goes to `factory/idea.md`. The planner writes `factory/product.md`:
-   goal, scope (In / Out), stack, allowed dependencies, architecture, and 3 to 15
-   slices. Slice 1 is a walking skeleton: the stack, a test runner, one passing
+   goal, scope (In / Out), stack, allowed dependencies, architecture, and 3 to 20
+   slices. The planner cuts small slices that need few others, so more of
+   them can run at the same time. Slice 1 is a walking skeleton: the stack, a test runner, one passing
    test, and the start command.
 3. **Confirm the plan.** The factory shows the plan and asks you. Say what to
    change, and the planner plans again. Say start, and the slices go into
    `factory/backlog.md`. This is the only human checkpoint before the build.
-4. **Let it run.** The loop runs one slice per job, up to 10 jobs per run. It
+4. **Let it run.** The loop runs one slice per job, with no job limit. It
    runs 2 to 4 jobs at the same time when slices don't need each other (the
    planner writes "Needs S<n>") and will not touch the same files. The
    orchestrator decides how many. The walking skeleton always runs alone.
@@ -209,7 +216,10 @@ The loop stops when nothing is left or at the job limit. When only
    you only blocks the slices that need it. When the backlog is empty, the loop
    runs one audit and queues the Must fix findings without asking. When only
    `needs-human` jobs are left, it waits up to 30 minutes for a dashboard
-   button. It stops when nothing is left or at the job limit.
+   button. It stops when nothing is left. To stop it earlier, run
+   `/factory:stop` in a second session: no new job starts, and the running
+   jobs finish. A spec writer can split a big slice: the other parts go into
+   the backlog and run in the same loop.
 5. **Unblock and go on.** Use the dashboard buttons while the loop waits. Or,
    after `/factory:approve` or `/factory:rework`, or to run more jobs, run
    `/factory:loop` (or `/factory:loop 20`).
@@ -239,7 +249,7 @@ done
 ## What it creates in your repo
 
 ```
-.gitignore                         # managed block: board.json, jobs/, dashboard.html, serve.py, inbox/, audit.md, .claude/worktrees/
+.gitignore                         # managed block: board.json, jobs/, dashboard.html, serve.py, dashboard, inbox/, audit.md, .claude/worktrees/
 .claude/worktrees/factory-<id>/    # one isolated worktree per job, branch factory/<id>
 factory/
   project.md                       # stack, test command, conventions (tracked)
@@ -249,6 +259,7 @@ factory/
   board.json                       # job state, drives the dashboard
   dashboard.html                   # copied from the plugin
   serve.py                         # dashboard server with buttons, copied from the plugin
+  dashboard                        # starts serve.py and opens the browser, copied from the plugin
   inbox/                           # button requests; done/ holds the handled ones
   jobs/<id>/                       # feature.md, spec.md, build.md, round-N/review-*.md, round-N/screenshots/, decision.md
   jobs/pr-<n>/                     # PR review: feature.md, round-N/review-*.md, review.md
@@ -262,9 +273,9 @@ factory/
 plugins/factory/
   .claude-plugin/plugin.json
   orchestrator.md                  # the whole loop: edit this to change the factory
-  skills/{init,run,next,approve,rework,audit,import,review,product,loop,inbox}/SKILL.md   # thin entry points into orchestrator.md
+  skills/{init,run,next,approve,rework,audit,import,review,product,loop,inbox,stop}/SKILL.md   # thin entry points into orchestrator.md
   agents/*.md                      # one subagent per box (planner, spec-writer, builder, 4 reviewers, approver, auditor)
-  assets/                          # dashboard.html, serve.py, backlog.md and project.md templates
+  assets/                          # dashboard.html, serve.py, dashboard, backlog.md and project.md templates
 ```
 
 `INITIAL_PROMPT.md` is the prompt this factory was built from. The lean rules
