@@ -216,6 +216,9 @@ function chips(reviews) {
   }).join("");
 }
 
+// "off": no --run and no live session, so nothing would take a click.
+const canAct = () => api && inbox.runner !== "off";
+
 function queuedFor(key, value) {
   return (inbox.pending || []).find(q => q[key] === value);
 }
@@ -225,6 +228,7 @@ function jobActions(job) {
   if (!api) return "";
   const q = queuedFor("job", job.id);
   if (q) return `<div class="queued">queued: ${esc(q.action)}</div>`;
+  if (!canAct()) return "";
   return `<div class="actions">
     <button class="btn primary act" data-act="approve" data-id="${esc(job.id)}">Approve</button>
     <button class="btn act" data-act="rework" data-id="${esc(job.id)}">Rework…</button>
@@ -261,7 +265,7 @@ function backlogCol() {
   const list = open.map(i => {
     const q = queuedFor("item", i.text);
     const act = !api ? "" : q ? `<div class="queued">queued: start</div>`
-      : `<div class="actions"><button class="btn act" data-act="start" data-item="${esc(i.text)}">Start</button></div>`;
+      : !canAct() ? "" : `<div class="actions"><button class="btn act" data-act="start" data-item="${esc(i.text)}">Start</button></div>`;
     return `<div class="item">${inline(i.text)}${act}</div>`;
   }).join("");
   return `<section class="col"><h2>Backlog <span class="agent">backlog.md</span><span class="count">${open.length}</span></h2>
@@ -278,7 +282,7 @@ function render() {
   const human = jobs.filter(j => j.stage === "needs-human");
   let html = "";
   if (human.length) {
-    html += `<section class="lane-human"><h2>Needs human <span class="agent">${api ? "buttons below" : "/factory:approve · /factory:rework"}</span><span class="count">${human.length}</span></h2>
+    html += `<section class="lane-human"><h2>Needs human <span class="agent">${canAct() ? "buttons below" : "/factory:approve · /factory:rework"}</span><span class="count">${human.length}</span></h2>
       <div class="cards">${human.map(card).join("")}</div></section>`;
   }
   html += `<div class="board">` + backlogCol() + STAGES.map(([key, label, agent]) => {
@@ -315,15 +319,16 @@ async function loadShots() {
 /* ---------- actions (factory/serve.py) ---------- */
 
 function statusText() {
-  if (!api) return "read-only · run python3 factory/serve.py for buttons";
+  if (!api) return "read-only · run factory/dashboard --run for buttons";
   const n = (inbox.pending || []).length;
   const runner = {
     session: "a factory session handles it",
     running: "claude -p /factory:inbox runs",
     idle: "waiting for runner",
     failed: "runner failed, see factory/inbox/runner.log",
-    off: "run /factory:inbox or /factory:loop",
+    off: "nothing handles them: run /factory:inbox, or restart with factory/dashboard --run",
   }[inbox.runner] || inbox.runner;
+  if (inbox.runner === "off" && !n) return "no buttons · start with factory/dashboard --run";
   return n ? `${n} queued · ${runner}` : "";
 }
 

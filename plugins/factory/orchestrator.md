@@ -102,6 +102,7 @@ worktree, branch, and base are in `<job>/feature.md`.
    Point them to the dashboard: `factory/dashboard` starts the server and opens
    http://localhost:8000/dashboard.html in the browser. Its buttons queue requests (see Inbox).
    With `--run`, the server starts `claude -p "/factory:inbox"` for them.
+   Without `--run` and without a live session, the dashboard hides the job buttons.
 
 ## Board
 

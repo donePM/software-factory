@@ -119,10 +119,12 @@ def maybe_spawn(run_args):
         log.close()
 
 
-def validate(req):
+def validate(req, run_args):
     """Return (request to store, None) or (None, error text)."""
     action = req.get("action")
     board = read_board()
+    if action in ("approve", "rework", "start") and runner_status(run_args) == "off":
+        return None, "nothing would handle it: start the dashboard with --run, or run /factory:inbox"
     jobs = {j.get("id"): j for j in board.get("jobs", [])}
     queued = pending()
     if action in ("approve", "rework"):
@@ -224,7 +226,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not isinstance(req, dict):
             return self.send_json(400, {"error": "invalid request"})
         with lock:
-            entry, err = validate(req)
+            entry, err = validate(req, self.run_args)
             if err:
                 return self.send_json(409, {"error": err})
             entry["at"] = now()

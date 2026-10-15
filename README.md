@@ -109,8 +109,8 @@ The dashboard shows:
 
 The buttons don't run anything themselves. They write one request per click
 into `factory/inbox/`. A running `/factory:loop` picks them up after each step,
-and also waits for them when only `needs-human` jobs are left. Otherwise run
-`/factory:inbox`. Or let the server start a headless session for new requests:
+and also waits for them when only `needs-human` jobs are left. Or let the server
+start a headless session for new requests:
 
 ```bash
 factory/dashboard --run -- --permission-mode acceptEdits
@@ -120,6 +120,9 @@ Arguments after `--` go to `claude -p "/factory:inbox"`. The headless session
 can't answer permission prompts, so allow the git, test, and file commands in
 your settings first. The server starts no session while another factory command
 runs (`runner` in `board.json`), and logs to `factory/inbox/runner.log`.
+Approve, Rework, and Start show only when something takes the click: the server
+runs with `--run`, or a factory session is live. Else the dashboard hides them,
+and requests that are still queued wait for `/factory:inbox`.
 `python3 -m http.server` in `factory/` still works, read-only and without buttons.
 
 ### Screenshots
