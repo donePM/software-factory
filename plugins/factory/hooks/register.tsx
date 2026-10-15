@@ -9,6 +9,7 @@ import type { AgentRow, Board, Job } from '../types'
 
 const PANE = 'factory'
 const STALE_MS = 60 * 60 * 1000 // as serve.py STALE and the orchestrator
+const HIDE_MS = 5 * 60 * 1000 // as serve.py AGENT_HIDE: an ended agent shows this long
 const EMPTY: Board = { root: '', runner: null, heartbeat: null, jobs: [], queued: {} }
 
 const agents = atom({ plugin: 'factory', key: 'agents' } as const, [] as AgentRow[])
@@ -26,6 +27,13 @@ function clock(ms: number) {
 
 const shortModel = (m: string) => m.replace(/^claude-/, '').replace(/-\d{8}$/, '')
 const shortType = (t: string) => t.replace(/^factory:/, '')
+
+// shortcut: the mod API names no model's window; this follows the model catalog
+// (2026-10: Haiku 4.5 and older 200k, the rest 1M). Wrong for a new small model.
+const windowOf = (model: string) => (/claude-(3|haiku-4)/.test(model) ? 200_000 : 1_000_000)
+
+const ctxColor = (f: number) => (f >= 0.8 ? 'red' : f >= 0.5 ? 'yellow' : 'gray')
+const tokens = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`)
 
 function runnerLive(b: Board) {
   if (!b.runner || !b.heartbeat) return false
@@ -45,6 +53,7 @@ let sessionId = ''
 let lastBoard = ''
 let dirty = false
 let ticks = 0
+let wrote = false
 const efforts: Record<string, string> = {}
 
 async function pollBoard($: EngineInterface) {
@@ -78,7 +87,8 @@ async function pollBoard($: EngineInterface) {
 
 async function writeAgents($: EngineInterface) {
   const list = await read($, agents)
-  if (!list.length) return
+  if (!list.length && !wrote) return
+  wrote = true
   const dir = `${root}/factory/agents`
   await $.process.run(['mkdir', '-p', dir])
   const body = { session: sessionId, updated: new Date().toISOString(), agents: list.slice(-40) }
@@ -131,8 +141,13 @@ export const register: Register = on => {
       ticks++
       void (async () => {
         const list = await read($, agents)
+        const t = await $.clock.now()
+        if (list.some(a => a.endedAt && t - a.endedAt > HIDE_MS)) {
+          await update($, agents, l => l.filter(a => !a.endedAt || t - a.endedAt <= HIDE_MS))
+          dirty = true
+        }
         const running = list.some(a => a.status === 'running')
-        if (running) await update($, now, () => Date.now())
+        if (running) await update($, now, () => t)
         if (!isFactory) return
         if (ticks % 2 === 0) await pollBoard($)
         if (dirty || (running && ticks % 15 === 0)) {
@@ -152,12 +167,12 @@ export const register: Register = on => {
   on('agent.spawn', async ($, e, next) => {
     const r = await next(e)
     if (r.deny !== undefined || !r.agentId) return r
-    const t = Date.now()
+    const t = await $.clock.now()
     const id = r.agentId
     await update($, agents, list => {
       const old = list.find(a => a.id === id)
       const row: AgentRow = old
-        ? { ...old, model: r.model, runSince: old.runSince ?? t, status: 'running' }
+        ? { ...old, model: r.model, runSince: old.runSince ?? t, endedAt: undefined, status: 'running' }
         : {
             id,
             type: e.subagentType,
@@ -167,6 +182,7 @@ export const register: Register = on => {
             doneMs: 0,
             runSince: t,
             status: 'running',
+            ctxWindow: windowOf(r.model),
           }
       return [...list.filter(a => a.id !== id), row].slice(-100)
     })
@@ -177,9 +193,9 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     const id = e.agentId
     if (id) {
-      const t = Date.now()
+      const t = await $.clock.now()
       await update($, agents, list =>
-        list.map((a): AgentRow => (a.id === id && !a.runSince ? { ...a, runSince: t, status: 'running' } : a)),
+        list.map((a): AgentRow => (a.id === id && !a.runSince ? { ...a, runSince: t, endedAt: undefined, status: 'running' } : a)),
       )
       dirty = true
     }
@@ -194,18 +210,26 @@ export const register: Register = on => {
       await update($, agents, list => list.map(a => (a.id === id ? { ...a, effort, model: e.model } : a)))
       dirty = true
     }
-    return yield* next(e)
+    const r = yield* next(e)
+    const u = r.usage
+    if (id && u) {
+      const ctxTokens = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
+      const ctxWindow = windowOf(u.model)
+      await update($, agents, list => list.map(a => (a.id === id ? { ...a, ctxTokens, ctxWindow } : a)))
+      dirty = true
+    }
+    return r
   })
 
   on('turn.complete', async ($, e, next) => {
     const id = e.agentId
     if (id) {
-      const t = Date.now()
+      const t = await $.clock.now()
       await update($, agents, list =>
         list.map(
           (a): AgentRow =>
             a.id === id
-              ? { ...a, doneMs: runMs(a, t), runSince: undefined, status: e.isAborted ? 'aborted' : 'done' }
+              ? { ...a, doneMs: runMs(a, t), runSince: undefined, endedAt: t, status: e.isAborted ? 'aborted' : 'done' }
               : a,
         ),
       )
@@ -219,7 +243,7 @@ export const register: Register = on => {
     const { Box, Text, Button } = ui
     const b = await read($, board)
     const list = await read($, agents)
-    const t = Math.max(await read($, now), Date.now())
+    const t = Math.max(await read($, now), await $.clock.now())
     const rework = await read($, reworkFor)
     const width = e.props.bodyColumns ?? e.viewport?.columns ?? 80
     const wide = width >= 90
@@ -295,6 +319,12 @@ export const register: Register = on => {
                 {shortModel(a.model)}
                 {a.effort ? `·${a.effort}` : ''}
               </Text>
+              {a.ctxTokens !== undefined && a.ctxWindow ? (
+                <Text color={ctxColor(a.ctxTokens / a.ctxWindow)}>
+                  {' '}
+                  {tokens(a.ctxTokens)}/{tokens(a.ctxWindow)} {Math.round((100 * a.ctxTokens) / a.ctxWindow)}%
+                </Text>
+              ) : null}
             </Text>
             <Text dimColor wrap="truncate-end">
               {'  '}

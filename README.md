@@ -115,8 +115,10 @@ The dashboard shows:
 - a **Stop loop** button in the header while a factory runner is live. It works
   like `/factory:stop`: no new job starts, and the running jobs finish.
 - an **Agents** column with the subagents of every Claude session in the repo:
-  type, task, model, effort, and run time. A running agent whose session stopped
-  writing for 2 minutes shows as lost (`?`).
+  type, task, model, effort, run time, and context fill (tokens of the last
+  response against the model's window). A running agent whose session stopped
+  writing for 2 minutes shows as lost (`?`). Ended and lost agents hide after
+  5 minutes.
 
 The buttons don't run anything themselves. They write one request per click
 into `factory/inbox/`. A running `/factory:loop` picks them up after each step,

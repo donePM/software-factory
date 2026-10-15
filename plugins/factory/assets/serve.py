@@ -43,6 +43,7 @@ MAX_NOTE = 4_000
 STALE = timedelta(minutes=60)
 AGENT_LOST = 120  # s: a running agent whose session file is older is lost
 AGENT_KEEP = 6 * 3600  # s: older session files are not shown
+AGENT_HIDE = 5 * 60  # s: an ended or lost agent shows this long (as the mod HIDE_MS)
 
 lock = threading.Lock()
 state = {"child": None, "spawned_for": None}
@@ -96,11 +97,17 @@ def agents():
                 continue
             ms = a.get("doneMs") or 0
             status = a.get("status")
+            ended = a.get("endedAt")
             if status == "running" and a.get("runSince"):
+                if age > AGENT_LOST + AGENT_HIDE:
+                    continue
                 if age > AGENT_LOST:
                     status = "lost"  # its session stopped writing: count up to the last write
                 ms += (t - age if status == "lost" else t) * 1000 - a["runSince"]
-            out.append({k: a.get(k) for k in ("type", "description", "model", "effort", "startedAt")}
+            elif isinstance(ended, (int, float)) and t - ended / 1000 > AGENT_HIDE:
+                continue
+            out.append({k: a.get(k) for k in ("type", "description", "model", "effort", "startedAt",
+                                               "ctxTokens", "ctxWindow")}
                        | {"status": status, "ms": int(max(0, ms)), "session": data.get("session")})
     out.sort(key=lambda a: (a["status"] != "running", -(a["startedAt"] or 0)))
     return out[:30]

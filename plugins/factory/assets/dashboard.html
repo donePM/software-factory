@@ -48,6 +48,13 @@
   #agents .top .time { margin-left: auto; font: 12px var(--mono); color: var(--muted); }
   #agents .model { font: 11px var(--mono); color: var(--accent); }
   #agents .task { font-size: 12px; color: var(--muted); }
+  #agents .ctx { display: flex; gap: 8px; align-items: center; font: 11px var(--mono); color: var(--muted); margin-top: 2px; }
+  #agents .ctx > span:first-child { min-width: 9ch; }
+  #agents .ctx > span:last-child { min-width: 4ch; text-align: right; }
+  #agents .ctx .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  #agents .ctx .bar span { display: block; height: 100%; background: var(--muted); }
+  #agents .ctx.warn .bar span { background: var(--accent); }
+  #agents .ctx.full .bar span { background: var(--changes); }
 
   .lane-human { background: var(--human-bg); border: 1px solid var(--human);
     border-radius: 10px; padding: 12px; margin-bottom: 20px; }
@@ -322,10 +329,14 @@ function renderAgents() {
   $("agents").innerHTML = `<h2>Agents <span class="count">${running} running</span></h2>` + list.map(a => {
     const mark = { running: "●", done: "✓", aborted: "✕", lost: "?" }[a.status] || "";
     const model = String(a.model || "").replace(/^claude-/, "").replace(/-\d{8}$/, "");
+    const tok = n => n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`;
+    const f = a.ctxWindow > 0 && a.ctxTokens >= 0 ? Math.min(1, a.ctxTokens / a.ctxWindow) : null;
+    const ctx = f === null ? "" : `<div class="ctx ${f >= .8 ? "full" : f >= .5 ? "warn" : ""}" title="context window fill">
+      <span>${tok(a.ctxTokens)}/${tok(a.ctxWindow)}</span><span class="bar"><span style="width:${(f * 100).toFixed(1)}%"></span></span><span>${Math.round(f * 100)}%</span></div>`;
     return `<div class="agent-row ${esc(a.status)}" title="${esc(a.status)}">
       <div class="top"><span>${mark}</span><span>${esc(String(a.type || "").replace(/^factory:/, ""))}</span><span class="time">${clock(a.ms)}</span></div>
       <div class="model">${esc(model)}${a.effort ? " · " + esc(a.effort) : ""}</div>
-      <div class="task">${esc(a.description)}</div></div>`;
+      ${ctx}<div class="task">${esc(a.description)}</div></div>`;
   }).join("");
 }
 

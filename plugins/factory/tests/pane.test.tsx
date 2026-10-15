@@ -14,7 +14,7 @@ const BOARD = {
 function fake(on: On) {
   const files: Record<string, string> = { [`${ROOT}/factory/board.json`]: JSON.stringify(BOARD) }
   const runs: string[][] = []
-  mock.clock(on)
+  const clock = mock.clock(on)
   const commands: string[] = []
   on('session.root', async () => ({ value: ROOT }))
   on('session.id', async () => ({ value: 'sess-1' }))
@@ -50,7 +50,7 @@ function fake(on: On) {
   on('session.start', async ($, e) => ({ cwd: e.cwd }))
   on('agent.spawn', async () => ({ agentId: 'a1', model: 'claude-sonnet-5-5' }) as never)
 
-  return { files, runs, commands }
+  return { files, runs, commands, clock }
 }
 
 test('agents show with task, model, effort, and run time; approve queues a request', async ($, on) => {
@@ -99,5 +99,43 @@ test('rework takes a note, a finished agent shows done, and the pane draws on de
   const reqs = Object.keys(files).filter(p => p.includes('/factory/inbox/') && p.endsWith('.json'))
   expect(reqs.length).toBe(1)
   expect(JSON.parse(files[reqs[0]!]!)).toMatchObject({ action: 'rework', job: 'login-form', note: 'Use the shared form component.' })
+  await ui.unmount()
+})
+
+test('an agent shows its context fill, and hides 5 minutes after it ends', async ($, on) => {
+  const { files, clock } = fake(on)
+  await clock.set(1_800_000_000_000)
+  on('turn.complete', async () => ({ text: '' }) as never)
+  on('turn.step', async function* (_$, e) {
+    return {
+      turnId: e.turnId,
+      index: e.index,
+      answer: '',
+      toolUses: [],
+      stopReason: 'end_turn',
+      usage: { model: 'claude-sonnet-5-5', input_tokens: 2000, output_tokens: 500, cache_read_input_tokens: 38000, cache_creation_input_tokens: 2000 },
+    } as never
+  })
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.agent.spawn({ subagentType: 'factory:builder', description: 'Build login-form', prompt: 'p' } as never)
+  const step = $.turn.step({ turnId: 't1', index: 0, model: 'claude-sonnet-5-5', effort: 'high', messageCount: 1, agentId: 'a1' })
+  for await (const _ of step);
+  await step.result
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'factory', surface, component: 'Pane', requestId: 'factory', props: { bodyColumns: 120 } } as never)
+    expect(await ui.find({ type: 'Text', text: /42k\/1M 4%/ })).toBeDefined()
+    await ui.unmount()
+  }
+
+  await $.turn.complete({ agentId: 'a1', isAborted: false, answer: 'done', durationMs: 5000, turnId: 't1', reason: 'answer' } as never)
+  await clock.advance(2000)
+  const written = () => JSON.parse(files[`${ROOT}/factory/agents/sess-1.json`]!).agents
+  expect(written()[0]).toMatchObject({ status: 'done', ctxTokens: 42000, ctxWindow: 1_000_000, endedAt: 1_800_000_000_000 })
+
+  await clock.advance(5 * 60 * 1000)
+  expect(written()).toEqual([])
+  const ui = await $.ui.mount({ plugin: 'factory', surface: 'terminal', component: 'Pane', requestId: 'factory', props: { bodyColumns: 120 } } as never)
+  expect(await ui.find({ type: 'Text', text: /No subagents yet/ })).toBeDefined()
   await ui.unmount()
 })

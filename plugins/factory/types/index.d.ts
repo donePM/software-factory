@@ -10,6 +10,12 @@ export type AgentRow = {
   /** start of the run in progress; absent while idle or done */
   runSince?: number
   status: 'running' | 'done' | 'aborted'
+  /** epoch ms of the last run's end; absent while running */
+  endedAt?: number
+  /** input tokens of the agent's last response: its context fill */
+  ctxTokens?: number
+  /** context window of the agent's model, in tokens */
+  ctxWindow?: number
 }
 
 export type Job = { id: string; title?: string; stage: string; note?: string }

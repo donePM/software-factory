@@ -452,7 +452,8 @@ Without `--run` and without a live session, the dashboard hides the buttons.
 The plugin also has a mod (`hooks/register.tsx`) that loads in every Claude Code
 session with the plugin. In a repo with `factory/board.json` it opens a
 **Factory** pane: the jobs, Approve and Rework for `needs-human` jobs, and the
-subagents of this session (type, task, model, effort, run time). `/factory-board`
+subagents of this session (type, task, model, effort, run time, context fill;
+ended agents hide after 5 minutes). `/factory-board`
 opens the pane again. Its buttons write inbox requests like `serve.py` does; with
 no live runner and no server with `--run`, it runs `/factory:inbox` in the
 session. It writes the agent list to `factory/agents/<session>.json`, which
