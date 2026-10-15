@@ -16,6 +16,8 @@ export type AgentRow = {
   ctxTokens?: number
   /** context window of the agent's model, in tokens */
   ctxWindow?: number
+  /** the last tool call, as `Bash: run the tests` */
+  activity?: string
 }
 
 export type Job = { id: string; title?: string; stage: string; note?: string }

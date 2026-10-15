@@ -10,6 +10,7 @@ import type { AgentRow, Board, Job } from '../types'
 const PANE = 'factory'
 const STALE_MS = 60 * 60 * 1000 // as serve.py STALE and the orchestrator
 const HIDE_MS = 5 * 60 * 1000 // as serve.py AGENT_HIDE: an ended agent shows this long
+const MAIN = 'main' // the row of the session's own loop: the orchestrator in a factory run
 const EMPTY: Board = { root: '', runner: null, heartbeat: null, jobs: [], queued: {} }
 
 const agents = atom({ plugin: 'factory', key: 'agents' } as const, [] as AgentRow[])
@@ -33,6 +34,16 @@ const shortType = (t: string) => t.replace(/^factory:/, '')
 const windowOf = (model: string) => (/claude-(3|haiku-4)/.test(model) ? 200_000 : 1_000_000)
 
 const ctxColor = (f: number) => (f >= 0.8 ? 'red' : f >= 0.5 ? 'yellow' : 'gray')
+const clip = (text: string, n: number) => (text.length > n ? `${text.slice(0, n - 1)}…` : text)
+
+// One line for a tool call: its description, else the file or pattern it works on.
+function activityOf(e: Record<string, unknown>) {
+  const pick = (k: string) => (typeof e[k] === 'string' ? (e[k] as string) : '')
+  const path = pick('file_path') || pick('notebook_path')
+  const detail = pick('description') || (path && path.split('/').pop()) || pick('pattern') || pick('command') || pick('url')
+  return clip(detail ? `${String(e.tool)}: ${detail}` : String(e.tool), 80)
+}
+
 const tokens = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`)
 
 function runnerLive(b: Board) {
@@ -54,6 +65,8 @@ let lastBoard = ''
 let dirty = false
 let ticks = 0
 let wrote = false
+let interactive = true
+let isFactory = false
 const efforts: Record<string, string> = {}
 
 async function pollBoard($: EngineInterface) {
@@ -131,7 +144,8 @@ export const register: Register = on => {
     const out = await next(e)
     root = await $.session.root()
     sessionId = await $.session.id()
-    const isFactory = await $.fs.exists(`${root}/factory/board.json`)
+    interactive = e.isInteractive
+    isFactory = await $.fs.exists(`${root}/factory/board.json`)
     await $.command.register({ name: 'factory-board', description: 'Show the factory board and its agents in a pane' })
     if (isFactory) {
       await pollBoard($)
@@ -192,48 +206,69 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     const id = e.agentId
+    const t = await $.clock.now()
     if (id) {
-      const t = await $.clock.now()
       await update($, agents, list =>
         list.map((a): AgentRow => (a.id === id && !a.runSince ? { ...a, runSince: t, endedAt: undefined, status: 'running' } : a)),
       )
-      dirty = true
+    } else {
+      // the session's own turn: in a headless runner the orchestrator works here between agents
+      const description = clip(e.text.trim().split('\n')[0] ?? '', 80)
+      await update($, agents, list => {
+        const old = list.find(a => a.id === MAIN)
+        const row: AgentRow = old
+          ? { ...old, description, runSince: t, endedAt: undefined, activity: undefined, status: 'running' }
+          : { id: MAIN, type: interactive ? 'session' : 'headless', description, model: '', startedAt: t, doneMs: 0, runSince: t, status: 'running' }
+        return [...list.filter(a => a.id !== MAIN), row].slice(-100)
+      })
     }
+    dirty = true
+    return next(e)
+  })
+
+  on('tool.call', async ($, e, next) => {
+    const id = e.agentId ?? MAIN
+    const activity = activityOf(e as unknown as Record<string, unknown>)
+    await update($, agents, list => list.map(a => (a.id === id ? { ...a, activity } : a)))
+    dirty = true
     return next(e)
   })
 
   on('turn.step', async function* ($, e, next) {
-    const id = e.agentId
+    const id = e.agentId ?? MAIN
     const effort = e.effort === undefined ? '' : String(e.effort)
-    if (id && effort && efforts[id] !== effort) {
+    if (effort && efforts[id] !== effort) {
       efforts[id] = effort
       await update($, agents, list => list.map(a => (a.id === id ? { ...a, effort, model: e.model } : a)))
       dirty = true
     }
     const r = yield* next(e)
     const u = r.usage
-    if (id && u) {
+    if (u) {
       const ctxTokens = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
       const ctxWindow = windowOf(u.model)
-      await update($, agents, list => list.map(a => (a.id === id ? { ...a, ctxTokens, ctxWindow } : a)))
+      await update($, agents, list => list.map(a => (a.id === id ? { ...a, ctxTokens, ctxWindow, model: a.model || u.model } : a)))
       dirty = true
     }
     return r
   })
 
   on('turn.complete', async ($, e, next) => {
-    const id = e.agentId
-    if (id) {
-      const t = await $.clock.now()
-      await update($, agents, list =>
-        list.map(
-          (a): AgentRow =>
-            a.id === id
-              ? { ...a, doneMs: runMs(a, t), runSince: undefined, endedAt: t, status: e.isAborted ? 'aborted' : 'done' }
-              : a,
-        ),
-      )
-      dirty = true
+    const id = e.agentId ?? MAIN
+    const t = await $.clock.now()
+    await update($, agents, list =>
+      list.map(
+        (a): AgentRow =>
+          a.id === id
+            ? { ...a, doneMs: runMs(a, t), runSince: undefined, endedAt: t, status: e.isAborted ? 'aborted' : 'done' }
+            : a,
+      ),
+    )
+    dirty = true
+    // a headless run may exit right after its turn: write now, not on the next tick
+    if (isFactory && id === MAIN) {
+      dirty = false
+      await writeAgents($)
     }
     return next(e)
   })
@@ -307,7 +342,7 @@ export const register: Register = on => {
         <Text bold>
           Agents <Text dimColor>{list.filter(a => a.status === 'running').length} running</Text>
         </Text>
-        {!list.length && <Text dimColor>No subagents yet.</Text>}
+        {!list.length && <Text dimColor>No agents yet.</Text>}
         {shown.map(a => (
           <Box key={`ag-${a.id}`} flexDirection="column">
             <Text>
@@ -330,6 +365,11 @@ export const register: Register = on => {
               {'  '}
               {a.description}
             </Text>
+            {a.status === 'running' && a.activity && (
+              <Text color="cyan" wrap="truncate-end">
+                {'  '}↳ {a.activity}
+              </Text>
+            )}
           </Box>
         ))}
       </Box>

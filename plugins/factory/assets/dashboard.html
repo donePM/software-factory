@@ -48,6 +48,7 @@
   #agents .top .time { margin-left: auto; font: 12px var(--mono); color: var(--muted); }
   #agents .model { font: 11px var(--mono); color: var(--accent); }
   #agents .task { font-size: 12px; color: var(--muted); }
+  #agents .activity { font: 11px var(--mono); color: var(--pass); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #agents .ctx { display: flex; gap: 8px; align-items: center; font: 11px var(--mono); color: var(--muted); margin-top: 2px; }
   #agents .ctx > span:first-child { min-width: 9ch; }
   #agents .ctx > span:last-child { min-width: 4ch; text-align: right; }
@@ -336,7 +337,7 @@ function renderAgents() {
     return `<div class="agent-row ${esc(a.status)}" title="${esc(a.status)}">
       <div class="top"><span>${mark}</span><span>${esc(String(a.type || "").replace(/^factory:/, ""))}</span><span class="time">${clock(a.ms)}</span></div>
       <div class="model">${esc(model)}${a.effort ? " · " + esc(a.effort) : ""}</div>
-      ${ctx}<div class="task">${esc(a.description)}</div></div>`;
+      ${ctx}<div class="task">${esc(a.description)}</div>${a.status === "running" && a.activity ? `<div class="activity" title="${esc(a.activity)}">↳ ${esc(a.activity)}</div>` : ""}</div>`;
   }).join("");
 }
 

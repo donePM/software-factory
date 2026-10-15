@@ -47,7 +47,8 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
   `project.md` templates (`{{…}}` placeholders, filled in by inspecting the repo).
 - Mod: `plugins/factory/hooks/register.tsx` (`hooks/hooks.json`, state types in
   `types/index.d.ts`, tests in `tests/`) opens a Factory pane with the board,
-  Approve/Rework, and the session's subagents (model, effort, run time). It writes
+  Approve/Rework, and the session's subagents plus its own loop (model, effort,
+  run time, context fill, last tool call). It writes
   inbox requests and `factory/agents/<session>.json`, which `serve.py` adds to
   `/api/inbox` as `agents` for the dashboard. Check it with
   `claude plugin validate plugins/factory` and `claude plugin test plugins/factory`.

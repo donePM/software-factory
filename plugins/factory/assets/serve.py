@@ -104,10 +104,10 @@ def agents():
                 if age > AGENT_LOST:
                     status = "lost"  # its session stopped writing: count up to the last write
                 ms += (t - age if status == "lost" else t) * 1000 - a["runSince"]
-            elif isinstance(ended, (int, float)) and t - ended / 1000 > AGENT_HIDE:
-                continue
+            elif (t - ended / 1000 if isinstance(ended, (int, float)) else age) > AGENT_HIDE:
+                continue  # ended: by its end time, or by its session's last write
             out.append({k: a.get(k) for k in ("type", "description", "model", "effort", "startedAt",
-                                               "ctxTokens", "ctxWindow")}
+                                               "ctxTokens", "ctxWindow", "activity")}
                        | {"status": status, "ms": int(max(0, ms)), "session": data.get("session")})
     out.sort(key=lambda a: (a["status"] != "running", -(a["startedAt"] or 0)))
     return out[:30]

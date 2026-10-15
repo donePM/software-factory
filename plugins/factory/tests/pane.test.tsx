@@ -136,6 +136,39 @@ test('an agent shows its context fill, and hides 5 minutes after it ends', async
   await clock.advance(5 * 60 * 1000)
   expect(written()).toEqual([])
   const ui = await $.ui.mount({ plugin: 'factory', surface: 'terminal', component: 'Pane', requestId: 'factory', props: { bodyColumns: 120 } } as never)
-  expect(await ui.find({ type: 'Text', text: /No subagents yet/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /No agents yet/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('a headless session shows its own loop with the last tool call', async ($, on) => {
+  const { files, clock } = fake(on)
+  await clock.set(1_800_000_000_000)
+  on('turn.start', async ($, e) => ({ turnId: e.turnId }))
+  on('tool.call', async () => ({ result: '', text: '' }) as never)
+  on('turn.step', async function* (_$, e) {
+    return {
+      turnId: e.turnId,
+      index: e.index,
+      answer: '',
+      toolUses: [],
+      stopReason: 'tool_use',
+      usage: { model: 'claude-opus-5-5', input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 150000, cache_creation_input_tokens: 0 },
+    } as never
+  })
+  await $.session.start({ cwd: ROOT, surface: null, isInteractive: false } as never)
+  await $.turn.start({ text: '/factory:inbox', turnId: 'm1' })
+  const step = $.turn.step({ turnId: 'm1', index: 0, model: 'claude-opus-5-5', messageCount: 1 })
+  for await (const _ of step);
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'u1', command: 'git merge --no-ff factory/034', description: 'Merge job 034' } as never)
+  await clock.advance(1000)
+  const row = JSON.parse(files[`${ROOT}/factory/agents/sess-1.json`]!).agents[0]
+  expect(row).toMatchObject({
+    id: 'main',
+    type: 'headless',
+    description: '/factory:inbox',
+    model: 'claude-opus-5-5',
+    status: 'running',
+    ctxTokens: 150010,
+    activity: 'Bash: Merge job 034',
+  })
 })

@@ -115,8 +115,10 @@ The dashboard shows:
 - a **Stop loop** button in the header while a factory runner is live. It works
   like `/factory:stop`: no new job starts, and the running jobs finish.
 - an **Agents** column with the subagents of every Claude session in the repo:
-  type, task, model, effort, run time, and context fill (tokens of the last
-  response against the model's window). A running agent whose session stopped
+  type, task, model, effort, run time, context fill (tokens of the last
+  response against the model's window), and the last tool call of a running
+  agent. A headless runner (`claude -p /factory:inbox`) shows as a `headless`
+  row too, so its own work between agents (merges, board updates) is visible. A running agent whose session stopped
   writing for 2 minutes shows as lost (`?`). Ended and lost agents hide after
   5 minutes.
 
