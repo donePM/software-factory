@@ -440,11 +440,12 @@ Without `--run` and without a live session, the dashboard hides the buttons.
    whether to add them to `.claude/settings.local.json` (personal, not
    committed). Add them only on yes. On no, go on, and tell the user that the
    runner fails where a rule is missing (`factory/inbox/runner.log`).
-4. Run `factory/dashboard --bg --run -- --permission-mode acceptEdits`. It
-   starts the server detached (pid in `factory/inbox/server.info`, output in
-   `factory/inbox/serve.log`), or uses the one that runs, and opens the browser.
-   If it says the running server has no `--run`, run `python3 factory/serve.py --stop`
-   and step 4 again.
+4. Run `factory/dashboard --bg --run -- --permission-mode acceptEdits --add-dir <plugin>`.
+   `--add-dir` lets the runner read `orchestrator.md` and the agents, which lie
+   outside the repo. It starts the server detached (pid in `factory/inbox/server.info`,
+   output in `factory/inbox/serve.log`), or uses the one that runs, and opens the
+   browser. If it says the running server has no `--run` or other claude args,
+   run `python3 factory/serve.py --stop` and step 4 again.
 5. Tell the user the URL from the output, and that `/factory:dashboard stop`
    stops the server.
 
@@ -462,9 +463,11 @@ session. It writes the agent list to `factory/agents/<session>.json`, which
 
 `/factory:loop [max]` (default max = 10 started jobs; `/factory:product` runs it
 with no max):
-0. Run `python3 factory/serve.py --bg --run -- --permission-mode acceptEdits`.
+0. Run `python3 factory/serve.py --bg --run -- --permission-mode acceptEdits --add-dir <plugin>`.
    It starts the dashboard server when none runs, without a browser. Then a
-   button click after the loop ends still starts a runner.
+   button click after the loop ends still starts a runner. If it says the
+   running server has no `--run` or other claude args, run
+   `python3 factory/serve.py --stop` and step 0 again.
 1. Fill the free slots (see Parallel jobs): Inbox requests first, then open
    backlog items. A `needs-human` job doesn't stop the loop. Only items that
    need it wait.

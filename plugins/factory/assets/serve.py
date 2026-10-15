@@ -123,6 +123,8 @@ def start_bg(args):
     if info:
         if args.run and not info.get("run"):
             print("The running server has no --run. Stop it with --stop, then start it again.")
+        elif args.run and info.get("args") != args.claude_args:
+            print("The running server has other claude args. Stop it with --stop, then start it again.")
         return info
     argv = sys.argv[1:]
     cut = argv.index("--") if "--" in argv else len(argv)
@@ -347,7 +349,8 @@ def main():
     print("Buttons queue requests in factory/inbox/. " + (
         "New requests start claude -p /factory:inbox." if args.run
         else "Run /factory:inbox or /factory:loop in Claude Code to handle them."))
-    INFO.write_text(json.dumps({"pid": os.getpid(), "url": url, "run": args.run}) + "\n")
+    INFO.write_text(json.dumps({"pid": os.getpid(), "url": url, "run": args.run,
+                               "args": args.claude_args if args.run else None}) + "\n")
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     if args.open:
         webbrowser.open(url)

@@ -96,7 +96,7 @@ Use this in an existing git repo. You decide each feature.
 ### Dashboard
 
 `/factory:dashboard` is the easy way: it checks the runner permissions (see
-below), then runs `factory/dashboard --bg --run -- --permission-mode acceptEdits`.
+below), then runs `factory/dashboard --bg --run -- --permission-mode acceptEdits --add-dir <plugin root>`.
 `/factory:init` and `/factory:loop` start it too. `/factory:dashboard stop`
 stops it.
 
@@ -124,12 +124,13 @@ and also waits for them when only `needs-human` jobs are left. Or let the server
 start a headless session for new requests:
 
 ```bash
-factory/dashboard --run -- --permission-mode acceptEdits
+factory/dashboard --run -- --permission-mode acceptEdits --add-dir <plugin root>
 ```
 
 Arguments after `--` go to `claude -p "/factory:inbox"`. The headless session
 can't answer permission prompts, so allow the git, test, and file commands in
-your settings first. The server starts no session while another factory command
+your settings first. It also can't read files outside the repo without
+`--add-dir`: the plugin root holds `orchestrator.md` and the agents. The server starts no session while another factory command
 runs (`runner` in `board.json`), and logs to `factory/inbox/runner.log`.
 Approve, Rework, and Start show only when something takes the click: the server
 runs with `--run`, or a factory session is live. Else the dashboard hides them,
