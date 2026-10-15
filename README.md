@@ -72,8 +72,8 @@ Use this in an existing git repo. You decide each feature.
    with Must / Should / Nice findings. You pick the numbers to queue.
 7. **Review a pull request.** `/factory:review <pr>` runs the 4 reviewers on a
    GitHub PR and writes a comment you can post (see below).
-8. **Watch and steer it.** `factory/dashboard` starts the server and opens
-   http://localhost:8000/dashboard.html in the browser (see Dashboard).
+8. **Watch and steer it.** `/factory:dashboard` starts the server in the
+   background and opens http://localhost:8000/dashboard.html (see Dashboard).
 9. **Push.** Merges stay local in `main`. The factory never pushes. Review the
    merges, then push them yourself.
 
@@ -90,13 +90,21 @@ Use this in an existing git repo. You decide each feature.
 | `/factory:product <idea>` | Plans a product, asks you to confirm, then runs the loop (Guide 2) |
 | `/factory:loop [max]` | Runs the backlog until it is empty, up to 4 jobs at a time (Guide 2) |
 | `/factory:stop` | Stops the running loop after its running jobs: no new jobs start |
+| `/factory:dashboard [stop]` | Starts the dashboard server in the background with the inbox runner, or stops it |
 | `/factory:inbox` | Handles the requests from the dashboard buttons |
 
 ### Dashboard
 
-`factory/dashboard [--port 8000]` serves `factory/` on 127.0.0.1 only and opens
-the dashboard in the browser. It runs `python3 factory/serve.py --open`, so
-both take the same arguments.
+`/factory:dashboard` is the easy way: it checks the runner permissions (see
+below), then runs `factory/dashboard --bg --run -- --permission-mode acceptEdits`.
+`/factory:init` and `/factory:loop` start it too. `/factory:dashboard stop`
+stops it.
+
+`factory/dashboard [--bg | --stop] [--port 8000]` serves `factory/` on 127.0.0.1
+only and opens the dashboard in the browser. It runs `python3 factory/serve.py --open`,
+so both take the same arguments. `--bg` runs the server detached (pid in
+`factory/inbox/server.info`, output in `factory/inbox/serve.log`), or opens the
+one that runs. `--stop` stops it.
 The dashboard shows:
 - a **Backlog** column with the open items of `factory/backlog.md`. **Start**
   sends an item to the spec writer.

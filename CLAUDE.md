@@ -26,7 +26,7 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
 
 - `plugins/factory/orchestrator.md` holds the whole loop: Init, Preflight, steps 1
   to 7, Rework, Audit, PR review, Product, Parallel jobs, Inbox, Loop, Stop, Tickets, and the `board.json` schema. The skills
-  (`/factory:init|run|next|approve|rework|audit|import|review|product|loop|inbox|stop`)
+  (`/factory:init|run|next|approve|rework|audit|import|review|product|loop|inbox|stop|dashboard`)
   are thin entry points. Each passes `${CLAUDE_PLUGIN_ROOT}` and tells the session
   to read `orchestrator.md`, because Claude Code namespaces plugin skills: one skill
   named `factory` would be `/factory:factory`.

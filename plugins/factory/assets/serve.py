@@ -8,6 +8,8 @@ This server never writes board.json, backlog.md, or job files.
 Run it from anywhere:
     python3 factory/serve.py [--port 8000] [--open]
     python3 factory/serve.py --run [-- <extra claude args>]
+    python3 factory/serve.py --bg [...]   # in the background; opens a running one
+    python3 factory/serve.py --stop       # stop the background server
     factory/dashboard [...]          # the same, with --open
 
 With --run, a new request starts `claude -p "/factory:inbox"` in the repo root
@@ -18,8 +20,11 @@ import json
 import os
 import re
 import secrets
+import signal
 import subprocess
+import sys
 import threading
+import time
 import webbrowser
 from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -29,6 +34,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 INBOX = HERE / "inbox"
 LOG = INBOX / "runner.log"
+INFO = INBOX / "server.info"  # not *.json: pending() reads those
+SERVE_LOG = INBOX / "serve.log"
 JOB_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,80}$")
 MAX_BODY = 16_000
 MAX_NOTE = 4_000
@@ -67,6 +74,41 @@ def pending():
         req["file"] = p.name
         out.append(req)
     return out
+
+
+def running_server():
+    """The background server's info, or None when none runs."""
+    # shortcut: kill(pid, 0) trusts the pid; a reused pid looks alive, delete server.info then
+    try:
+        info = json.loads(INFO.read_text())
+        os.kill(info["pid"], 0)
+        return info
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def start_bg(args):
+    """Start this server detached, or find the one that runs. Return its info."""
+    info = running_server()
+    if info:
+        if args.run and not info.get("run"):
+            print("The running server has no --run. Stop it with --stop, then start it again.")
+        return info
+    argv = sys.argv[1:]
+    cut = argv.index("--") if "--" in argv else len(argv)
+    argv = [a for a in argv[:cut] if a not in ("--bg", "--open")] + argv[cut:]
+    with open(SERVE_LOG, "a") as log:
+        subprocess.Popen(
+            [sys.executable, "-u", str(Path(__file__).resolve()), *argv],
+            cwd=ROOT, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    for _ in range(50):
+        time.sleep(0.1)
+        info = running_server()
+        if info:
+            return info
+    raise SystemExit(f"The dashboard server did not start. See {SERVE_LOG}.")
 
 
 def session_active(board):
@@ -244,9 +286,26 @@ def main():
     ap.add_argument("--run", action="store_true",
                     help='start `claude -p "/factory:inbox"` for new requests when no factory session runs')
     ap.add_argument("--open", action="store_true", help="open the dashboard in the browser")
+    ap.add_argument("--bg", action="store_true",
+                    help="run in the background; when a server already runs, use that one")
+    ap.add_argument("--stop", action="store_true", help="stop the background server")
     ap.add_argument("claude_args", nargs="*", help="extra args for claude, after --")
     args = ap.parse_args()
     INBOX.mkdir(exist_ok=True)
+    if args.stop:
+        info = running_server()
+        if info:
+            os.kill(info["pid"], signal.SIGTERM)
+        INFO.unlink(missing_ok=True)
+        print("Stopped the dashboard server." if info else "No dashboard server runs.")
+        return
+    if args.bg:
+        info = start_bg(args)
+        print(f"Factory dashboard: {info['url']} (pid {info['pid']}, "
+              f"{'with' if info.get('run') else 'without'} --run, log {SERVE_LOG.relative_to(ROOT)})")
+        if args.open:
+            webbrowser.open(info["url"])
+        return
     Handler.run_args = args.claude_args if args.run else None
     Handler.allowed = {f"localhost:{args.port}", f"127.0.0.1:{args.port}"}
     url = f"http://localhost:{args.port}/dashboard.html"
@@ -258,12 +317,20 @@ def main():
     print("Buttons queue requests in factory/inbox/. " + (
         "New requests start claude -p /factory:inbox." if args.run
         else "Run /factory:inbox or /factory:loop in Claude Code to handle them."))
+    INFO.write_text(json.dumps({"pid": os.getpid(), "url": url, "run": args.run}) + "\n")
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     if args.open:
         webbrowser.open(url)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        try:
+            if json.loads(INFO.read_text()).get("pid") == os.getpid():
+                INFO.unlink()
+        except (OSError, ValueError):
+            pass
 
 
 if __name__ == "__main__":

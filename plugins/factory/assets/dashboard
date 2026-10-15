@@ -1,5 +1,6 @@
 #!/bin/sh
 # Start the factory dashboard server and open the dashboard in the browser.
-# Usage: factory/dashboard [--port 8000] [--run [-- <claude args>]]
+# Usage: factory/dashboard [--bg | --stop] [--port 8000] [--run [-- <claude args>]]
+#   --bg runs the server in the background, or opens the one that runs.
 command -v python3 >/dev/null 2>&1 || { echo "factory/dashboard needs python3" >&2; exit 1; }
 exec python3 "$(dirname "$0")/serve.py" --open "$@"

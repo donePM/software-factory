@@ -319,16 +319,16 @@ async function loadShots() {
 /* ---------- actions (factory/serve.py) ---------- */
 
 function statusText() {
-  if (!api) return "read-only · run factory/dashboard --run for buttons";
+  if (!api) return "read-only · run /factory:dashboard for buttons";
   const n = (inbox.pending || []).length;
   const runner = {
     session: "a factory session handles it",
     running: "claude -p /factory:inbox runs",
     idle: "waiting for runner",
     failed: "runner failed, see factory/inbox/runner.log",
-    off: "nothing handles them: run /factory:inbox, or restart with factory/dashboard --run",
+    off: "nothing handles them: run /factory:inbox, or restart with /factory:dashboard",
   }[inbox.runner] || inbox.runner;
-  if (inbox.runner === "off" && !n) return "no buttons · start with factory/dashboard --run";
+  if (inbox.runner === "off" && !n) return "no buttons · restart with /factory:dashboard";
   return n ? `${n} queued · ${runner}` : "";
 }
 

@@ -20,6 +20,7 @@ write product code or another agent's file.
 | `/factory:loop [max]` | Run the backlog, up to 4 jobs at a time, until it is empty (see Loop) |
 | `/factory:inbox` | Handle the requests from the dashboard buttons (see Inbox) |
 | `/factory:stop` | Ask the running Loop or Inbox to stop after its running jobs (see Stop) |
+| `/factory:dashboard [stop]` | Start the dashboard server in the background, with buttons (see Dashboard) |
 
 Paths: `<plugin>` is the plugin root that the command passed you (assets live in
 `<plugin>/assets/`). `<root>` is `git rev-parse --show-toplevel` of the main checkout.
@@ -99,10 +100,8 @@ worktree, branch, and base are in `<job>/feature.md`.
      (see Tickets), and its site URL. Write "none" for a source you can't reach.
 5. Tell the user what changed. Suggest committing `.gitignore`,
    `factory/backlog.md` and `factory/project.md`. Don't commit yourself.
-   Point them to the dashboard: `factory/dashboard` starts the server and opens
-   http://localhost:8000/dashboard.html in the browser. Its buttons queue requests (see Inbox).
-   With `--run`, the server starts `claude -p "/factory:inbox"` for them.
-   Without `--run` and without a live session, the dashboard hides the job buttons.
+6. Run Dashboard. It starts the server in the background and opens the
+   dashboard in the browser.
 
 ## Board
 
@@ -423,10 +422,38 @@ items. The last report is as in Loop step 5.
 Every other command: if `factory/inbox/` has requests at the end, tell the user
 to run `/factory:inbox`.
 
+## Dashboard
+
+`/factory:dashboard` doesn't run Preflight. `factory/serve.py` serves the
+dashboard. Its buttons queue requests (see Inbox). With `--run`, the server
+starts `claude -p "/factory:inbox"` for them when no factory session runs.
+Without `--run` and without a live session, the dashboard hides the buttons.
+1. `factory/serve.py` is missing: tell the user to run `/factory:init`, and stop.
+2. Argument `stop`: run `python3 factory/serve.py --stop`, report, and stop.
+3. **Runner permissions.** The headless runner can't answer permission prompts.
+   `--permission-mode acceptEdits` covers file edits. Bash commands need allow
+   rules in `<root>/.claude/settings.json` or `<root>/.claude/settings.local.json`
+   (`permissions.allow`): `Bash(git:*)`, the install, test, and lint commands from
+   `factory/project.md`, and `Bash(mkdir:*)`, `Bash(mv:*)`, `Bash(cp:*)`,
+   `Bash(chmod:*)`, `Bash(ls:*)`. List the missing rules and ask the user once
+   whether to add them to `.claude/settings.local.json` (personal, not
+   committed). Add them only on yes. On no, go on, and tell the user that the
+   runner fails where a rule is missing (`factory/inbox/runner.log`).
+4. Run `factory/dashboard --bg --run -- --permission-mode acceptEdits`. It
+   starts the server detached (pid in `factory/inbox/server.info`, output in
+   `factory/inbox/serve.log`), or uses the one that runs, and opens the browser.
+   If it says the running server has no `--run`, run `python3 factory/serve.py --stop`
+   and step 4 again.
+5. Tell the user the URL from the output, and that `/factory:dashboard stop`
+   stops the server.
+
 ## Loop
 
 `/factory:loop [max]` (default max = 10 started jobs; `/factory:product` runs it
 with no max):
+0. Run `python3 factory/serve.py --bg --run -- --permission-mode acceptEdits`.
+   It starts the dashboard server when none runs, without a browser. Then a
+   button click after the loop ends still starts a runner.
 1. Fill the free slots (see Parallel jobs): Inbox requests first, then open
    backlog items. A `needs-human` job doesn't stop the loop. Only items that
    need it wait.
