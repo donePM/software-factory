@@ -114,6 +114,9 @@ The dashboard shows:
 - a drawer with every job file, when you click a card.
 - a **Stop loop** button in the header while a factory runner is live. It works
   like `/factory:stop`: no new job starts, and the running jobs finish.
+- an **Agents** column with the subagents of every Claude session in the repo:
+  type, task, model, effort, and run time. A running agent whose session stopped
+  writing for 2 minutes shows as lost (`?`).
 
 The buttons don't run anything themselves. They write one request per click
 into `factory/inbox/`. A running `/factory:loop` picks them up after each step,
@@ -132,6 +135,21 @@ Approve, Rework, and Start show only when something takes the click: the server
 runs with `--run`, or a factory session is live. Else the dashboard hides them,
 and requests that are still queued wait for `/factory:inbox`.
 `python3 -m http.server` in `factory/` still works, read-only and without buttons.
+
+### Factory pane in Claude Code
+
+The plugin brings a mod. In a repo with `factory/board.json`, each Claude Code
+session (terminal, desktop, VS Code) opens a **Factory** pane: the jobs, with
+**Approve** and **Rework…** for `needs-human` jobs, and on the right the
+subagents of this session with type, task, model, effort, and run time. Below
+about 90 columns the two parts stack. `/factory-board` opens the pane again. In
+the terminal, the pane docks as a side bar in the fullscreen layout when the
+window is wide enough (about 110 columns).
+
+The pane's buttons write the same inbox requests as the dashboard. When no loop
+runs and no dashboard server runs with `--run`, the pane starts `/factory:inbox`
+in the session. The pane writes its agent list to `factory/agents/<session>.json`
+for the dashboard's Agents column.
 
 ### Screenshots
 

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The source of the `factory` Claude Code plugin plus a local marketplace
 (`.claude-plugin/marketplace.json`) that publishes it. The plugin lives in
 `plugins/factory/`. There's no build step and no product code: everything is
-markdown, one HTML file, one stdlib Python server, one sh launcher, and two JSON manifests. `README.md` covers install and
+markdown, one HTML file, one stdlib Python server, one sh launcher, one TSX mod (with its types and tests), and a few JSON manifests. `README.md` covers install and
 usage. `INITIAL_PROMPT.md` holds the original design brief.
 
 ## Commands
@@ -45,6 +45,12 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
 - `plugins/factory/assets/` holds what `/factory:init` copies into a target repo:
   `dashboard.html`, `serve.py`, and the `dashboard` launcher (always overwritten), and the `backlog.md` and
   `project.md` templates (`{{…}}` placeholders, filled in by inspecting the repo).
+- Mod: `plugins/factory/hooks/register.tsx` (`hooks/hooks.json`, state types in
+  `types/index.d.ts`, tests in `tests/`) opens a Factory pane with the board,
+  Approve/Rework, and the session's subagents (model, effort, run time). It writes
+  inbox requests and `factory/agents/<session>.json`, which `serve.py` adds to
+  `/api/inbox` as `agents` for the dashboard. Check it with
+  `claude plugin validate plugins/factory` and `claude plugin test plugins/factory`.
 - Dashboard buttons: `serve.py` (127.0.0.1 only) validates a click and writes
   `factory/inbox/<time>.json` (`approve|rework|start`). The orchestrator claims
   requests by moving them to `inbox/done/` (Inbox section). `serve.py --run`
@@ -62,10 +68,11 @@ To test end to end, set up a throwaway repo with a bare `origin`, then run
   created from the local default branch when it contains `origin/<default>`
   (it then holds unpushed factory merges), else from `origin/<default>`. Agents run commands in the worktree and write job
   files in the main checkout.
-- `serve.py` never writes `board.json`, `backlog.md`, or job files: the
-  orchestrator stays their only writer. Request JSON fields and board
-  `runner`/`heartbeat` are shared by `serve.py`, `dashboard.html`, and the
-  orchestrator: change them together.
+- `serve.py` and the mod never write `board.json`, `backlog.md`, or job files:
+  the orchestrator stays their only writer. Request JSON fields and board
+  `runner`/`heartbeat` are shared by `serve.py`, `dashboard.html`, the mod, and the
+  orchestrator: change them together. So is the `factory/agents/*.json` format
+  (mod writes, `serve.py` reads).
 - Screenshots: ui-reviewer writes `round-N/screenshots/*.png` and lists them as
   `![…](screenshots/…)` under `## Screenshots` in `review-ui.md`. The dashboard
   parses those image lines.

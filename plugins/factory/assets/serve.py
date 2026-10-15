@@ -33,6 +33,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 INBOX = HERE / "inbox"
+AGENTS = HERE / "agents"  # one file per Claude session, written by the factory mod
 LOG = INBOX / "runner.log"
 INFO = INBOX / "server.info"  # not *.json: pending() reads those
 SERVE_LOG = INBOX / "serve.log"
@@ -40,6 +41,8 @@ JOB_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,80}$")
 MAX_BODY = 16_000
 MAX_NOTE = 4_000
 STALE = timedelta(minutes=60)
+AGENT_LOST = 120  # s: a running agent whose session file is older is lost
+AGENT_KEEP = 6 * 3600  # s: older session files are not shown
 
 lock = threading.Lock()
 state = {"child": None, "spawned_for": None}
@@ -74,6 +77,33 @@ def pending():
         req["file"] = p.name
         out.append(req)
     return out
+
+
+def agents():
+    """Subagents of all sessions, newest first, with their run time in ms."""
+    t = time.time()
+    out = []
+    for p in AGENTS.glob("*.json"):
+        try:
+            age = t - p.stat().st_mtime
+            data = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        if age > AGENT_KEEP or not isinstance(data, dict):
+            continue
+        for a in data.get("agents") or []:
+            if not isinstance(a, dict):
+                continue
+            ms = a.get("doneMs") or 0
+            status = a.get("status")
+            if status == "running" and a.get("runSince"):
+                if age > AGENT_LOST:
+                    status = "lost"  # its session stopped writing: count up to the last write
+                ms += (t - age if status == "lost" else t) * 1000 - a["runSince"]
+            out.append({k: a.get(k) for k in ("type", "description", "model", "effort", "startedAt")}
+                       | {"status": status, "ms": int(max(0, ms)), "session": data.get("session")})
+    out.sort(key=lambda a: (a["status"] != "running", -(a["startedAt"] or 0)))
+    return out[:30]
 
 
 def running_server():
@@ -246,7 +276,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not self.local_only():
                 return self.send_json(403, {"error": "forbidden"})
             maybe_spawn(self.run_args)
-            return self.send_json(200, {"pending": pending(), "runner": runner_status(self.run_args)})
+            return self.send_json(200, {"pending": pending(), "runner": runner_status(self.run_args), "agents": agents()})
         if self.path.startswith("/inbox/"):
             return self.send_json(404, {"error": "not found"})
         super().do_GET()

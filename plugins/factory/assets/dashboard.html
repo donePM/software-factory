@@ -37,6 +37,17 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pass); }
   .dot.off { background: var(--changes); }
   main { padding: 20px 24px 40px; }
+  .layout { display: flex; align-items: flex-start; }
+  .layout main { flex: 1; min-width: 0; }
+  #agents { width: 300px; flex: none; padding: 20px 24px 40px 0; }
+  #agents .agent-row { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 10px; margin-bottom: 8px; box-shadow: var(--shadow); overflow-wrap: anywhere; }
+  #agents .agent-row.running { border-color: var(--pass); }
+  #agents .agent-row.lost, #agents .agent-row.aborted { border-color: var(--changes); }
+  #agents .top { display: flex; gap: 8px; align-items: baseline; font-weight: 600; }
+  #agents .top .time { margin-left: auto; font: 12px var(--mono); color: var(--muted); }
+  #agents .model { font: 11px var(--mono); color: var(--accent); }
+  #agents .task { font-size: 12px; color: var(--muted); }
 
   .lane-human { background: var(--human-bg); border: 1px solid var(--human);
     border-radius: 10px; padding: 12px; margin-bottom: 20px; }
@@ -149,6 +160,8 @@
     .lane-human .card { width: 100%; }
     .empty-col { height: 36px; }
     .col { min-height: 0; }
+    .layout { flex-direction: column; align-items: stretch; }
+    #agents { width: 100%; padding: 0 16px 40px; }
   }
 </style>
 </head>
@@ -158,7 +171,7 @@
   <span class="status"><span class="dot" id="dot"></span><span id="status">connecting…</span></span>
   <button class="btn act" data-act="stop" id="stop" hidden>Stop loop</button>
 </header>
-<main id="app"></main>
+<div class="layout"><main id="app"></main><section id="agents" hidden></section></div>
 
 <div class="scrim" id="scrim"></div>
 <aside id="drawer" aria-hidden="true">
@@ -197,7 +210,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 let board = { jobs: [] }, lastJson = "", openJob = null, openFile = null;
-let backlog = "", api = false, inbox = { pending: [], runner: "off" }, lastInbox = "";
+let backlog = "", api = false, inbox = { pending: [], runner: "off" }, lastInbox = "", agentList = [];
 const shots = {}; // job id → { key, list: [{ src, alt }] }
 
 function ago(iso) {
@@ -294,6 +307,28 @@ function render() {
   $("app").innerHTML = html;
 }
 
+/* ---------- agents (factory/agents/*.json, written by the factory mod) ---------- */
+
+function clock(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000)), pad = n => String(n).padStart(2, "0");
+  return s < 3600 ? `${Math.floor(s / 60)}:${pad(s % 60)}` : `${Math.floor(s / 3600)}h${pad(Math.floor(s % 3600 / 60))}`;
+}
+
+function renderAgents() {
+  const list = agentList;
+  $("agents").hidden = !list.length;
+  if (!list.length) return;
+  const running = list.filter(a => a.status === "running").length;
+  $("agents").innerHTML = `<h2>Agents <span class="count">${running} running</span></h2>` + list.map(a => {
+    const mark = { running: "●", done: "✓", aborted: "✕", lost: "?" }[a.status] || "";
+    const model = String(a.model || "").replace(/^claude-/, "").replace(/-\d{8}$/, "");
+    return `<div class="agent-row ${esc(a.status)}" title="${esc(a.status)}">
+      <div class="top"><span>${mark}</span><span>${esc(String(a.type || "").replace(/^factory:/, ""))}</span><span class="time">${clock(a.ms)}</span></div>
+      <div class="model">${esc(model)}${a.effort ? " · " + esc(a.effort) : ""}</div>
+      <div class="task">${esc(a.description)}</div></div>`;
+  }).join("");
+}
+
 /* ---------- screenshots (from the latest review-ui.md) ---------- */
 
 const IMG = /!\[([^\]]*)\]\(([^)\s]+)\)/g;
@@ -385,14 +420,18 @@ async function poll() {
     if (!res.ok) throw new Error(res.status);
     const text = await res.text();
     api = !!(ib && ib.ok);
-    const inboxText = api ? await ib.text() : "";
+    const ibData = api ? await ib.json() : { pending: [], runner: "off" };
+    agentList = ibData.agents || [];
+    renderAgents();
+    delete ibData.agents; // run times change every poll: keep them out of the change check
+    const inboxText = JSON.stringify(ibData);
     $("dot").className = "dot";
     const extra = statusText();
     $("status").textContent = "live · " + new Date().toLocaleTimeString() + (extra ? " · " + extra : "");
     if (text !== lastJson || (bl || "") !== backlog || inboxText !== lastInbox) {
       lastJson = text; backlog = bl || ""; lastInbox = inboxText;
       board = JSON.parse(text);
-      inbox = api ? JSON.parse(inboxText) : { pending: [], runner: "off" };
+      inbox = ibData;
       stopButton();
       render();
       loadShots();

@@ -75,11 +75,12 @@ worktree, branch, and base are in `<job>/feature.md`.
    factory/serve.py
    factory/dashboard
    factory/inbox/
+   factory/agents/
    factory/audit.md
    .claude/worktrees/
    # <<< software factory
    ```
-   Then run `git ls-files factory/board.json factory/jobs factory/dashboard.html factory/serve.py factory/dashboard factory/inbox factory/audit.md .claude/worktrees`.
+   Then run `git ls-files factory/board.json factory/jobs factory/dashboard.html factory/serve.py factory/dashboard factory/inbox factory/agents factory/audit.md .claude/worktrees`.
    If any of these are already tracked, tell the user to run
    `git rm -r --cached <path>`. Don't run it yourself.
    `factory/backlog.md`, `factory/project.md`, `factory/idea.md`, and
@@ -446,6 +447,16 @@ Without `--run` and without a live session, the dashboard hides the buttons.
    and step 4 again.
 5. Tell the user the URL from the output, and that `/factory:dashboard stop`
    stops the server.
+
+The plugin also has a mod (`hooks/register.tsx`) that loads in every Claude Code
+session with the plugin. In a repo with `factory/board.json` it opens a
+**Factory** pane: the jobs, Approve and Rework for `needs-human` jobs, and the
+subagents of this session (type, task, model, effort, run time). `/factory-board`
+opens the pane again. Its buttons write inbox requests like `serve.py` does; with
+no live runner and no server with `--run`, it runs `/factory:inbox` in the
+session. It writes the agent list to `factory/agents/<session>.json`, which
+`serve.py` shows in the dashboard's Agents column. The mod never writes
+`board.json`, `backlog.md`, or job files.
 
 ## Loop
 

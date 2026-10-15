@@ -1,8 +1,16 @@
 {
   "name": "factory",
   "displayName": "Software Factory",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A small, visual software factory: spec-writer, builder, four parallel reviewers, and an approver, orchestrated through markdown files. Each job builds in an isolated git worktree from origin/main.",
-  "author": { "name": "Robert Kummer" },
-  "keywords": ["workflow", "agents", "review", "worktree"]
+  "author": {
+    "name": "Robert Kummer"
+  },
+  "keywords": [
+    "workflow",
+    "agents",
+    "review",
+    "worktree"
+  ],
+  "types": "./types/index.d.ts"
 }
