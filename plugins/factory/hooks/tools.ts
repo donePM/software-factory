@@ -3,13 +3,14 @@ import { FactoryError } from '../lib/exec.ts'
 import { loadConfig, migrate } from '../lib/config.ts'
 import { doctor } from '../lib/doctor.ts'
 import { runGate } from '../lib/gate.ts'
-import { jobCreate, jobSync } from '../lib/job.ts'
-import { jobDir, readJob } from '../lib/jobfile.ts'
+import { gateJob } from '../lib/gatejob.ts'
+import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
+import { STATUS } from '../lib/labels.ts'
 import { githubTracker, repoFromUrl } from '../lib/github.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
 import type { Tracker } from '../lib/tracker.ts'
-import type { Ctx } from '../lib/types.ts'
+import type { Ctx, State } from '../lib/types.ts'
 
 export type ToolDef = {
   name: string
@@ -94,25 +95,29 @@ export const TOOLS: ToolDef[] = [
     const r = await jobSync(ctx, t, n)
     return { ...r, jobDir: r.job.jobDir, worktree: r.job.worktree }
   }),
+  {
+    name: 'job_advance',
+    description:
+      'Move a job to the next state: checks the job files, writes the issue comments, pushes and opens the PR (review), then sets the one status label. Re-runs the gate for review.',
+    inputSchema: {
+      type: 'object',
+      properties: { issue: { type: 'integer', minimum: 1 }, to: { type: 'string', enum: STATUS }, reason: { type: 'string' } },
+      required: ['issue', 'to'],
+      additionalProperties: false,
+    },
+    handler: async (ctx, input) => {
+      const issue = issueOf(input)
+      if (typeof input.to !== 'string' || !(STATUS as string[]).includes(input.to)) {
+        throw new FactoryError('bad-input', `to must be one of ${STATUS.join(', ')}, got ${JSON.stringify(input.to)}`)
+      }
+      if (input.reason !== undefined && typeof input.reason !== 'string') {
+        throw new FactoryError('bad-input', 'reason must be a string')
+      }
+      const t = githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url))
+      return jobAdvance(ctx, t, { issue, to: input.to as State, ...(input.reason === undefined ? {} : { reason: input.reason }) })
+    },
+  },
 ]
-
-const NO_JOB = 'Run job_create first.'
-
-const SHA40 = /^[0-9a-f]{40}$/
-
-async function checkBase(ctx: Ctx, wt: string, base: string): Promise<void> {
-  const bad = (m: string): FactoryError => new FactoryError('bad-job-base', m, NO_JOB)
-  if (!SHA40.test(base)) throw bad(`job.md Base "${base}" is not a full 40-character sha`)
-  const head = (await ctx.run(['git', '-C', wt, 'rev-parse', 'HEAD'])).stdout.trim()
-  if (head === base) throw bad('job.md Base equals the worktree HEAD')
-  if ((await ctx.run(['git', '-C', wt, 'merge-base', '--is-ancestor', base, 'HEAD'])).exitCode !== 0) {
-    throw bad('job.md Base is not an ancestor of the worktree HEAD')
-  }
-  const branch = `origin/${(await loadConfig(ctx)).baseBranch}`
-  if ((await ctx.run(['git', '-C', ctx.root, 'merge-base', '--is-ancestor', base, branch])).exitCode !== 0) {
-    throw bad(`job.md Base is not an ancestor of ${branch}`)
-  }
-}
 
 async function gateTool(ctx: Ctx, input: { issue?: unknown; round?: string }): Promise<unknown> {
   const round = input.round ?? 'setup'
@@ -120,21 +125,7 @@ async function gateTool(ctx: Ctx, input: { issue?: unknown; round?: string }): P
     throw new FactoryError('bad-round', `round "${round}" is not valid`, 'Use round-<n>, merge or setup.')
   }
   if (input.issue === undefined) return runGate(ctx, { worktree: ctx.root, round })
-  const n = issueOf(input)
-  const dir = jobDir(ctx.root, n)
-  if (!(await ctx.fs.exists(`${dir}/job.md`))) throw new FactoryError('no-job', `${dir}/job.md does not exist`, NO_JOB)
-  const job = await readJob(ctx, n)
-  if (!(await ctx.fs.exists(`${dir}/spec.md`))) throw new FactoryError('no-spec', `${dir}/spec.md does not exist`, 'Run the spec step first.')
-  const title = /^Title:\s*(.+)$/m.exec(await ctx.fs.read(`${dir}/spec.md`))?.[1]?.trim()
-  if (title === undefined) throw new FactoryError('spec-no-title', 'spec.md has no "Title:" line', 'The spec-writer must add a Title line.')
-  const worktree = job.worktree
-  const expected = `${ctx.root}/.factory/worktrees/${n}`
-  if (worktree !== expected) {
-    throw new FactoryError('bad-job-worktree', `job.md names worktree ${worktree}, not ${expected}`, NO_JOB)
-  }
-  const base = job.base
-  await checkBase(ctx, worktree, base)
-  return runGate(ctx, { worktree, round, base, prTitle: title, jobDir: dir })
+  return gateJob(ctx, issueOf(input), round)
 }
 
 const DEFAULT_TIMEOUT_MS = 120000

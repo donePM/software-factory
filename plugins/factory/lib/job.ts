@@ -1,14 +1,20 @@
 import { loadConfig } from './config.ts'
-import { FactoryError, must } from './exec.ts'
+import { checkMessage, typeOf } from './conventional.ts'
+import { FactoryError, must, mkdirp, rmrf } from './exec.ts'
+import { gateJob } from './gatejob.ts'
+import { parseIntake } from './intake.ts'
+import { parseDecision, parseReview } from './review.ts'
+import { route } from './route.ts'
 import { renderIssue } from './issue-file.ts'
 import { stateOf } from './labels.ts'
 import { findMarked, stripMarker } from './markers.ts'
 import {
-  branchName, fieldOf, jobDir, lastSection, parseBase, parsePr, parseRoute, parseSpecUpdated, readJob, worktreeDir, writeJob,
+  branchName, fieldOf, jobDir, lastSection, parseBase, parsePr, parseRoute, parseSpecUpdated, readJob, renderRoute, worktreeDir, writeJob,
   type Job,
 } from './jobfile.ts'
 import type { Tracker } from './tracker.ts'
-import type { Ctx, State } from './types.ts'
+import { assertTransition } from './transitions.ts'
+import type { Ctx, Reviewer, State } from './types.ts'
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim()
 
@@ -163,4 +169,234 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
     specChanged = true
   }
   return { job, state, rebuilt, specChanged }
+}
+
+export type AdvanceInput = { issue: number; to: State; reason?: string }
+export type AdvanceResult = { job: Job; state: State; round: number; roundDir: string; reviewers?: Reviewer[]; note?: string }
+
+const SUPPORTED: State[] = ['spec', 'needs-info', 'rejected', 'build', 'review', 'approved', 'needs-human']
+const MENTION = /^[A-Za-z0-9-]+(\[bot\])?$/
+
+// The one writer of the intake comment: intake.md, then "## Job" and "## Route", both always present.
+export function intakeComment(job: Job, intake: string, mention?: string): string {
+  const lines = [beforeSections(intake).trimEnd()]
+  if (mention !== undefined) lines.push('', mention)
+  lines.push(
+    '', '## Job',
+    `- Base: ${job.base}`,
+    `- Spec updated: ${job.specUpdated ?? 'none'}`,
+    `- PR: ${job.pr === null ? 'none' : `#${job.pr}`}`,
+    '', '## Route',
+  )
+  const r = renderRoute(job.route)
+  if (r !== '') lines.push(r)
+  return `${lines.join('\n')}\n`
+}
+
+const roundOf = (job: Job): string => `${job.jobDir}/round-${job.round}`
+
+async function readIfExists(ctx: Ctx, p: string): Promise<string | null> {
+  return (await ctx.fs.exists(p)) ? ctx.fs.read(p) : null
+}
+
+async function readRequired(ctx: Ctx, p: string, code: string, fix: string): Promise<string> {
+  const text = await readIfExists(ctx, p)
+  if (text === null) throw new FactoryError(code, `${p} does not exist`, fix)
+  return text
+}
+
+type Reviews = { missing: string[]; parsed: Partial<Record<Reviewer, ReturnType<typeof parseReview>>> }
+
+async function readReviews(ctx: Ctx, job: Job, roundDir: string): Promise<Reviews> {
+  const reviewers = Object.keys(job.route) as Reviewer[]
+  if (reviewers.length === 0) throw new FactoryError('no-route', 'job.md has an empty Route', 'Run the spec advance again.')
+  const out: Reviews = { missing: [], parsed: {} }
+  for (const r of reviewers) {
+    const text = await readIfExists(ctx, `${roundDir}/review-${r}.md`)
+    if (text === null) out.missing.push(r)
+    else out.parsed[r] = parseReview(text)
+  }
+  if (out.missing.length > 0) {
+    throw new FactoryError('reviews-missing', `Missing review files: ${out.missing.join(', ')}`, 'Wait for every routed reviewer to finish.')
+  }
+  return out
+}
+
+// Gate verdict, each routed reviewer's verdict and every blocker line. Display only: it decides nothing.
+export async function roundSummary(ctx: Ctx, job: Job, roundDir: string): Promise<string> {
+  const checks = await readIfExists(ctx, `${roundDir}/checks.md`)
+  const gate = /^VERDICT: (PASS|FAIL)$/m.exec(checks?.split(/\r\n|\r|\n/, 1)[0] ?? '')?.[1] ?? 'missing'
+  const lines = [`Round ${job.round}`, '', `Gate: ${gate}`]
+  for (const r of Object.keys(job.route)) {
+    const text = await readIfExists(ctx, `${roundDir}/review-${r}.md`)
+    if (text === null) {
+      lines.push(`- ${r}: missing`)
+      continue
+    }
+    const p = parseReview(text)
+    lines.push(`- ${r}: ${p.verdict}`)
+    for (const f of p.findings) if (f.severity === 'blocker') lines.push(`  - [blocker] ${f.text}`)
+  }
+  return `${lines.join('\n')}\n`
+}
+
+function checkSpec(spec: string): string {
+  if ((spec.split(/\r\n|\r|\n/, 1)[0] ?? '').trimEnd() !== 'STATUS: READY') {
+    throw new FactoryError('spec-not-ready', 'spec.md must start with "STATUS: READY"', 'Finish the spec first.')
+  }
+  const title = /^Title:\s*(.+)$/m.exec(spec)?.[1]?.trim()
+  if (title === undefined) throw new FactoryError('spec-no-title', 'spec.md has no "Title:" line', 'The spec-writer must add a Title line.')
+  const problem = checkMessage(title)
+  if (problem !== null) throw new FactoryError('bad-title', `spec title "${title}": ${problem}`, 'Use a Conventional Commits title.')
+  return title
+}
+
+export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Promise<AdvanceResult> {
+  const { issue: n, to, reason } = input
+  const ticket = await t.get(n)
+  const from = stateOf(ticket.labels)
+  if (from === 'conflict') throw new FactoryError('label-conflict', `#${n} has several status labels`, 'Remove all but one status label.')
+  if (!SUPPORTED.includes(to)) throw new FactoryError('unsupported-target', `job_advance cannot move to ${to}`, 'Use merge for done.')
+  assertTransition(from, to)
+  const dir = jobDir(ctx.root, n)
+  if (!(await ctx.fs.exists(`${dir}/job.md`))) throw new FactoryError('no-job', `${dir}/job.md does not exist`, 'Run job_create first.')
+  let job = await readJob(ctx, n)
+  const result = (state: State, extra: Partial<AdvanceResult> = {}): AdvanceResult => ({ job, state, round: job.round, roundDir: roundOf(job), ...extra })
+  const intakeText = async (): Promise<string> => readRequired(ctx, `${dir}/intake.md`, 'no-intake', 'Run the intake step first.')
+  const upsertIntake = (mention?: string) => async (text: string): Promise<void> => {
+    await t.upsertComment(n, 'intake', intakeComment(job, text, mention))
+  }
+
+  if (to === 'needs-human' && reason !== undefined) {
+    await t.comment(n, `Factory stopped: ${reason}`)
+    await t.setState(n, 'needs-human')
+    return result('needs-human')
+  }
+
+  if (to === 'spec') {
+    const text = await intakeText()
+    const intake = parseIntake(text)
+    if (intake.decision !== 'ACCEPT') throw new FactoryError('intake-not-accept', `intake.md says ${intake.decision}`, 'Only an ACCEPT intake goes to spec.')
+    job = { ...job, route: route(intake, await loadConfig(ctx)) }
+    await writeJob(ctx, job)
+    await upsertIntake()(text)
+    await t.setState(n, 'spec')
+    return result('spec')
+  }
+
+  if (to === 'needs-info') {
+    const text = await intakeText()
+    if (parseIntake(text).decision !== 'NEEDS-INFO') throw new FactoryError('intake-mismatch', 'intake.md must say DECISION: NEEDS-INFO')
+    if ((lastSection(text, 'Questions') ?? '').trim() === '') throw new FactoryError('intake-no-questions', 'intake.md needs a non-empty "## Questions"')
+    const mention = MENTION.test(ticket.author) ? `@${ticket.author} please answer the questions above.` : undefined
+    await upsertIntake(mention)(text)
+    await t.setState(n, 'needs-info')
+    return result('needs-info')
+  }
+
+  if (to === 'rejected') {
+    const text = await intakeText()
+    if (parseIntake(text).decision !== 'REJECT') throw new FactoryError('intake-mismatch', 'intake.md must say DECISION: REJECT')
+    if ((lastSection(text, 'Reason') ?? '').trim() === '') throw new FactoryError('intake-no-reason', 'intake.md needs a non-empty "## Reason"')
+    await upsertIntake()(text)
+    await t.setState(n, 'rejected')
+    await t.close(n, 'rejected')
+    await rmrf(ctx, dir) // the worktree stays for cleanupJob
+    return result('rejected')
+  }
+
+  if (to === 'build') return advanceBuild(ctx, t, job, from)
+  if (to === 'review') return advanceReview(ctx, t, job)
+  if (to === 'needs-human' && from !== 'review') throw new FactoryError('reason-required', 'needs-human outside review needs a reason', 'Pass reason.')
+  return advanceDecision(ctx, t, job, to)
+}
+
+const done = (job: Job, state: State, extra: Partial<AdvanceResult> = {}): AdvanceResult => ({ job, state, round: job.round, roundDir: roundOf(job), ...extra })
+
+async function startRound(ctx: Ctx, t: Tracker, job: Job): Promise<AdvanceResult> {
+  await writeJob(ctx, job)
+  await mkdirp(ctx, roundOf(job))
+  await t.setState(job.issue, 'build')
+  return done(job, 'build')
+}
+
+async function advanceBuild(ctx: Ctx, t: Tracker, old: Job, from: State | null): Promise<AdvanceResult> {
+  const n = old.issue
+  if (from === 'spec' || old.round === 0) {
+    const spec = await readRequired(ctx, `${old.jobDir}/spec.md`, 'no-spec', 'Run the spec step first.')
+    checkSpec(spec)
+    const posted = await t.upsertComment(n, 'spec', spec)
+    const job: Job = { ...old, specUpdated: posted.updatedAt, round: 1 }
+    await t.upsertComment(n, 'intake', intakeComment(job, await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')))
+    return startRound(ctx, t, job)
+  }
+  const max = (await loadConfig(ctx)).maxRounds
+  const over = (job: Job): boolean => job.round + 1 > max
+  if (from === 'review') {
+    const { parsed } = await readReviews(ctx, old, roundOf(old))
+    if (!Object.values(parsed).some(p => p.verdict === 'CHANGES')) {
+      throw new FactoryError('no-changes', 'no review asks for changes', 'Use approved or needs-human when every review passes.')
+    }
+    await t.upsertComment(n, `round-${old.round}`, await roundSummary(ctx, old, roundOf(old)))
+  } else {
+    checkSpec(await readRequired(ctx, `${old.jobDir}/spec.md`, 'no-spec', 'Run the spec step first.'))
+  }
+  if (over(old)) {
+    const note = `Round limit of ${max} reached after round ${old.round}.`
+    await t.comment(n, `Factory stopped: ${note}`)
+    if (from !== 'needs-human') await t.setState(n, 'needs-human')
+    return done(old, 'needs-human', { note })
+  }
+  return startRound(ctx, t, { ...old, round: old.round + 1 })
+}
+
+async function advanceReview(ctx: Ctx, t: Tracker, old: Job): Promise<AdvanceResult> {
+  const n = old.issue
+  if (old.round < 1) throw new FactoryError('bad-round', 'job.md Round is 0, no build ran', 'Advance to build first.')
+  const roundDir = roundOf(old)
+  const spec = await readRequired(ctx, `${old.jobDir}/spec.md`, 'no-spec', 'Run the spec step first.')
+  const title = checkSpec(spec)
+  const build = await readRequired(ctx, `${roundDir}/build.md`, 'build-incomplete', 'The builder must write build.md.')
+  if ((build.split(/\r\n|\r|\n/, 1)[0] ?? '').trimEnd() !== 'STATUS: DONE') {
+    throw new FactoryError('build-incomplete', 'build.md must start with "STATUS: DONE"', 'The builder must finish first.')
+  }
+  // checks.md can be written by agents: run the gate here, through the gate tool's own path.
+  const gate = await gateJob(ctx, n, `round-${old.round}`)
+  if (gate.verdict !== 'PASS') throw new FactoryError('gate-not-green', `the gate is ${gate.verdict}, see ${roundDir}/checks.md`, 'Fix the failures and run the gate again.')
+  await must(ctx, ['git', '-C', old.worktree, 'push', '-u', 'origin', old.branch])
+  let job = old
+  if (job.pr === null) {
+    const found = await t.findPr(old.branch)
+    let pr = found !== null && found.state === 'OPEN' ? found.number : null
+    if (pr === null) {
+      const kind = typeOf(title)!
+      const labels = ['factory:pr', `type:${kind.type}`, ...(kind.breaking ? ['type:breaking'] : [])]
+      const summary = (lastSection(build, 'Summary') ?? '').trim()
+      pr = (await t.openPr(old.branch, old.baseBranch, title, `Closes #${n}\n\n## Summary\n\n${summary}\n`, labels)).number
+    }
+    job = { ...old, pr }
+    await writeJob(ctx, job)
+    await t.upsertComment(n, 'intake', intakeComment(job, await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')))
+  }
+  await t.setState(n, 'review')
+  return done(job, 'review', { reviewers: Object.keys(job.route) as Reviewer[] })
+}
+
+async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promise<AdvanceResult> {
+  const n = job.issue
+  const roundDir = roundOf(job)
+  const { parsed } = await readReviews(ctx, job, roundDir)
+  const decision = parseDecision(await readRequired(ctx, `${job.jobDir}/decision.md`, 'no-decision', 'The approver must write decision.md.'))
+  const allPass = Object.values(parsed).every(p => p.verdict === 'PASS')
+  const ok = to === 'approved' ? decision.decision === 'APPROVE' && allPass : decision.decision === 'ESCALATE'
+  if (!ok) {
+    throw new FactoryError('decision-mismatch', `decision ${decision.decision} and the review verdicts do not fit ${to}`, 'Approve only when every review passes and the decision is APPROVE.')
+  }
+  if (job.pr === null) throw new FactoryError('no-pr', 'job.md has no PR', 'Advance to review first.')
+  await t.upsertComment(n, `round-${job.round}`, await roundSummary(ctx, job, roundDir))
+  await t.upsertComment(n, 'decision', await ctx.fs.read(`${job.jobDir}/decision.md`))
+  if (to === 'approved') await t.prReady(job.pr)
+  else await t.prComment(job.pr, decision.question ?? '')
+  await t.setState(n, to)
+  return done(job, to)
 }
