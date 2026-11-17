@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { checkMessage } from '../lib/conventional.ts'
 import { parseIntake } from '../lib/intake.ts'
+import { parseDecision, parseReview } from '../lib/review.ts'
 
 // These examples also stand word for word in agents/intake.md, spec-writer.md and builder.md.
 const INTAKE_ACCEPT = [
@@ -85,6 +86,60 @@ const BUILDER_COMMIT = [
   'Refs: #42',
 ].join('\n')
 
+// These examples also stand word for word in agents/code-reviewer.md and approver.md.
+const REVIEW_CHANGES = [
+  'VERDICT: CHANGES',
+  '',
+  '## Summary',
+  'The AC-1 test checks only the status, so it does not prove the rows. The export runs one query for each order.',
+  '',
+  '## Findings',
+  '1. [blocker] tests/orders-export.test.ts:14: the test checks only status 200, so an empty CSV also passes. Fix: assert one row for each order.',
+  '2. [should] src/orders/export.ts:22: the code loads the customer for each order, so 1000 orders cause 1000 queries. Fix: load the customers in one query with the orders.',
+  '3. [nit] src/orders/export.ts:8: the name `tmp` does not say what it holds. Fix: rename it to `rows`.',
+  '',
+  '## Checked',
+  '- Gate round-1: PASS.',
+  '- AC-2: the test fails without the button. The red output in build.md fits the test.',
+  '- Commits: 2 commits. Both follow Conventional Commits and have `Refs: #42`.',
+].join('\n')
+
+const REVIEW_PASS = [
+  'VERDICT: PASS',
+  '',
+  '## Summary',
+  'The round-1 blocker and should are fixed. Each AC has a test that fails without the change.',
+  '',
+  '## Findings',
+  '1. [nit] src/orders/export.ts:8: the name `tmp` does not say what it holds. Fix: rename it to `rows`.',
+  '',
+  '## Checked',
+  '- Round-1 finding 1: fixed. The test now asserts one row for each order.',
+  '- Round-1 finding 2: fixed. One query loads the orders and the customers.',
+  '- Gate round-2: PASS.',
+  '- Commits: 3 commits. All follow Conventional Commits and have `Refs: #42`.',
+].join('\n')
+
+const DECISION_ESCALATE = [
+  'DECISION: ESCALATE',
+  '',
+  '## Summary',
+  'Users can download the order list as a CSV file. The gate and all reviews pass, and each AC has a test. The change adds the new dependency `csv-stringify`.',
+  '',
+  '## Checks',
+  '- Gate round-2: PASS.',
+  '- Reviews round-2: code PASS, security PASS, ux PASS, ui PASS.',
+  '- AC-1, AC-2: each has a test with red output before the change, and the test passes.',
+  '- Shortcuts: src/orders/export.ts:12: all orders stay in memory. Limit: 10000 orders. Upgrade: stream the rows.',
+  '',
+  '## Test it by hand',
+  '1. Open the orders page and click "Export CSV".',
+  '2. Open the file. It has one row for each order.',
+  '',
+  '## Question',
+  'The change adds the dependency `csv-stringify` to write the CSV rows. Do you accept it? If not, send the job back to build, and the builder writes the rows with the standard library.',
+].join('\n')
+
 test('intake example ACCEPT parses', () => {
   expect(parseIntake(INTAKE_ACCEPT).decision).toBe('ACCEPT')
 })
@@ -108,4 +163,27 @@ test('spec example title is conventional', () => {
 test('builder example commit is conventional', () => {
   expect(checkMessage(BUILDER_COMMIT)).toBeNull()
   expect(BUILDER_COMMIT).toMatch(/\nRefs: #\d+$/)
+})
+
+const FINDING = /^\S+:\d+: .+ Fix: .+$/
+
+test('review example CHANGES parses with a blocker', () => {
+  const r = parseReview(REVIEW_CHANGES)
+  expect(r.verdict).toBe('CHANGES')
+  expect(r.findings.some(f => f.severity === 'blocker')).toBe(true)
+  for (const f of r.findings) expect(f.text).toMatch(FINDING)
+})
+
+test('review example PASS parses', () => {
+  const r = parseReview(REVIEW_PASS)
+  expect(r.verdict).toBe('PASS')
+  expect(r.findings.some(f => f.severity !== 'nit')).toBe(false)
+  for (const f of r.findings) expect(f.text).toMatch(FINDING)
+})
+
+test('decision example ESCALATE parses with a question', () => {
+  const d = parseDecision(DECISION_ESCALATE)
+  expect(d.decision).toBe('ESCALATE')
+  expect(d.summary).not.toBe('')
+  expect(d.question ?? '').not.toBe('')
 })
