@@ -184,10 +184,10 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'job_advance',
     description:
-      'Move a job to the next state: checks the job files, writes the issue comments, pushes and opens the PR (review), then sets the one status label. For review it reuses a passing gate-runner result at the same HEAD, else it runs the gate.',
+      'Move a job to the next state: checks the job files, writes the issue comments, pushes and opens the PR (review), then sets the one status label. For review it reuses a passing gate-runner result at the same HEAD, else it runs the gate. With from, it refuses (state-moved) when the job is in another state.',
     inputSchema: {
       type: 'object',
-      properties: { issue: { type: 'integer', minimum: 1 }, to: { type: 'string', enum: STATUS }, reason: { type: 'string' } },
+      properties: { issue: { type: 'integer', minimum: 1 }, to: { type: 'string', enum: STATUS }, reason: { type: 'string' }, from: { type: 'string', enum: STATUS } },
       required: ['issue', 'to'],
       additionalProperties: false,
     },
@@ -199,8 +199,11 @@ export const TOOLS: ToolDef[] = [
       if (input.reason !== undefined && typeof input.reason !== 'string') {
         throw new FactoryError('bad-input', 'reason must be a string')
       }
+      if (input.from !== undefined && (typeof input.from !== 'string' || !(STATUS as string[]).includes(input.from))) {
+        throw new FactoryError('bad-input', `from must be one of ${STATUS.join(', ')}, got ${JSON.stringify(input.from)}`)
+      }
       const t = githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url))
-      return jobAdvance(ctx, t, { issue, to: input.to as State, ...(input.reason === undefined ? {} : { reason: input.reason }) })
+      return jobAdvance(ctx, t, { issue, to: input.to as State, ...(input.reason === undefined ? {} : { reason: input.reason }), ...(input.from === undefined ? {} : { from: input.from as State }) })
     },
   },
 ]

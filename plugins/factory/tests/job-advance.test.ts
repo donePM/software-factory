@@ -452,12 +452,21 @@ test('the intake comment round-trips through jobSync', async () => {
   expect(none).toContain('## Route')
 })
 
+test('a late notification cannot restart a needs-human job', async () => {
+  const { ctx, t } = setup('needs-human', { round: 1 }, { [`${DIR}/spec.md`]: SPEC })
+  await expect(jobAdvance(ctx, t, { issue: 7, to: 'build', from: 'review' })).rejects.toMatchObject({ code: 'state-moved', message: expect.stringContaining('needs-human') })
+  expect(t.states).toEqual([])
+  expect(ctx.calls.filter(c => c[0] === 'mkdir')).toHaveLength(0)
+  const ok = setup('needs-human', { round: 1 }, { [`${DIR}/spec.md`]: SPEC })
+  expect((await jobAdvance(ok.ctx, ok.t, { issue: 7, to: 'build', from: 'needs-human' })).round).toBe(2)
+})
+
 const advDef = () => TOOLS.find(t => t.name === 'job_advance')!
 
 test('job_advance is registered and validates its input', async () => {
   expect(TOOLS.map(t => t.name)).toContain('job_advance')
   const ctx = fakeCtx()
-  for (const input of [{}, { issue: 0, to: 'spec' }, { issue: 1.5, to: 'spec' }, { issue: '7', to: 'spec' }, { issue: 7, to: 'nope' }, { issue: 7 }, { issue: 7, to: 'spec', reason: 5 }]) {
+  for (const input of [{}, { issue: 0, to: 'spec' }, { issue: 1.5, to: 'spec' }, { issue: '7', to: 'spec' }, { issue: 7, to: 'nope' }, { issue: 7 }, { issue: 7, to: 'spec', reason: 5 }, { issue: 7, to: 'spec', from: 'nope' }]) {
     await rejects(advDef().handler(ctx, input), 'bad-input')
   }
 })

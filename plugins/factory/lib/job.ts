@@ -173,7 +173,7 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
   return { job, state, rebuilt, specChanged }
 }
 
-export type AdvanceInput = { issue: number; to: State; reason?: string }
+export type AdvanceInput = { issue: number; to: State; reason?: string; from?: State }
 export type AdvanceResult = { job: Job; state: State; round: number; roundDir: string; reviewers?: Reviewer[]; note?: string; cleanup?: CleanupReport }
 
 const SUPPORTED: State[] = ['spec', 'needs-info', 'rejected', 'build', 'review', 'approved', 'needs-human']
@@ -273,6 +273,8 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
   const ticket = await t.get(n)
   const from = stateOf(ticket.labels)
   if (from === 'conflict') throw new FactoryError('label-conflict', `#${n} has several status labels`, 'Remove all but one status label.')
+  // A late notification must not move a job that left the step it reports on.
+  if (input.from !== undefined && from !== input.from) throw new FactoryError('state-moved', `#${n} is ${from ?? 'not a job'}, not ${input.from}`, 'Ignore this notification.')
   if (!SUPPORTED.includes(to)) throw new FactoryError('unsupported-target', `job_advance cannot move to ${to}`, 'Use merge for done.')
   assertTransition(from, to)
   const dir = jobDir(ctx.root, n)
@@ -327,7 +329,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
   if (to === 'review') return advanceReview(ctx, t, job)
   if (to === 'needs-human' && from !== 'review') throw new FactoryError('reason-required', 'needs-human outside review needs a reason', 'Pass reason.')
   if (to === 'approved' && (await specMoved(t, ticket, job))) {
-    throw new FactoryError('spec-changed', 'the spec changed after this round started', 'Advance to build for a new round.')
+    throw new FactoryError('spec-changed', 'the spec changed after this round started', 'Call job_advance with to: build, then start a new builder.')
   }
   return advanceDecision(ctx, t, job, to)
 }
