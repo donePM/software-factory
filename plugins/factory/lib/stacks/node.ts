@@ -86,7 +86,7 @@ export const node: Stack = {
     return reqs
   },
 
-  async steps(ctx: Ctx, read: ReadFile, d: Detection): Promise<Step[]> {
+  async steps(_ctx: Ctx, read: ReadFile, d: Detection): Promise<Step[]> {
     const text = await read(rel(d.path, 'package.json'))
     const pkg = text === null ? {} : parse(text)
     if (pkg === null) {
@@ -99,7 +99,7 @@ export const node: Stack = {
     const scripts = typeof pkg.scripts === 'object' && pkg.scripts !== null ? (pkg.scripts as Record<string, unknown>) : {}
     const pm = d.tools[1] ?? 'npm'
     const mk = (name: Step['name'], argv: string[], source: Step['source'] = 'default'): Step => ({
-      name, argv, cwd: ctx.root, source, stack: d.stack,
+      name, argv, cwd: d.path, source, stack: d.stack,
     })
     // A script with the step name beats the default. 'install' is excluded: it is a lifecycle hook of the package manager.
     const pick = (name: Step['name'], ...defaults: string[][]): Step[] =>

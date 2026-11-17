@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { FactoryError } from '../lib/exec.ts'
+import { resolveSteps } from '../lib/stacks/index.ts'
 import { node } from '../lib/stacks/node.ts'
 import type { Detection } from '../lib/stacks/types.ts'
 import { fakeCtx } from './support/host.ts'
@@ -74,7 +75,7 @@ test('finds web/ and api/ in a monorepo, skips node_modules', async () => {
 
 test('takes the package manager from the own lockfile, else the nearest parent lockfile', async () => {
   const [web, api] = await detect(nodeMonorepo)
-  const readAt = (d: Detection) => node.steps(fakeCtx(), reader({ ...nodeMonorepo }, `${d.path}/`), d)
+  const readAt = (d: Detection) => node.steps(fakeCtx(), reader(nodeMonorepo), d)
   expect(argvOf(await readAt(web!), 'install')).toEqual([['pnpm', 'install', '--frozen-lockfile']])
   expect(argvOf(await readAt(api!), 'install')).toEqual([['yarn', 'install', '--immutable']])
 })
@@ -101,4 +102,17 @@ test('an invalid package.json fails with bad-package-json', async () => {
   expect(err).toBeInstanceOf(FactoryError)
   expect((err as FactoryError).code).toBe('bad-package-json')
   expect((err as FactoryError).fix).toBeTruthy()
+})
+
+test('monorepo steps run in their package folder and are not merged', async () => {
+  const files = { ...nodeMonorepo, 'web/package.json': '{"scripts":{"test":"vitest run"}}' }
+  const ds = await detect(files)
+  const steps = await resolveSteps(fakeCtx(), '/repo', reader(files), [], ds)
+  const web = steps.filter(s => s.cwd === '/repo/web')
+  const api = steps.filter(s => s.cwd === '/repo/api')
+  expect(web.length).toBeGreaterThan(0)
+  expect(api.length).toBeGreaterThan(0)
+  expect(steps.filter(s => s.name === 'lint').map(s => s.cwd)).toEqual(['/repo/web', '/repo/api'])
+  expect(web.filter(s => s.name === 'test')).toMatchObject([{ argv: ['pnpm', 'run', 'test'], source: 'script' }])
+  expect(api.filter(s => s.name === 'test')).toMatchObject([{ argv: ['vp', 'test'], source: 'default' }])
 })

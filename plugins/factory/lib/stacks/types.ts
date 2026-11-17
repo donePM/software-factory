@@ -14,6 +14,7 @@ export type Detection = {
 export type Step = {
   name: StepName
   argv: string[]
+  // Relative to the repo ('.' or the detection path). resolveSteps turns it into an absolute path.
   cwd: string
   source: 'config' | 'runner' | 'script' | 'default'
   stack: string

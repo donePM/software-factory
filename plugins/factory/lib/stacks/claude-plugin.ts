@@ -54,8 +54,8 @@ export const claudePlugin: Stack = {
     return reqs
   },
 
-  async steps(ctx: Ctx, _read: ReadFile, d: Detection): Promise<Step[]> {
-    const cwd = ctx.root
+  async steps(_ctx: Ctx, _read: ReadFile, d: Detection): Promise<Step[]> {
+    const cwd = '.' // the argv holds the plugin path
     const step = (name: Step['name'], argv: string[]): Step => ({ name, argv, cwd, source: 'default', stack: d.stack })
     const out: Step[] = []
     if (d.variant === 'plugin' && d.tools.includes('tsc')) {

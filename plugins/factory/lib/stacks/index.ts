@@ -22,6 +22,8 @@ export async function detectAll(ctx: Ctx, repo: string): Promise<Detection[]> {
   return out
 }
 
+const join = (repo: string, p: string): string => (p === '.' ? repo : `${repo}/${p}`)
+
 const at = (path: string, name: string): string => (path === '.' ? name : `${path}/${name}`)
 
 export async function resolveSteps(
@@ -43,12 +45,12 @@ export async function resolveSteps(
     const stack = STACKS.find(s => s.id === d.stack)
     if (!stack) continue
     const ref = refs.find(r => r.id === d.stack && r.path === d.path)
-    // Default steps carry paths in argv, so they run at the repo root like every source's cwd base.
-    const own = (await stack.steps(ctx, read, d)).map(s => ({ ...s, cwd: repo }))
+    // A stack step's cwd is relative to the repo; every source resolves it the same way.
+    const own = (await stack.steps(ctx, read, d)).map(s => ({ ...s, cwd: join(repo, s.cwd) }))
     const names = own.map(s => s.name)
     for (const n of STEP_ORDER) if (ref?.steps?.[n] !== undefined && !names.includes(n)) names.push(n)
     const make = await read(at(d.path, 'Makefile'))
-    const cwd = d.path === '.' ? repo : `${repo}/${d.path}`
+    const cwd = join(repo, d.path)
     for (const name of names) {
       const cmd = ref?.steps?.[name]
       if (cmd !== undefined) {

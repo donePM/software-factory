@@ -31,7 +31,7 @@ test('plugin steps are typecheck, lint, test', async () => {
   expect(steps.map(s => s.name)).toEqual(['typecheck', 'lint', 'test'])
   expect(steps[1]!.argv).toEqual(['claude', 'plugin', 'validate', P])
   expect(steps[2]!.argv).toEqual(['claude', 'plugin', 'test', P])
-  expect(steps.every(s => s.cwd === '/repo')).toBe(true)
+  expect(steps.every(s => s.cwd === '.')).toBe(true)
 })
 
 test('plugin without tests has no test step', async () => {
