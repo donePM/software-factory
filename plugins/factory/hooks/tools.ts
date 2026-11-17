@@ -10,6 +10,7 @@ import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
 import { STATUS, stateOf } from '../lib/labels.ts'
 import { githubTracker, repoFromUrl } from '../lib/github.ts'
 import { approve, merge } from '../lib/merge.ts'
+import { guardBash } from '../lib/guard.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
 import { statusFor } from '../lib/status.ts'
@@ -273,4 +274,8 @@ export const register: Register = on => {
   })
   // Serve only at tool.run: it fires after the permission check, so tools like merge stay gated.
   on('tool.run', serve)
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const deny = await guardBash(e.agentId, e.command, () => $.agent.list())
+    return deny === null ? next(e) : { deny }
+  })
 }

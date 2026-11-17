@@ -132,6 +132,11 @@ comments from the issue author and from you reach them.
 - Only a human approves and merges. Never put `mcp__factory__approve` or
   `mcp__factory__merge` into a permission allow rule: the permission prompt is
   the barrier that keeps agents from calling them.
+- Factory agents have no GitHub access. A `tool.call` hook denies each Bash
+  call from a factory subagent (or from a subagent the session does not list)
+  that runs `gh` or `git push`. This is a word match, not a sandbox: a command
+  that hides `gh`, or a script in another language, can still reach GitHub as
+  the operator.
 
 ## Plugin layout
 
