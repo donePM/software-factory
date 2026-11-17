@@ -34,7 +34,7 @@ const ESCALATE = 'DECISION: ESCALATE\n\n## Summary\nUnsure.\n\n## Question\nPubl
 
 type Run = { ctx: ReturnType<typeof fakeCtx>; t: ReturnType<typeof tracker> }
 
-function tracker(labels: string[], author = 'alice') {
+function tracker(labels: string[], author = 'alice', initial: Comment[] = [], head = 'factory/7') {
   const log: string[] = []
   const comments: { name: string; body: string }[] = []
   const posts: string[] = []
@@ -43,7 +43,7 @@ function tracker(labels: string[], author = 'alice') {
   const states: State[] = []
   const ticket: Ticket = {
     kind: 'issue', number: 7, title: 'Add thing', body: 'b', author, labels: ['factory', ...labels],
-    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: 'u/7', comments: [],
+    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: 'u/7', comments: initial,
   }
   const t = {
     log, comments, posts, prs, prComments, states,
@@ -64,14 +64,16 @@ function tracker(labels: string[], author = 'alice') {
       prs.push({ branch, base, title, body, labels: l })
       return { number: 12, url: 'u/pull/12' }
     },
+    prState: async () => ({ headRefName: head }),
     prReady: async (pr: number) => { log.push(`ready ${pr}`) },
     prComment: async (_pr: number, body: string) => { prComments.push(body) },
   }
   return t as unknown as Tracker & typeof t
 }
 
-function setup(state: string, over: Partial<Job> = {}, files: Record<string, string> = {}, o: { maxRounds?: number; replies?: Reply[]; author?: string } = {}): Run {
+function setup(state: string, over: Partial<Job> = {}, files: Record<string, string> = {}, o: { maxRounds?: number; replies?: Reply[]; author?: string; tamper?: Partial<Job>; head?: string } = {}): Run {
   const job = { ...J, ...over }
+  const opComment = (): Comment => ({ id: 1, author: 'op', body: withMarker('intake', intakeComment(job, INTAKE)), createdAt: '2026-02-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z' })
   const replies: Reply[] = [
     ...(o.replies ?? []),
     { argv: ['git', '-C', WT, 'rev-parse', 'HEAD'], result: { stdout: `${HEAD}\n` } },
@@ -86,13 +88,13 @@ function setup(state: string, over: Partial<Job> = {}, files: Record<string, str
       '/repo/.factory/config.json': cfgOf(o.maxRounds),
       '/repo/package.json': pkg,
       [`${WT}/package.json`]: pkg,
-      [`${DIR}/job.md`]: renderJob(job),
+      [`${DIR}/job.md`]: renderJob({ ...job, ...o.tamper }),
       [`${DIR}/intake.md`]: INTAKE,
       ...files,
     },
     replies,
   })
-  return { ctx, t: tracker([`factory:${state}`], o.author) }
+  return { ctx, t: tracker([`factory:${state}`], o.author, state === 'intake' ? [] : [opComment()], o.head) }
 }
 
 const count = (ctx: Run['ctx'], ...prefix: string[]): number =>
@@ -197,7 +199,7 @@ test('a forged checks.md with VERDICT: PASS still gives gate-not-green', async (
 test('review pushes and opens one draft PR', async () => {
   const { ctx, t } = inBuild()
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'review' })
-  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'push', '-u', 'origin', 'factory/7'])
+  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'push', 'origin', `${HEAD}:refs/heads/factory/7`])
   expect(t.prs).toHaveLength(1)
   expect(t.prs[0]).toMatchObject({ branch: 'factory/7', base: 'main', title: 'feat: add thing', labels: ['factory:pr', 'type:feat'] })
   expect(r.reviewers).toEqual(['code', 'security'])
@@ -205,9 +207,7 @@ test('review pushes and opens one draft PR', async () => {
   expect(t.comments.find(c => c.name === 'intake')!.body).toContain('- PR: #12\n')
   expect(ctx.files[`${DIR}/round-1/checks.md`]!.startsWith('VERDICT: PASS')).toBe(true)
   // second advance to review (after a rework round): push again, no second PR
-  const again = inBuild()
-  again.ctx.files[`${DIR}/job.md`] = renderJob({ ...J, round: 2, pr: 12 })
-  again.ctx.files[`${DIR}/round-2/build.md`] = BUILD
+  const again = setup('build', { round: 2, pr: 12 }, { [`${DIR}/spec.md`]: SPEC, [`${DIR}/round-2/build.md`]: BUILD })
   await jobAdvance(again.ctx, again.t, { issue: 7, to: 'review' })
   expect(again.t.prs).toHaveLength(0)
   expect(count(again.ctx, 'git', '-C', WT, 'push')).toBe(1)
@@ -280,7 +280,7 @@ test('changes start the next round', async () => {
   expect(r.roundDir).toBe(`${DIR}/round-2`)
   expect(ctx.calls).toContainEqual(['mkdir', '-p', `${DIR}/round-2`])
   expect((await readJob(ctx, 7)).round).toBe(2)
-  expect(t.comments.map(c => c.name)).toEqual(['round-1'])
+  expect(t.comments.map(c => c.name)).toEqual(['round-1', 'intake'])
   expect(t.states).toEqual(['build'])
 })
 
@@ -361,7 +361,7 @@ test('job_advance uses parseReview for the round summary', async () => {
 })
 
 test('the intake comment round-trips through jobSync', async () => {
-  const job: Job = { ...J, pr: 12, specUpdated: '2026-02-01T00:00:00Z', route: { code: 'sonnet', security: 'opus', ui: 'haiku' } }
+  const job: Job = { ...J, pr: 12, round: 2, specUpdated: '2026-02-01T00:00:00Z', route: { code: 'sonnet', security: 'opus', ui: 'haiku' } }
   const body = intakeComment(job, INTAKE)
   const ticket: Ticket = {
     kind: 'issue', number: 7, title: 'Add thing', body: 'b', author: 'alice', labels: ['factory', 'factory:build'], state: 'open',
@@ -376,9 +376,11 @@ test('the intake comment round-trips through jobSync', async () => {
   const r = await jobSync(ctx, t, 7)
   expect(r.job.base).toBe(SHA)
   expect(r.job.pr).toBe(12)
+  expect(r.job.round).toBe(2)
   expect(r.job.specUpdated).toBe('2026-02-01T00:00:00Z')
   expect(r.job.route).toEqual(job.route)
   expect(ctx.files[`${DIR}/intake.md`]).toBe(INTAKE)
+  expect(body).toContain('- Round: 2\n')
   const none = intakeComment({ ...J, pr: null, specUpdated: null, route: {} }, INTAKE)
   expect(none).toContain('## Job')
   expect(none).toContain('## Route')
@@ -391,5 +393,101 @@ test('job_advance is registered and validates its input', async () => {
   const ctx = fakeCtx()
   for (const input of [{}, { issue: 0, to: 'spec' }, { issue: 1.5, to: 'spec' }, { issue: '7', to: 'spec' }, { issue: 7, to: 'nope' }, { issue: 7 }, { issue: 7, to: 'spec', reason: 5 }]) {
     await rejects(advDef().handler(ctx, input), 'bad-input')
+  }
+})
+
+const noEffects = (r: Run): void => {
+  expect(r.t.states).toEqual([])
+  expect(count(r.ctx, 'git', '-C', WT, 'push')).toBe(0)
+}
+
+test('a tampered Round in job.md is refused', async () => {
+  for (const [state, tamper, to] of [
+    ['review', { round: 0 }, 'build'],
+    ['review', { round: 1 }, 'build'],
+    ['build', { round: 0 }, 'review'],
+  ] as const) {
+    const r = setup(state, { round: 3 }, { [`${DIR}/spec.md`]: SPEC }, { tamper })
+    await expect(jobAdvance(r.ctx, r.t, { issue: 7, to })).rejects.toMatchObject({ code: 'bad-job', message: 'job.md differs from the ticket: Round' })
+    noEffects(r)
+  }
+})
+
+test('a tampered Route in job.md is refused', async () => {
+  const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE }
+  const r = inReview(files, { tamper: { route: { code: 'sonnet' } } })
+  await expect(jobAdvance(r.ctx, r.t, { issue: 7, to: 'approved' })).rejects.toMatchObject({ code: 'bad-job', message: 'job.md differs from the ticket: Route' })
+  noEffects(r)
+})
+
+test('a tampered PR or Base branch in job.md is refused', async () => {
+  const a = inBuild({}, { tamper: { pr: 99 } })
+  await expect(jobAdvance(a.ctx, a.t, { issue: 7, to: 'review' })).rejects.toMatchObject({ code: 'bad-job', message: 'job.md differs from the ticket: PR' })
+  noEffects(a)
+  expect(a.t.prs).toHaveLength(0)
+  const b = inBuild({}, { tamper: { baseBranch: 'release' } })
+  await expect(jobAdvance(b.ctx, b.t, { issue: 7, to: 'review' })).rejects.toMatchObject({ code: 'bad-job' })
+  noEffects(b)
+})
+
+test('prReady and prComment need a PR whose head is the job branch', async () => {
+  const pass = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS') }
+  const a = inReview({ ...pass, [`${DIR}/decision.md`]: APPROVE }, { head: 'other' })
+  await rejects(jobAdvance(a.ctx, a.t, { issue: 7, to: 'approved' }), 'bad-pr')
+  expect(a.t.log).toEqual([])
+  const b = inReview({ ...pass, [`${DIR}/round-1/review-security.md`]: rv('CHANGES', 'x'), [`${DIR}/decision.md`]: ESCALATE }, { head: 'other' })
+  await rejects(jobAdvance(b.ctx, b.t, { issue: 7, to: 'needs-human' }), 'bad-pr')
+  expect(b.t.prComments).toEqual([])
+})
+
+test('every round change rewrites the intake comment with the new Round', async () => {
+  const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('CHANGES', 'fix it') }
+  const { ctx, t } = inReview(files)
+  await jobAdvance(ctx, t, { issue: 7, to: 'build' })
+  expect(t.comments.find(c => c.name === 'intake')!.body).toContain('- Round: 2\n')
+})
+
+test('review pushes the commit the gate checked, and refuses when HEAD moved', async () => {
+  const r = inBuild()
+  let heads = 0
+  const inner = r.ctx.run
+  const ctx = { ...r.ctx, run: (async (argv: readonly string[], opts?: never) => {
+    if (argv.join(' ') === `git -C ${WT} rev-parse HEAD` && ++heads >= 3) return { exitCode: 0, stdout: `${'c'.repeat(40)}\n`, stderr: '' }
+    return inner(argv, opts)
+  }) as typeof inner }
+  await rejects(jobAdvance(ctx, r.t, { issue: 7, to: 'review' }), 'gate-not-green')
+  expect(r.ctx.calls.filter(c => c.includes('push'))).toEqual([])
+  expect(r.t.states).toEqual([])
+})
+
+test('starting a new round removes the old decision.md', async () => {
+  const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('CHANGES', 'x'), [`${DIR}/decision.md`]: ESCALATE }
+  const a = inReview(files)
+  await jobAdvance(a.ctx, a.t, { issue: 7, to: 'build' })
+  expect(a.ctx.calls).toContainEqual(['rm', '-rf', `${DIR}/decision.md`])
+  const b = setup('needs-human', { round: 1 }, { [`${DIR}/spec.md`]: SPEC, [`${DIR}/decision.md`]: ESCALATE })
+  await jobAdvance(b.ctx, b.t, { issue: 7, to: 'build' })
+  expect(b.ctx.calls).toContainEqual(['rm', '-rf', `${DIR}/decision.md`])
+})
+
+test('build from needs-human before any round is refused', async () => {
+  const r = setup('needs-human', { round: 0 }, { [`${DIR}/spec.md`]: SPEC })
+  await rejects(jobAdvance(r.ctx, r.t, { issue: 7, to: 'build' }), 'bad-state')
+  noEffects(r)
+})
+
+test('jobSync takes Round from the intake comment, with round markers as a floor', async () => {
+  const mk = (round: number, marker: number | null): Ticket => ({
+    kind: 'issue', number: 7, title: 'Add thing', body: 'b', author: 'alice', labels: ['factory', 'factory:build'], state: 'open',
+    createdAt: '2026-01-01T00:00:00Z', url: 'u/7',
+    comments: [
+      { id: 1, author: 'op', body: withMarker('intake', intakeComment({ ...J, round }, INTAKE)), createdAt: '2026-02-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z' },
+      ...(marker === null ? [] : [{ id: 2, author: 'op', body: withMarker(`round-${marker}` as MarkerName, 'x'), createdAt: '2026-02-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z' }]),
+    ],
+  })
+  for (const [round, marker, want] of [[3, 1, 3], [1, 4, 4], [2, null, 2]] as const) {
+    const ctx = fakeCtx({ files: { '/repo/.factory/config.json': cfgOf() }, replies: [{ argv: ['git', 'ls-remote'], result: { exitCode: 2 } }, { argv: [] }] })
+    const t = { login: async () => 'op', get: async () => mk(round, marker) } as unknown as Tracker
+    expect((await jobSync(ctx, t, 7)).job.round).toBe(want)
   }
 })

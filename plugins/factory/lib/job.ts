@@ -14,7 +14,7 @@ import {
 } from './jobfile.ts'
 import type { Tracker } from './tracker.ts'
 import { assertTransition } from './transitions.ts'
-import type { Ctx, Reviewer, State } from './types.ts'
+import type { Ctx, Reviewer, State, Ticket } from './types.ts'
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim()
 
@@ -126,7 +126,8 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
       rebuilt.push('intake.md')
     }
     const base = parseBase(fieldOf(jobPart, 'Base'))
-    let round = 0
+    const fromComment = fieldOf(jobPart, 'Round')
+    let round = fromComment !== null && /^[0-9]+$/.test(fromComment) ? Number(fromComment) : 0
     for (const c of ticket.comments) {
       const m = c.author === operator ? /^<!-- factory:round-([1-9][0-9]*) -->\s*$/.exec(c.body.split(/\r\n|\r|\n/, 1)[0] ?? '') : null
       if (m) round = Math.max(round, Number(m[1]))
@@ -186,6 +187,7 @@ export function intakeComment(job: Job, intake: string, mention?: string): strin
     `- Base: ${job.base}`,
     `- Spec updated: ${job.specUpdated ?? 'none'}`,
     `- PR: ${job.pr === null ? 'none' : `#${job.pr}`}`,
+    `- Round: ${job.round}`,
     '', '## Route',
   )
   const r = renderRoute(job.route)
@@ -251,6 +253,20 @@ function checkSpec(spec: string): string {
   return title
 }
 
+// The ticket is the authority; job.md is a cache an agent can edit. Refuse when it differs.
+async function verifyJob(ctx: Ctx, t: Tracker, ticket: Ticket, job: Job): Promise<void> {
+  const differs = (key: string): FactoryError => new FactoryError('bad-job', `job.md differs from the ticket: ${key}`, 'Run job_sync after you remove job.md, or restore the file.')
+  if (job.baseBranch !== (await loadConfig(ctx)).baseBranch) throw differs('Base branch')
+  const comment = findMarked(ticket.comments, 'intake', await t.login())
+  if (comment === undefined) throw differs('intake comment')
+  const text = stripMarker(comment.body)
+  const part = lastSection(text, 'Job') ?? ''
+  if ((fieldOf(part, 'Base') ?? 'none') !== job.base) throw differs('Base')
+  if (parsePr(fieldOf(part, 'PR')) !== job.pr) throw differs('PR')
+  if (fieldOf(part, 'Round') !== String(job.round)) throw differs('Round')
+  if (renderRoute(parseRoute(text) ?? {}) !== renderRoute(job.route)) throw differs('Route')
+}
+
 export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Promise<AdvanceResult> {
   const { issue: n, to, reason } = input
   const ticket = await t.get(n)
@@ -272,6 +288,8 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
     await t.setState(n, 'needs-human')
     return result('needs-human')
   }
+
+  if (from !== 'intake') await verifyJob(ctx, t, ticket, job)
 
   if (to === 'spec') {
     const text = await intakeText()
@@ -314,7 +332,10 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
 const done = (job: Job, state: State, extra: Partial<AdvanceResult> = {}): AdvanceResult => ({ job, state, round: job.round, roundDir: roundOf(job), ...extra })
 
 async function startRound(ctx: Ctx, t: Tracker, job: Job): Promise<AdvanceResult> {
+  const intake = await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')
   await writeJob(ctx, job)
+  await t.upsertComment(job.issue, 'intake', intakeComment(job, intake))
+  await rmrf(ctx, `${job.jobDir}/decision.md`) // a new round needs a new decision
   await mkdirp(ctx, roundOf(job))
   await t.setState(job.issue, 'build')
   return done(job, 'build')
@@ -322,12 +343,14 @@ async function startRound(ctx: Ctx, t: Tracker, job: Job): Promise<AdvanceResult
 
 async function advanceBuild(ctx: Ctx, t: Tracker, old: Job, from: State | null): Promise<AdvanceResult> {
   const n = old.issue
-  if (from === 'spec' || old.round === 0) {
+  if (from !== 'spec' && old.round === 0) {
+    throw new FactoryError('bad-state', 'no round has started yet', 'Advance spec to build first.')
+  }
+  if (from === 'spec') {
     const spec = await readRequired(ctx, `${old.jobDir}/spec.md`, 'no-spec', 'Run the spec step first.')
     checkSpec(spec)
     const posted = await t.upsertComment(n, 'spec', spec)
     const job: Job = { ...old, specUpdated: posted.updatedAt, round: 1 }
-    await t.upsertComment(n, 'intake', intakeComment(job, await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')))
     return startRound(ctx, t, job)
   }
   const max = (await loadConfig(ctx)).maxRounds
@@ -361,9 +384,12 @@ async function advanceReview(ctx: Ctx, t: Tracker, old: Job): Promise<AdvanceRes
     throw new FactoryError('build-incomplete', 'build.md must start with "STATUS: DONE"', 'The builder must finish first.')
   }
   // checks.md can be written by agents: run the gate here, through the gate tool's own path.
+  const head = async (): Promise<string> => (await must(ctx, ['git', '-C', old.worktree, 'rev-parse', 'HEAD']))
+  const sha = await head()
   const gate = await gateJob(ctx, n, `round-${old.round}`)
   if (gate.verdict !== 'PASS') throw new FactoryError('gate-not-green', `the gate is ${gate.verdict}, see ${roundDir}/checks.md`, 'Fix the failures and run the gate again.')
-  await must(ctx, ['git', '-C', old.worktree, 'push', '-u', 'origin', old.branch])
+  if ((await head()) !== sha) throw new FactoryError('gate-not-green', 'HEAD moved during the gate', 'Run the gate again.')
+  await must(ctx, ['git', '-C', old.worktree, 'push', 'origin', `${sha}:refs/heads/${old.branch}`])
   let job = old
   if (job.pr === null) {
     const found = await t.findPr(old.branch)
@@ -395,6 +421,7 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   if (job.pr === null) throw new FactoryError('no-pr', 'job.md has no PR', 'Advance to review first.')
   await t.upsertComment(n, `round-${job.round}`, await roundSummary(ctx, job, roundDir))
   await t.upsertComment(n, 'decision', await ctx.fs.read(`${job.jobDir}/decision.md`))
+  if ((await t.prState(job.pr)).headRefName !== job.branch) throw new FactoryError('bad-pr', `PR #${job.pr} is not on ${job.branch}`, 'Run job_sync.')
   if (to === 'approved') await t.prReady(job.pr)
   else await t.prComment(job.pr, decision.question ?? '')
   await t.setState(n, to)

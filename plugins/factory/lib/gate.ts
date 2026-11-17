@@ -24,16 +24,21 @@ const ROUND = /^(round-[1-9][0-9]*|merge|setup)$/
 const RUNNER_FILE = /(^|\/)(Makefile|GNUmakefile|makefile|\.npmrc)$|\.mk$/
 
 // Ignored files that can change what the steps run, and ignored protected paths.
-const isRunnerFile = (path: string, protectedPaths: string[]): boolean => RUNNER_FILE.test(path) || protectedPaths.includes(path)
+// A runner file counts only where the steps read it: the repo root and each stack path.
+const isRunnerFile = (path: string, protectedPaths: string[], dirs: string[]): boolean => {
+  if (protectedPaths.includes(path)) return true
+  const slash = path.lastIndexOf('/')
+  return RUNNER_FILE.test(path) && dirs.includes(slash < 0 ? '.' : path.slice(0, slash))
+}
 
 // Lists dirty entries and ignored runner files. Needs a clean committed tree: pushed content must be what the gate ran.
-async function dirtyTree(ctx: Ctx, wt: string, protectedPaths: string[]): Promise<string[]> {
+async function dirtyTree(ctx: Ctx, wt: string, protectedPaths: string[], dirs: string[]): Promise<string[]> {
   const entries = (out: string): string[] => out.split('\0').filter(e => e !== '')
   const dirty = entries(await git(ctx, wt, ['status', '--porcelain', '-z', '--untracked-files=all'])).map(e => e.slice(3))
   const ignored = entries(await git(ctx, wt, ['status', '--porcelain', '-z', '--ignored', '--untracked-files=all']))
     .filter(e => e.startsWith('!! '))
     .map(e => e.slice(3))
-    .filter(f => isRunnerFile(f, protectedPaths))
+    .filter(f => isRunnerFile(f, protectedPaths, dirs))
     .map(f => `${f} (ignored)`)
   return [...dirty, ...ignored]
 }
@@ -151,7 +156,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   let dirty: string[] = []
   let runnerFiles: string[] = []
   if (base !== undefined) {
-    dirty = await dirtyTree(ctx, wt, cfg.protectedPaths)
+    dirty = await dirtyTree(ctx, wt, cfg.protectedPaths, ['.', ...ds.map(d => d.path)])
     const log = await git(ctx, wt, ['log', '--first-parent', '--no-merges', '--format=%H%x00%B%x1e', `${base}..HEAD`])
     for (const rec of log.split('\x1e')) {
       const [sha, msg = ''] = rec.replace(/^\n/, '').split('\0')

@@ -267,7 +267,7 @@ test('gate fails on an untracked file in the worktree', async () => {
   expect((await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })).verdict).toBe('FAIL')
 })
 
-for (const f of ['.npmrc', 'sub/.npmrc', 'Makefile', 'GNUmakefile', 'makefile', 'rules.mk', '.factory/config.json']) {
+for (const f of ['.npmrc', 'Makefile', 'GNUmakefile', 'makefile', 'rules.mk', '.factory/config.json']) {
   test(`gate fails on an ignored ${f}`, async () => {
     const ctx = make({ replies: [{ argv: STATUS_IGNORED, result: { stdout: `!! ${f}\0` } }, ...baseReplies()] })
     const r = await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
@@ -284,4 +284,27 @@ test('gate passes with an ignored node_modules file', async () => {
 test('the clean-tree check needs a base: a setup run in the main checkout skips it', async () => {
   const ctx = make({ replies: [{ argv: STATUS, result: { stdout: ' M x\0' } }] })
   expect((await runGate(ctx, { worktree: WT, round: 'setup' })).verdict).toBe('PASS')
+})
+
+test('an ignored runner file in a dependency folder or a non-stack folder is fine', async () => {
+  const out = '!! node_modules/x/build/Makefile\0!! node_modules/x/build/a.target.mk\0!! sub/.npmrc\0!! vendor/Makefile\0'
+  const ctx = make({ replies: [{ argv: STATUS_IGNORED, result: { stdout: out } }, ...baseReplies()] })
+  expect((await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })).verdict).toBe('PASS')
+})
+
+test('an ignored .npmrc in a stack path fails', async () => {
+  const stacks: StackRef[] = [{ id: 'node', path: 'app' }]
+  const ctx = make({
+    stacks,
+    ls: 'app/package.json\n',
+    files: { [`${WT}/app/package.json`]: pkg({ test: 'vitest' }), '/repo/app/package.json': pkg({ test: 'vitest' }) },
+    replies: [
+      { argv: STATUS_IGNORED, result: { stdout: '!! app/.npmrc\0' } },
+      { argv: git('show', `${BASE}:app/package.json`), result: { stdout: pkg({ test: 'vitest' }) } },
+      ...baseReplies(),
+    ],
+  })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
+  expect(r.verdict).toBe('FAIL')
+  expect(r.report).toContain('app/.npmrc')
 })
