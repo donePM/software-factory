@@ -89,7 +89,8 @@ The first line is machine-readable: `VERDICT: PASS|CHANGES`. Write exactly
 
 Write `VERDICT: CHANGES` only for a `blocker` or a `should`. Nits never block.
 A test failure in `checks.md`, an AC without a test that fails without the
-change, or a bad commit is always CHANGES.
+change, or a bad commit is always CHANGES. Write each one as a `blocker`
+finding. A CHANGES review without a `blocker` or a `should` is not valid.
 
 ## Examples
 CHANGES:
