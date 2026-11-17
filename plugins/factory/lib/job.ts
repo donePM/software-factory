@@ -44,6 +44,13 @@ async function ensureWorktree(ctx: Ctx, wt: string, branch: string, start: strin
   }
 }
 
+// A zero-width space breaks GitHub closing keywords and @mentions in agent text, so it closes and pings nothing.
+const ZWSP = '\u200b'
+export const inert = (text: string): string =>
+  text
+    .replace(/\b(c(?=lose[sd]?\b)|f(?=ix(?:e[sd])?\b)|r(?=esolve[sd]?\b))/gi, `$1${ZWSP}`)
+    .replace(/@(?=[\w-])/g, `@${ZWSP}`)
+
 export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
   const operator = await t.login()
   const ticket = await t.get(n)
@@ -418,7 +425,7 @@ async function advanceReview(ctx: Ctx, t: Tracker, old: Job): Promise<AdvanceRes
     if (pr === null) {
       const kind = typeOf(title)!
       const labels = ['factory:pr', `type:${kind.type}`, ...(kind.breaking ? ['type:breaking'] : [])]
-      const summary = (lastSection(build, 'Summary') ?? '').trim()
+      const summary = inert((lastSection(build, 'Summary') ?? '').trim())
       pr = (await t.openPr(old.branch, old.baseBranch, title, `Closes #${n}\n\n## Summary\n\n${summary}\n`, labels)).number
     }
     job = { ...old, pr }

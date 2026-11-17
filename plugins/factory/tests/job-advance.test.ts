@@ -267,6 +267,18 @@ test('PR body closes the issue', async () => {
   expect(t.prs[0]!.body).toContain('Built the thing.')
 })
 
+test('PR body neutralizes closing keywords and mentions in the build summary', async () => {
+  const build = 'STATUS: DONE\n\n## Summary\nFixes #3, closes: #4 and resolved o/r#5. Ask @bob and @org/team.\n'
+  const { ctx, t } = inBuild({ [`${DIR}/round-1/build.md`]: build })
+  await jobAdvance(ctx, t, { issue: 7, to: 'review' })
+  const body = t.prs[0]!.body
+  expect(body.startsWith('Closes #7\n')).toBe(true)
+  const summary = body.slice(body.indexOf('## Summary'))
+  expect(summary).not.toMatch(/\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b/i)
+  expect(summary).not.toMatch(/@[a-z]/i)
+  expect(summary.replace(/\u200b/g, '')).toContain('Fixes #3, closes: #4 and resolved o/r#5. Ask @bob and @org/team.')
+})
+
 test('a breaking title adds the breaking label', async () => {
   const { ctx, t } = inBuild({ [`${DIR}/spec.md`]: SPEC.replace('feat:', 'feat!:') })
   await jobAdvance(ctx, t, { issue: 7, to: 'review' })
