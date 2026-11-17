@@ -2,9 +2,10 @@ import type { StackRef } from '../config.ts'
 import { FactoryError } from '../exec.ts'
 import type { Ctx } from '../types.ts'
 import { claudePlugin } from './claude-plugin.ts'
+import { node } from './node.ts'
 import type { Detection, ReadFile, Stack, Step, StepName } from './types.ts'
 
-export const STACKS: Stack[] = [claudePlugin]
+export const STACKS: Stack[] = [claudePlugin, node]
 
 const STEP_ORDER: StepName[] = ['install', 'format', 'lint', 'typecheck', 'build', 'test', 'audit', 'start']
 
