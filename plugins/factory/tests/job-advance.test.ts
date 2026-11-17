@@ -301,6 +301,7 @@ test('approved needs every review PASS and decision APPROVE', async () => {
   expect(r.state).toBe('approved')
   expect(t.log).toContain('ready 12')
   expect(t.comments.map(c => c.name)).toEqual(['round-1', 'decision'])
+  expect(t.comments[1]!.body).toBe(`Round: 1\n\n${APPROVE}`)
   expect(t.states).toEqual(['approved'])
 })
 

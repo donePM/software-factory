@@ -146,8 +146,19 @@ const comments = (): Comment[] => [
   C(2, 'op', withMarker('spec', 'STATUS: READY\nTitle: feat: x\n'), '2026-01-02T00:00:00Z'),
   C(3, 'op', withMarker('round-1', 'VERDICT: CHANGES\n')),
   C(4, 'op', withMarker('round-2', 'VERDICT: PASS\n')),
-  C(5, 'op', withMarker('decision', 'DECISION: APPROVE\n')),
+  C(5, 'op', withMarker('decision', 'Round: 2\n\nDECISION: APPROVE\n')),
 ]
+
+for (const [what, body] of [['an older round', 'Round: 1\n\nDECISION: APPROVE\n'], ['no round', 'DECISION: APPROVE\n']]) {
+  test(`jobSync does not restore a decision from ${what}`, async () => {
+    const ctx = fakeCtx({ files: { ...CFG, [WT]: '' } })
+    const list = [...comments().slice(0, 4), C(5, 'op', withMarker('decision', body!))]
+    const r = await jobSync(ctx, tracker(T(['factory:review'], list)), 7)
+    expect(r.job.round).toBe(2)
+    expect(ctx.files[`${DIR}/decision.md`]).toBeUndefined()
+    expect(r.rebuilt).not.toContain('decision.md')
+  })
+}
 
 test('jobSync rebuilds a deleted job folder from comments', async () => {
   const ctx = fakeCtx({ files: { ...CFG, [WT]: '' } })

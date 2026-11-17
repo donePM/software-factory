@@ -164,9 +164,10 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
       await ctx.fs.write(`${dir}/spec.md`, stripMarker(spec.body))
       rebuilt.push('spec.md')
     }
-    const decision = findMarked(ticket.comments, 'decision', operator)
-    if (decision !== undefined) {
-      await ctx.fs.write(`${dir}/decision.md`, stripMarker(decision.body))
+    // A decision from another round (or with no round) is stale: the approver must decide again.
+    const decision = /^Round: ([0-9]+)\r?\n\r?\n/.exec(stripMarker(findMarked(ticket.comments, 'decision', operator)?.body ?? ''))
+    if (decision !== null && Number(decision[1]) === round) {
+      await ctx.fs.write(`${dir}/decision.md`, decision.input.slice(decision[0].length))
       rebuilt.push('decision.md')
     }
   }
@@ -449,7 +450,7 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   }
   if (job.pr === null) throw new FactoryError('no-pr', 'job.md has no PR', 'Advance to review first.')
   await t.upsertComment(n, `round-${job.round}`, await roundSummary(ctx, job, roundDir))
-  await t.upsertComment(n, 'decision', await ctx.fs.read(`${job.jobDir}/decision.md`))
+  await t.upsertComment(n, 'decision', `Round: ${job.round}\n\n${await ctx.fs.read(`${job.jobDir}/decision.md`)}`)
   if ((await t.prState(job.pr)).headRefName !== job.branch) throw new FactoryError('bad-pr', `PR #${job.pr} is not on ${job.branch}`, 'Run job_sync.')
   // Both ways the PR leaves draft: GitHub does not merge a draft, and a human may merge an escalated job.
   await t.prReady(job.pr)
