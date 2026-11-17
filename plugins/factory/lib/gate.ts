@@ -14,11 +14,14 @@ export type GateResult = {
   title?: string
   protected: string[]
   scriptsChanged: string[]
+  missingStacks: string[]
   report: string
 }
 
 const ORDER: StepName[] = ['install', 'format', 'lint', 'typecheck', 'build', 'test', 'audit']
 const STEP_TIMEOUT_MS = 600000
+const ROUND = /^(round-[1-9][0-9]*|merge|setup)$/
+const RUNNER_FILE = /(^|\/)(Makefile|GNUmakefile|makefile|\.npmrc)$|\.mk$/
 
 const rank = (n: StepName): number => {
   const i = ORDER.indexOf(n)
@@ -109,6 +112,9 @@ function fixFor(step: Step, ds: Detection[], wt: string): string {
 const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, ' ')
 
 export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
+  if (!ROUND.test(input.round)) {
+    throw new FactoryError('bad-round', `round "${input.round}" is not valid`, 'Use round-<n>, merge or setup.')
+  }
   const wt = input.worktree
   const cfg = await loadConfig(ctx)
   const all = await detectAll(ctx, wt)
@@ -122,6 +128,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
     }
     return readIfExists(ctx, `${ctx.root}/${rel}`)
   }
+  const missingStacks = refs.filter(r => !all.some(d => d.stack === r.id && d.path === r.path)).map(r => `${r.id} ${r.path}`)
   const planned = planGate(await resolveSteps(ctx, wt, read, refs, ds), ds)
 
   const steps: StepResult[] = []
@@ -135,6 +142,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
 
   const commits: GateResult['commits'] = []
   let prot: string[] = []
+  let runnerFiles: string[] = []
   if (base !== undefined) {
     const log = await git(ctx, wt, ['log', '--first-parent', '--no-merges', '--format=%H%x00%B%x1e', `${base}..HEAD`])
     for (const rec of log.split('\x1e')) {
@@ -143,14 +151,15 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
       const problem = checkMessage(msg.trim())
       if (problem !== null) commits.push({ sha: sha.trim(), problem })
     }
-    const changed = (await git(ctx, wt, ['diff', '--name-only', `${base}...HEAD`])).split('\n').filter(l => l !== '')
+    const changed = (await git(ctx, wt, ['diff', '--name-only', '--no-renames', '-z', `${base}...HEAD`])).split('\0').filter(l => l !== '')
     prot = changed.filter(f => cfg.protectedPaths.includes(f))
+    runnerFiles = changed.filter(f => RUNNER_FILE.test(f))
   }
   const titleProblem = input.prTitle === undefined ? null : checkMessage(input.prTitle)
-  const changedScripts = await scriptsChanged(ctx, wt, ds, read)
+  const changedScripts = [...new Set([...(await scriptsChanged(ctx, wt, ds, read)), ...runnerFiles])]
 
   const red = steps.filter(s => s.exitCode !== 0)
-  const verdict = red.length + commits.length + prot.length + changedScripts.length > 0 || titleProblem !== null ? 'FAIL' : 'PASS'
+  const verdict = red.length + commits.length + prot.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null ? 'FAIL' : 'PASS'
 
   const lines: string[] = [`VERDICT: ${verdict}`, '', '## Summary', '']
   lines.push(`${steps.length - red.length} of ${steps.length} steps passed. Round: ${input.round}.`, '')
@@ -163,6 +172,8 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   }
   if (titleProblem !== null) lines.push('', '## PR title', `- ${titleProblem}`)
   if (prot.length > 0) lines.push('', '## Protected paths', ...prot.map(p => `- ${p}`))
+  if (missingStacks.length > 0) lines.push('', '## Stacks not detected', ...missingStacks.map(m => `- ${m}`))
+  if (steps.length === 0) lines.push('', '## No steps', '- No step ran.')
   if (changedScripts.length > 0) lines.push('', '## Scripts changed', ...changedScripts.map(p => `- ${p}`))
   const report = `${lines.join('\n')}\n`
 
@@ -173,7 +184,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   await ctx.fs.write(`${dir}/checks.md`, report)
   await ctx.fs.write(logPath, `${old ?? ''}## Attempt ${k}\n\n${outputs.join('\n\n')}\n\n`)
 
-  const result: GateResult = { verdict, steps, commits, protected: prot, scriptsChanged: changedScripts, report }
+  const result: GateResult = { verdict, steps, commits, protected: prot, scriptsChanged: changedScripts, missingStacks, report }
   if (titleProblem !== null) result.title = titleProblem
   return result
 }

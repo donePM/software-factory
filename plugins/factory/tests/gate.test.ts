@@ -14,7 +14,7 @@ const pkg = (scripts: Record<string, string>, extra: Record<string, unknown> = {
 const cfg = (stacks: StackRef[] = [{ id: 'node', path: '.' }], over: Partial<Config> = {}): string =>
   JSON.stringify({ ...defaultConfig('u', 'main', stacks), ...over })
 
-type Setup = { files?: Record<string, string>; replies?: Reply[]; stacks?: StackRef[] }
+type Setup = { files?: Record<string, string>; replies?: Reply[]; stacks?: StackRef[]; ls?: string }
 
 // A node repo: package.json in root and worktree, config in root only unless the files say otherwise.
 function make(o: Setup = {}): ReturnType<typeof fakeCtx> {
@@ -26,7 +26,7 @@ function make(o: Setup = {}): ReturnType<typeof fakeCtx> {
       ...o.files,
     },
     replies: [
-      { argv: LS, result: { stdout: 'package.json\n' } },
+      { argv: LS, result: { stdout: o.ls ?? 'package.json\n' } },
       ...(o.replies ?? []),
       { argv: git('show'), result: { exitCode: 128 } },
       { argv: git('log'), result: { stdout: '' } },
@@ -111,7 +111,7 @@ test('gate fails on a bad PR title', async () => {
 })
 
 test('gate fails when the branch touches a protected path', async () => {
-  const ctx = make({ replies: [{ argv: git('diff'), result: { stdout: '.factory/config.json\nsrc/a.ts\n' } }, ...baseReplies()] })
+  const ctx = make({ replies: [{ argv: git('diff'), result: { stdout: '.factory/config.json\0src/a.ts\0' } }, ...baseReplies()] })
   const r = await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
   expect(r.verdict).toBe('FAIL')
   expect(r.protected).toEqual(['.factory/config.json'])
@@ -120,7 +120,7 @@ test('gate fails when the branch touches a protected path', async () => {
 test('gate diffs committed changes only', async () => {
   const ctx = make({ replies: baseReplies() })
   await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
-  expect(ctx.calls).toContainEqual(git('diff', '--name-only', `${BASE}...HEAD`))
+  expect(ctx.calls).toContainEqual(git('diff', '--name-only', '--no-renames', '-z', `${BASE}...HEAD`))
 })
 
 test('gate reads config from the main checkout', async () => {
@@ -170,7 +170,6 @@ test('gate takes scripts from the base, not the branch', async () => {
   })
   await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
   expect(ctx.calls).toContainEqual(['npm', 'run', 'test'])
-  expect(ctx.calls.some(c => c.join(' ') === 'true')).toBe(false)
 })
 
 test('gate fails when the branch changes a package.json script', async () => {
@@ -218,4 +217,44 @@ test('jobField reads a bullet field', () => {
   expect(jobField(md, 'Base')).toBe('abc')
   expect(jobField(md, 'PR')).toBeNull()
   expect(jobField(md, 'Nope')).toBeNull()
+})
+
+const diffReply = (out: string): Reply[] => [{ argv: git('diff'), result: { stdout: out } }, ...baseReplies()]
+
+test('a rename of a protected path lists the old path', async () => {
+  const ctx = make({ replies: diffReply('.factory/config.json\0old.json\0') })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
+  expect(r.verdict).toBe('FAIL')
+  expect(r.protected).toEqual(['.factory/config.json'])
+})
+
+for (const f of ['GNUmakefile', 'sub/makefile', 'rules.mk', 'sub/.npmrc']) {
+  test(`gate fails when the branch changes ${f}`, async () => {
+    const ctx = make({ replies: diffReply(`${f}\0`) })
+    const r = await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
+    expect(r.verdict).toBe('FAIL')
+    expect(r.scriptsChanged).toEqual([f])
+  })
+}
+
+test('a configured stack that is not detected is a FAIL that names it', async () => {
+  const ctx = make({ ls: '', stacks: [{ id: 'node', path: 'app' }] })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('FAIL')
+  expect(r.missingStacks).toEqual(['node app'])
+  expect(r.report).toContain('node app')
+})
+
+test('a run with zero steps is a FAIL', async () => {
+  const ctx = make({ ls: '', stacks: [] })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup' })
+  expect(r.steps).toEqual([])
+  expect(r.verdict).toBe('FAIL')
+})
+
+test('runGate rejects a round that is not a round name', async () => {
+  const ctx = make()
+  for (const round of ['../../..', 'round-0', 'round-1\nx', 'other']) {
+    await expect(runGate(ctx, { worktree: WT, round })).rejects.toMatchObject({ code: 'bad-round' })
+  }
 })

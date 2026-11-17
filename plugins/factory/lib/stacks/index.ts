@@ -56,7 +56,7 @@ export async function resolveSteps(
       if (cmd !== undefined) {
         add({ name, argv: ['sh', '-c', cmd], cwd, source: 'config', stack: d.stack })
       } else if (make !== null && new RegExp(`^${name}:`, 'm').test(make)) {
-        add({ name, argv: ['make', name], cwd, source: 'runner', stack: d.stack })
+        add({ name, argv: ['make', '-f', 'Makefile', name], cwd, source: 'runner', stack: d.stack })
       } else {
         for (const s of own) if (s.name === name) add(s)
       }

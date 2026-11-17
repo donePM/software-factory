@@ -1,6 +1,6 @@
 import type { Register } from 'claude-code'
 import { FactoryError } from '../lib/exec.ts'
-import { migrate } from '../lib/config.ts'
+import { loadConfig, migrate } from '../lib/config.ts'
 import { doctor } from '../lib/doctor.ts'
 import { jobField, runGate } from '../lib/gate.ts'
 import { setup } from '../lib/setup.ts'
@@ -48,7 +48,7 @@ export const TOOLS: ToolDef[] = [
       'Run the stack steps, the Conventional Commits check and the protected-path check. Writes checks.md. Runs up to 600 s per step: only gate-runner and merge call it.',
     inputSchema: {
       type: 'object',
-      properties: { issue: { type: 'integer', minimum: 1 }, round: { type: 'string' } },
+      properties: { issue: { type: 'integer', minimum: 1 }, round: { type: 'string', pattern: '^(round-[1-9][0-9]*|merge|setup)$' } },
       additionalProperties: false,
     },
     handler: (ctx, input) => gateTool(ctx, input),
@@ -57,8 +57,27 @@ export const TOOLS: ToolDef[] = [
 
 const NO_JOB = 'Run job_create first.'
 
+const SHA40 = /^[0-9a-f]{40}$/
+
+async function checkBase(ctx: Ctx, wt: string, base: string): Promise<void> {
+  const bad = (m: string): FactoryError => new FactoryError('bad-job-base', m, NO_JOB)
+  if (!SHA40.test(base)) throw bad(`job.md Base "${base}" is not a full 40-character sha`)
+  const head = (await ctx.run(['git', '-C', wt, 'rev-parse', 'HEAD'])).stdout.trim()
+  if (head === base) throw bad('job.md Base equals the worktree HEAD')
+  if ((await ctx.run(['git', '-C', wt, 'merge-base', '--is-ancestor', base, 'HEAD'])).exitCode !== 0) {
+    throw bad('job.md Base is not an ancestor of the worktree HEAD')
+  }
+  const branch = (await loadConfig(ctx)).baseBranch
+  if ((await ctx.run(['git', '-C', ctx.root, 'merge-base', '--is-ancestor', base, branch])).exitCode !== 0) {
+    throw bad(`job.md Base is not an ancestor of ${branch}`)
+  }
+}
+
 async function gateTool(ctx: Ctx, input: { issue?: number; round?: string }): Promise<unknown> {
   const round = input.round ?? 'setup'
+  if (!/^(round-[1-9][0-9]*|merge|setup)$/.test(round)) {
+    throw new FactoryError('bad-round', `round "${round}" is not valid`, 'Use round-<n>, merge or setup.')
+  }
   if (input.issue === undefined) return runGate(ctx, { worktree: ctx.root, round })
   const jobDir = `${ctx.root}/.factory/jobs/${input.issue}`
   if (!(await ctx.fs.exists(`${jobDir}/job.md`))) throw new FactoryError('no-job', `${jobDir}/job.md does not exist`, NO_JOB)
@@ -71,6 +90,11 @@ async function gateTool(ctx: Ctx, input: { issue?: number; round?: string }): Pr
   const title = /^Title:\s*(.+)$/m.exec(await ctx.fs.read(`${jobDir}/spec.md`))?.[1]?.trim()
   if (title === undefined) throw new FactoryError('spec-no-title', 'spec.md has no "Title:" line', 'The spec-writer must add a Title line.')
   const worktree = wt.startsWith('/') ? wt : `${ctx.root}/${wt}`
+  const expected = `${ctx.root}/.factory/worktrees/${input.issue}`
+  if (worktree !== expected) {
+    throw new FactoryError('bad-job-worktree', `job.md names worktree ${wt}, not ${expected}`, NO_JOB)
+  }
+  await checkBase(ctx, worktree, base)
   return runGate(ctx, { worktree, round, base, prTitle: title, jobDir })
 }
 

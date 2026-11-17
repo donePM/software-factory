@@ -79,7 +79,7 @@ test('config step overrides the stack step', async () => {
 test('a Makefile target replaces the step of every stack at that path', async () => {
   const read = async (rel: string) => (rel === 'Makefile' ? 'test:\n\techo hi\n' : null)
   const steps = await resolveSteps(fakeCtx(), '/repo', read, [], [det('.', 'marketplace', ['claude']), det('.', 'plugin', ['claude', 'tests'])])
-  expect(steps.filter(s => s.name === 'test').map(s => s.argv)).toEqual([['make', 'test']])
+  expect(steps.filter(s => s.name === 'test').map(s => s.argv)).toEqual([['make', '-f', 'Makefile', 'test']])
   expect(steps.find(s => s.name === 'test')!.source).toBe('runner')
 })
 
@@ -97,7 +97,7 @@ test('steps read the Makefile through the given reader', async () => {
   }
   const steps = await resolveSteps(ctx, '/repo', read, [], [det('.', 'plugin', ['claude', 'tests'])])
   expect(asked).toEqual(['Makefile'])
-  expect(steps.find(s => s.name === 'test')!.argv).toEqual(['make', 'test'])
+  expect(steps.find(s => s.name === 'test')!.argv).toEqual(['make', '-f', 'Makefile', 'test'])
   expect(steps.find(s => s.name === 'lint')!.argv[0]).toBe('claude')
 })
 
@@ -176,7 +176,7 @@ test('default steps run in the given repo, not in ctx.root', async () => {
 test('equal commands from different stacks at one path run once in another repo', async () => {
   const read = async (rel: string) => (rel === 'Makefile' ? 'lint:\n' : null)
   const steps = await resolveSteps(fakeCtx(), '/other', read, [], [det('.', 'marketplace', ['claude']), det('.', 'plugin', ['claude'])])
-  expect(steps.filter(s => s.name === 'lint').map(s => [s.argv, s.cwd])).toEqual([[['make', 'lint'], '/other']])
+  expect(steps.filter(s => s.name === 'lint').map(s => [s.argv, s.cwd])).toEqual([[['make', '-f', 'Makefile', 'lint'], '/other']])
   const plain = await resolveSteps(fakeCtx(), '/other', none, [], [det('.', 'marketplace', ['claude']), det('.', 'plugin', ['claude'])])
   expect(plain.filter(s => s.name === 'lint')).toHaveLength(1)
 })
