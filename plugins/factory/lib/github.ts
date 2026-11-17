@@ -22,30 +22,9 @@ type RawIssue = {
 type RawComment = { id: number; user: { login: string }; body: string; created_at: string; updated_at: string }
 type RawPr = Omit<PrState, 'author'> & { author: { login: string } }
 
-// `gh api --paginate` prints one JSON array per page, back to back.
-function parsePages<T>(text: string): T[] {
-  const out: T[] = []
-  let depth = 0
-  let inStr = false
-  let esc = false
-  let start = 0
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!
-    if (inStr) {
-      if (esc) esc = false
-      else if (ch === '\\') esc = true
-      else if (ch === '"') inStr = false
-    } else if (ch === '"') inStr = true
-    else if (ch === '[' || ch === '{') {
-      if (depth === 0) start = i
-      depth++
-    } else if (ch === ']' || ch === '}') {
-      depth--
-      if (depth === 0) out.push(...(JSON.parse(text.slice(start, i + 1)) as T[]))
-    }
-  }
-  return out
-}
+// `--jq '.[]'` makes gh print one compact JSON object per line.
+const parseLines = <T>(text: string): T[] =>
+  text.split('\n').filter(l => l.trim() !== '').map(l => JSON.parse(l) as T)
 
 const toTicket = (r: RawIssue, comments: Comment[]): Ticket => ({
   kind: 'issue', number: r.number, title: r.title, body: r.body, author: r.author.login,
@@ -88,7 +67,7 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
     },
     async get(n) {
       const raw = await json<RawIssue>(['issue', 'view', String(n), '-R', repo, '--json', ISSUE_FIELDS])
-      const comments = parsePages<RawComment>(await gh(['api', `repos/${repo}/issues/${n}/comments`, '--paginate']))
+      const comments = parseLines<RawComment>(await gh(['api', `repos/${repo}/issues/${n}/comments`, '--paginate', '--jq', '.[]']))
       return toTicket(raw, comments.map(toComment))
     },
     async setState(n, to) {

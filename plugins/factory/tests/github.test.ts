@@ -29,7 +29,7 @@ const writes: Reply[] = [
 ]
 const getReplies = (labels: string[], comments: unknown[] = [], n = 5): Reply[] => [
   { argv: ['gh', 'issue', 'view', String(n)], result: { stdout: issueJson(labels, n) } },
-  { argv: ['gh', 'api', `repos/a/b/issues/${n}/comments`], result: { stdout: JSON.stringify(comments) } },
+  { argv: ['gh', 'api', `repos/a/b/issues/${n}/comments`], result: { stdout: comments.map(c => JSON.stringify(c)).join('\n') } },
 ]
 
 test('repoFromUrl handles https, .git and ssh', () => {
@@ -61,7 +61,7 @@ test('get filters nothing but loads comments', async () => {
     { id: 55, author: 'bob', body: 'hi', createdAt: 'c1', updatedAt: 'u1' },
     { id: 56, author: 'eve', body: 'yo', createdAt: 'c2', updatedAt: 'u2' },
   ])
-  expect(has(ctx.calls, 'gh', 'api', 'repos/a/b/issues/5/comments', '--paginate')).toBe(true)
+  expect(ctx.calls).toContainEqual(['gh', 'api', 'repos/a/b/issues/5/comments', '--paginate', '--jq', '.[]'])
 })
 
 test('setState swaps exactly one status label', async () => {
@@ -199,4 +199,33 @@ test('applyStandard without apply only reads', async () => {
   const ctx = spyCtx([{ argv: ['gh', 'api', 'repos/a/b'], result: { stdout: repoJson({ has_issues: false }) } }])
   await githubTracker(ctx, 'a/b').applyStandard(false)
   expect(has(ctx.calls, 'gh', 'api', '-X', 'PATCH')).toBe(false)
+})
+
+test('get keeps brackets inside comment bodies', async () => {
+  const body = 'see ] [ and [1] {x} ][\nnext'
+  const ctx = spyCtx(getReplies(['factory'], [
+    { id: 1, user: { login: 'bob' }, body, created_at: 'c', updated_at: 'u' },
+    { id: 2, user: { login: 'eve' }, body: 'ok', created_at: 'c', updated_at: 'u' },
+  ]))
+  const t = await githubTracker(ctx, 'a/b').get(5)
+  expect(t.comments.map(c => c.id)).toEqual([1, 2])
+  expect(t.comments[0]!.body).toBe(body)
+})
+
+test('get with no comments returns an empty list', async () => {
+  const t = await githubTracker(spyCtx(getReplies(['factory'])), 'a/b').get(5)
+  expect(t.comments).toEqual([])
+})
+
+test('searchIssues maps labels to names', async () => {
+  const ctx = spyCtx([{ argv: ['gh', 'issue', 'list'], result: { stdout: JSON.stringify([{ number: 3, title: 'X', labels: [{ name: 'factory' }, { name: 'type:fix' }] }]) } }])
+  expect(await githubTracker(ctx, 'a/b').searchIssues('dup in:title')).toEqual([{ number: 3, title: 'X', labels: ['factory', 'type:fix'] }])
+  expect(ctx.calls[0]).toEqual(['gh', 'issue', 'list', '-R', 'a/b', '--state', 'all', '--search', 'dup in:title', '--limit', '50', '--json', 'number,title,labels'])
+})
+
+test('prState maps the author', async () => {
+  const pr = { number: 9, state: 'MERGED', isDraft: false, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: 'APPROVED' }
+  const ctx = spyCtx([{ argv: ['gh', 'pr', 'view'], result: { stdout: JSON.stringify(pr) } }])
+  expect(await githubTracker(ctx, 'a/b').prState(9)).toEqual({ ...pr, author: 'op' })
+  expect(ctx.calls[0]).toEqual(['gh', 'pr', 'view', '9', '-R', 'a/b', '--json', 'number,state,isDraft,title,body,author,headRefName,headRefOid,reviewDecision'])
 })
