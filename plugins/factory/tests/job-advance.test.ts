@@ -284,6 +284,14 @@ test('approved needs every review PASS and decision APPROVE', async () => {
   expect(t.states).toEqual(['approved'])
 })
 
+test('approved is refused after a spec change during review', async () => {
+  const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE }
+  const { ctx, t } = inReview(files, { tamper: { specUpdated: '2026-03-01T00:00:00Z' } })
+  await rejects(jobAdvance(ctx, t, { issue: 7, to: 'approved' }), 'spec-changed')
+  expect(t.states).toEqual([])
+  expect(t.log).not.toContain('ready 12')
+})
+
 test('decision-mismatch for every other mix', async () => {
   const pass = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS') }
   const changes = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('CHANGES', 'bad') }

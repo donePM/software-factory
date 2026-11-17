@@ -326,6 +326,9 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
   if (to === 'build') return advanceBuild(ctx, t, job, from, await specMoved(t, ticket, job))
   if (to === 'review') return advanceReview(ctx, t, job)
   if (to === 'needs-human' && from !== 'review') throw new FactoryError('reason-required', 'needs-human outside review needs a reason', 'Pass reason.')
+  if (to === 'approved' && (await specMoved(t, ticket, job))) {
+    throw new FactoryError('spec-changed', 'the spec changed after this round started', 'Advance to build for a new round.')
+  }
   return advanceDecision(ctx, t, job, to)
 }
 
