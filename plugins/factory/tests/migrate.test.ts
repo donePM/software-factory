@@ -64,7 +64,7 @@ test('migrate rejects a config newer than the plugin', async () => {
   const before = JSON.stringify(cfgAt(9))
   const ctx = fakeCtx({ files: { [path]: before } })
   const err = await migrate(ctx).catch(e => e)
-  expect(err.code).toBe('config_too_new')
+  expect(err.code).toBe('config-too-new')
   expect(err.message).toContain('9')
   expect(err.message).toContain('1')
   expect(err.fix).toBe('Update the factory plugin.')

@@ -142,6 +142,9 @@ export async function loadConfig(ctx: Ctx): Promise<Config> {
   if (isObj(raw) && typeof raw.version === 'number' && raw.version < CONFIG_VERSION) {
     throw new FactoryError('config-outdated', `config version ${raw.version} is older than ${CONFIG_VERSION}`, SETUP)
   }
+  if (isObj(raw) && typeof raw.version === 'number' && raw.version > CONFIG_VERSION) {
+    throw new FactoryError('config-too-new', `config version ${raw.version} is newer than the plugin's ${CONFIG_VERSION}`, 'Update the factory plugin.')
+  }
   const errs = validateConfig(raw)
   if (errs.length > 0) throw new FactoryError('config-invalid', errs.join('\n'))
   return raw as Config
@@ -181,7 +184,7 @@ export async function migrate(ctx: Ctx, list: Migration[] = migrations): Promise
   const from = cfg.version
   const target = list.length > 0 ? Math.max(...list.map(m => m.from)) + 1 : CONFIG_VERSION
   if (from > target) {
-    throw new FactoryError('config_too_new', `config version ${from} is newer than the plugin's ${target}`, 'Update the factory plugin.')
+    throw new FactoryError('config-too-new', `config version ${from} is newer than the plugin's ${target}`, 'Update the factory plugin.')
   }
   if (from === target) return { from, to: from, applied: [] }
   const applied: string[] = []

@@ -44,3 +44,10 @@ test('loadConfig returns a valid config', async () => {
   const ctx = fakeCtx({ files: { [configPath('/repo')]: JSON.stringify(c) } })
   expect((await loadConfig(ctx)).version).toBe(CONFIG_VERSION)
 })
+
+test('loadConfig rejects a config newer than the plugin', async () => {
+  const ctx = fakeCtx({ files: { [configPath('/repo')]: JSON.stringify({ ...defaultConfig(url, 'main', []), version: CONFIG_VERSION + 1 }) } })
+  const err = await loadConfig(ctx).catch(e => e)
+  expect(err.code).toBe('config-too-new')
+  expect(err.fix).toBe('Update the factory plugin.')
+})
