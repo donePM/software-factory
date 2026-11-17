@@ -63,8 +63,6 @@ export const register: Register = on => {
     }
     return next(e)
   })
-  // The engine offers a plugin's tool at tool.call (before the permission check) and at tool.run.
-  // The test engine raises only tool.call, so both serve the same handler.
-  on('tool.call', serve)
+  // Serve only at tool.run: it fires after the permission check, so tools like merge stay gated.
   on('tool.run', serve)
 }
