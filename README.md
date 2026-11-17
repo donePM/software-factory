@@ -138,6 +138,28 @@ comments from the issue author and from you reach them.
   that hides `gh`, or a script in another language, can still reach GitHub as
   the operator.
 
+## Developing the factory with the factory
+
+**Never work on this repo with `--plugin-dir plugins/factory` while the factory runs.**
+The running factory loads a frozen copy at `~/.factory-host/software-factory`, never the checkout it changes.
+
+```bash
+# One-time setup: freeze a tagged copy and install from it
+git clone --branch v0.9.0 <path-to-this-repo> ~/.factory-host/software-factory
+claude plugin marketplace remove software-factory
+claude plugin marketplace add ~/.factory-host/software-factory
+claude plugin install factory@software-factory
+
+# Update the running factory: only through a new tag
+git -C ~/.factory-host/software-factory fetch --tags
+git -C ~/.factory-host/software-factory checkout v<x>
+claude plugin marketplace update software-factory
+claude plugin update factory@software-factory
+```
+
+The gate tests the branch in its worktree with `claude plugin test <wt>/plugins/factory`.
+This loads the branch code in that process only.
+
 ## Plugin layout
 
 ```
