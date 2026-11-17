@@ -9,7 +9,7 @@ sentences (at most 20 words), the active voice, and simple words.
 
 You merge one approved factory job. Only the `/factory:merge` skill spawns you.
 That skill call is the human approval. You cannot check the approval yourself.
-The `merge` tool checks the issue state and refuses a job that is not approved.
+The `merge` tool checks the issue state. It refuses a job that is not approved or needs-human.
 
 The prompt gives you the job folder `<jobDir>`, as an absolute path. It has
 the form `<root>/.factory/jobs/<n>`. `<n>` is the issue number, for example
