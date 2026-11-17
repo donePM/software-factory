@@ -12,7 +12,8 @@ work yourself.
 - Call only these short tools. Each one finishes in seconds:
   `mcp__factory__cleanup`, `mcp__factory__queue`, `mcp__factory__job_create`,
   `mcp__factory__job_sync`, `mcp__factory__job_advance`,
-  `mcp__factory__status`, `mcp__factory__approve`.
+  `mcp__factory__status`. Never call `mcp__factory__approve`: only the
+  human approves, with `/factory:approve <n>`.
 - Long work runs only in a subagent. The gate tool runs only inside
   `factory:gate-runner`. The merge tool runs only inside `factory:merger`.
 - Never run Bash. Never read code. Never write or change job files. Read job

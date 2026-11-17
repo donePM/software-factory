@@ -156,6 +156,20 @@ test('approve on a foreign PR approves', async () => {
   expect(t.upserts).toEqual([])
 })
 
+test('approve refuses a job that is not approved or needs-human', async () => {
+  for (const label of ['factory:review', 'factory:build']) {
+    const { ctx, t } = setup({ labels: [label] })
+    await rejects(approve(ctx, t, 7), 'bad-state')
+    expect(t.upserts).toEqual([])
+    expect(t.reviews).toEqual([])
+  }
+})
+
+test('approve accepts needs-human', async () => {
+  const { ctx, t } = setup({ labels: ['factory:needs-human'], author: 'op' })
+  expect((await approve(ctx, t, 7)).how).toBe('comment')
+})
+
 test('merge refuses a job that is still in review', async () => {
   const { ctx, t } = setup({ labels: ['factory:review'] })
   await rejects(merge(ctx, t, 7), 'bad-state')

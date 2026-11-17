@@ -158,7 +158,7 @@ export const TOOLS: ToolDef[] = [
     const r = await jobSync(ctx, t, n)
     return { ...r, jobDir: r.job.jobDir, worktree: r.job.worktree }
   }),
-  numberTool('approve', 'Record the human approval of a job. Takes the issue or the PR number. Changes no label.', approve),
+  numberTool('approve', 'Record the human approval of a job in state approved or needs-human. Takes the issue or the PR number. Changes no label. Only the human calls it.', approve),
   numberTool(
     'merge',
     'Merge the PR of an approved job: sync with the base branch, run the gate, approve, merge, set done, clean up. Runs up to 600 s per gate step: only factory:merger calls it.',

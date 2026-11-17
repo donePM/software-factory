@@ -127,6 +127,12 @@ comments from the issue author and from you reach them.
   gate/setup/                # result of the setup gate check
 ```
 
+## Safety notes
+
+- Only a human approves and merges. Never put `mcp__factory__approve` or
+  `mcp__factory__merge` into a permission allow rule: the permission prompt is
+  the barrier that keeps agents from calling them.
+
 ## Plugin layout
 
 ```

@@ -7,7 +7,7 @@ import { branchName, writeJob } from './jobfile.ts'
 import { stateOf } from './labels.ts'
 import { findMarked } from './markers.ts'
 import type { Tracker } from './tracker.ts'
-import type { Ctx, PrState } from './types.ts'
+import type { Ctx, PrState, Ticket } from './types.ts'
 
 const CLOSES = /^Closes #([1-9][0-9]*)\s*$/m
 
@@ -45,8 +45,19 @@ async function record(t: Tracker, issue: number, pr: PrState): Promise<'review' 
   return 'review'
 }
 
+// Approval and merge apply only after the reviews: the job is approved, or a human must decide.
+async function finishedState(t: Tracker, issue: number, what: string): Promise<{ ticket: Ticket; state: 'approved' | 'needs-human' }> {
+  const ticket = await t.get(issue)
+  const state = stateOf(ticket.labels)
+  if (state !== 'approved' && state !== 'needs-human') {
+    throw new FactoryError('bad-state', `#${issue} is ${state ?? 'in the backlog'}, ${what} needs approved or needs-human`, 'Let the reviews finish first.')
+  }
+  return { ticket, state }
+}
+
 export async function approve(ctx: Ctx, t: Tracker, n: number): Promise<{ issue: number; pr: number; how: 'review' | 'comment' }> {
   const { issue, pr } = await resolvePair(ctx, t, n)
+  await finishedState(t, issue, 'approve')
   return { issue, pr: pr.number, how: await record(t, issue, pr) }
 }
 
@@ -57,11 +68,7 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   const cfg = await loadConfig(ctx)
   const base = cfg.baseBranch
   const origin = `origin/${base}`
-  const ticket = await t.get(issue)
-  const state = stateOf(ticket.labels)
-  if (state !== 'approved' && state !== 'needs-human') {
-    throw new FactoryError('bad-state', `#${issue} is ${state ?? 'in the backlog'}, merge needs approved or needs-human`, 'Let the reviews finish first.')
-  }
+  const { ticket, state } = await finishedState(t, issue, 'merge')
   if (found.state !== 'OPEN') throw new FactoryError('bad-state', `PR #${found.number} is ${found.state}`, 'Only an open PR can merge.')
 
   let { job } = await jobSync(ctx, t, issue)
