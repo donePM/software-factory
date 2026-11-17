@@ -4,7 +4,7 @@ import { FactoryError } from '../lib/exec.ts'
 import { invoke, serve, TOOLS, type ToolDef } from '../hooks/tools.ts'
 import { fakeCtx, fakeHost, type Reply } from './support/host.ts'
 
-export const EXPECTED: string[] = ['doctor', 'gate', 'migrate', 'setup']
+export const EXPECTED: string[] = ['doctor', 'gate', 'migrate', 'queue', 'setup']
 
 test('registers exactly the expected tools undeferred', async ($, on) => {
   const { registered } = fakeHost(on)

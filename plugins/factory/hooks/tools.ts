@@ -3,6 +3,8 @@ import { FactoryError } from '../lib/exec.ts'
 import { loadConfig, migrate } from '../lib/config.ts'
 import { doctor } from '../lib/doctor.ts'
 import { jobField, runGate } from '../lib/gate.ts'
+import { githubTracker, repoFromUrl } from '../lib/github.ts'
+import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
 import type { Ctx } from '../lib/types.ts'
 
@@ -52,6 +54,15 @@ export const TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
     handler: (ctx, input) => gateTool(ctx, input),
+  },
+  {
+    name: 'queue',
+    description: 'List the backlog: running, waiting, blocked and ready tickets, free slots and the next tickets to start.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: async ctx => {
+      const cfg = await loadConfig(ctx)
+      return queue(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+    },
   },
 ]
 
