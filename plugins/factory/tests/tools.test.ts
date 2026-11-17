@@ -5,7 +5,7 @@ import { invoke, serve, TOOLS, type ToolDef } from '../hooks/tools.ts'
 import { renderJob } from '../lib/jobfile.ts'
 import { fakeCtx, fakeHost, type Reply } from './support/host.ts'
 
-export const EXPECTED: string[] = ['approve', 'cleanup', 'doctor', 'gate', 'job_advance', 'job_create', 'job_sync', 'merge', 'migrate', 'queue', 'setup']
+export const EXPECTED: string[] = ['approve', 'cleanup', 'doctor', 'gate', 'job_advance', 'job_create', 'job_sync', 'merge', 'migrate', 'queue', 'setup', 'status']
 
 test('registers exactly the expected tools undeferred', async ($, on) => {
   const { registered } = fakeHost(on)
@@ -119,4 +119,9 @@ test('tool gate rejects a bad round', async () => {
   expect(new RegExp(props.round.pattern).test('../../..')).toBe(false)
   expect(new RegExp(props.round.pattern).test('round-2')).toBe(true)
   await expect(gateDef().handler(jobCtx(okFiles()), { issue: 7, round: '../x' })).rejects.toMatchObject({ code: 'bad-round' })
+})
+
+test('a tool that returns text sends it unquoted', async () => {
+  const r = await invoke(def(async () => 'a\nb'), fakeCtx(), {})
+  expect(r).toEqual({ result: 'a\nb' })
 })

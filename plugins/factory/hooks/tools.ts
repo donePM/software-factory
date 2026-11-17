@@ -11,6 +11,7 @@ import { githubTracker, repoFromUrl } from '../lib/github.ts'
 import { approve, merge } from '../lib/merge.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
+import { statusFor } from '../lib/status.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import type { Ctx, State } from '../lib/types.ts'
 
@@ -101,6 +102,15 @@ export const TOOLS: ToolDef[] = [
     handler: async ctx => {
       const cfg = await loadConfig(ctx)
       return queue(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+    },
+  },
+  {
+    name: 'status',
+    description: 'Show the factory status as plain text: slots, ready, running and waiting tickets with the next command. Show the text unchanged.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: async ctx => {
+      const cfg = await loadConfig(ctx)
+      return statusFor(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
     },
   },
   issueTool('job_create', 'Start a job: set the intake label, create the worktree from origin/<base>, write job.md and issue.md.', async (ctx, t, n) => {
@@ -195,7 +205,9 @@ export type ToolOutcome = { result: string } | { isError: true; result: undefine
 
 export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<ToolOutcome> {
   try {
-    return { result: JSON.stringify(await def.handler(ctx, input), null, 2) }
+    const out = await def.handler(ctx, input)
+    // Text results (status) go out as they are, not as a quoted JSON string.
+    return { result: typeof out === 'string' ? out : JSON.stringify(out, null, 2) }
   } catch (err) {
     if (err instanceof FactoryError) {
       return { isError: true, result: undefined, text: `${err.code}: ${err.message}${err.fix === undefined ? '' : `\nFix: ${err.fix}`}` }
