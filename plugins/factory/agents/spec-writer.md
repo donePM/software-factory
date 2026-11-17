@@ -36,7 +36,7 @@ or scope.
 Then write these sections in this order:
 - `## Summary`: who gets what, and why, in one or two sentences.
 - `## Acceptance criteria`: one line for each criterion, as `AC-<n> <behavior>`.
-  Each line names its test as `Test: <file> "<test name>"`.
+  Each line names its test as ``Test: `<file>` "<test name>"``.
 - `## Tests`: the test files and what each one covers.
 - `## Not tested`: each part with no test, and why. Only pure docs and pure
   configuration can go here. Write `- nothing` when all parts have tests.
@@ -95,5 +95,5 @@ AC-2 The orders page shows an "Export CSV" button that links to `/orders.csv`. T
   wrong, say so under `## Notes for reviewers`.
 - If the repo has no tests yet, name the simplest test setup for the stack
   under `## Tests`.
-- No case, no finding: write a risk under `## Notes for reviewers` only with a
-  concrete case (an input, a caller, or a user step) that shows it.
+- No case, no finding. Write a risk under `## Notes for reviewers` only with a
+  concrete case. The case is an input, a caller, or a user step that shows it.

@@ -85,7 +85,6 @@ const BUILDER_COMMIT = [
   'Refs: #42',
 ].join('\n')
 
-
 test('intake example ACCEPT parses', () => {
   expect(parseIntake(INTAKE_ACCEPT).decision).toBe('ACCEPT')
 })

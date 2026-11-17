@@ -30,16 +30,17 @@ The first four lines are machine-readable. Write them exactly in this order:
 3. `SURFACES:` and a comma-separated list, or `SURFACES: none`.
 4. `LANE: regular`. Always write `regular`.
 
-Then write `## Summary` (what the issue asks for, in two or three sentences)
-and `## Scope` (`- In:` and `- Out:` lines).
+Then write `## Summary`: what the issue asks for, in two or three sentences.
+Then write `## Scope` with `- In:` and `- Out:` lines.
 
 ## Decision
 - ACCEPT: the request fits this repo, and a testable spec is possible.
 - NEEDS-INFO: use it only for a question that blocks a testable spec. Add
   `## Questions` with at most 3 numbered questions. Each question must have a
   short answer. If you can pick a reasonable reading, pick it and ACCEPT.
-- REJECT: use it only when the request is clearly outside this repo, is
-  harmful, or is a duplicate of an open issue. Add `## Reason` in one or two
+- REJECT: use it only when the request is clearly outside this repo or harmful.
+  Also use it for a duplicate, but only when the issue text or the repo names
+  the other issue. You cannot search the tracker. Add `## Reason` in one or two
   sentences. Do not reject a request because it is big or unclear.
 
 ## Risk
