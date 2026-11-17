@@ -4,7 +4,7 @@
 
 **Goal:** Ein Bootstrap-Kern der Factory 1.0, der ein GitHub-Issue vom Label `factory` über Intake, Spec, TDD-Build, Gate, vier Reviews und Approver bis zum menschlich freigegebenen Merge und Aufräumen bringt, sodass die Factory danach ihre restlichen Features auf donePM/software-factory selbst baut.
 
-**Architecture:** Reine TypeScript-Module in `plugins/factory/lib/` halten die Logik (Config, Übergangstabelle, Tracker über `gh`, Stacks, Gate, Queue, Job, Merge, Cleanup). Sie kennen `$` nicht, sondern nur ein `Ctx` mit `run`/`fs`. Eine dünne Schicht `hooks/tools.ts` registriert sie als Mod-Tools `mcp__factory__<name>`. Skills und `pipeline.md` steuern den Ablauf; die Agenten arbeiten nur auf Dateien in `.factory/jobs/<n>/`, die Wahrheit liegt im Issue.
+**Architecture:** Reine TypeScript-Module in `plugins/factory/lib/` halten die Logik (Config, Übergangstabelle, Tracker über `gh`, Stacks, Gate, Queue, Job, Merge, Cleanup). Sie kennen `$` nicht, sondern nur ein `Ctx` mit `run`/`fs`. Eine dünne Schicht `hooks/tools.ts` registriert sie als Mod-Tools `mcp__factory__<name>`. Skills und `pipeline.md` steuern den Ablauf als Ereignisschleife: Die Hauptsitzung verteilt jede Arbeit als Hintergrund-Subagent, reagiert auf Benachrichtigungen und ruft nur kurze Tools. Lange Tools (`gate`, `merge`) ruft nur ein Subagent (`factory:gate-runner`, `factory:merger`). Die Agenten arbeiten nur auf Dateien in `.factory/jobs/<n>/` und im Worktree des Jobs, die Wahrheit liegt im Issue.
 
 **Tech Stack:** Claude Code Mod-API 2.1.326 (`$.tool.register`, `tool.run`, `$.process.run`, `$.fs`), TypeScript (ES-Module, `.ts`-Importe), `git`, `gh`, `claude plugin validate|test`, `tsc --noEmit`, Vite+ (`vp`) für den Stack `node`.
 
@@ -13,15 +13,16 @@
 ## Fakten vorab
 
 - **Importe zwischen Modulen (aus reference.md, Zeile 14, und dem Kopf der d.ts):** Das Hooks-Modul und *jede Datei, die es aus dem Plugin importiert*, ist ein ES-Modul und muss auf `.ts`, `.tsx`, `.js`, `.mjs`, `.cjs`, `.mts` oder `.cts` enden. Eine Plugin-Datei wird mit einer statischen `import`-Deklaration und relativem Pfad geladen, also `import { loadConfig } from '../lib/config.ts'`. Ein Modul, das `import()` enthält, lädt nicht. `require` gibt es nicht. Typen kommen aus `'claude-code'` (zur Laufzeit leer), Test-Helfer aus `'claude-code/testing'`. Die Endung `.ts` im Import ist Pflicht laut Design („Importe mit `.ts`-Endung“). 0.5 importiert `'../types'` ohne Endung; das geht nur, weil es reine `import type` sind. In 1.0 schreiben wir immer die Endung.
-- **Nicht belegt, darum Spike in Task 0:** ob eine `*.test.ts` unter `tests/` direkt `../lib/x.ts` importieren kann (sonst laufen alle Tests über `$.tool.call`); ob `$.fs.write` fehlende Ordner anlegt; woher `tsc` im Worktree die Engine-Typen (`.claude-plugin/types/`) bekommt; ob ein *installiertes* Plugin in `claude -p` seine Tools bekommt (Design, Reihenfolge Schritt 1); ob `--plugin-dir` ein gleichnamiges installiertes Plugin verdrängt.
+- **Nicht belegt, darum Spike in Task 0:** ob eine `*.test.ts` unter `tests/` direkt `../lib/x.ts` importieren kann (sonst laufen alle Tests über `$.tool.call`); ob `$.fs.write` fehlende Ordner anlegt; woher `tsc` im Worktree die Engine-Typen (`.claude-plugin/types/`) bekommt; ob ein *installiertes* Plugin in `claude -p` seine Tools bekommt (Design, Reihenfolge Schritt 1); ob `--plugin-dir` ein gleichnamiges installiertes Plugin verdrängt; ob ein Subagent ein Mod-Tool aufrufen kann (`tools:` im Agent-Frontmatter); ob `claude -p` auf Hintergrund-Subagenten wartet oder mit dem Hauptzug endet.
 - `$.fs` kennt `read`, `write`, `list`, `exists`, `stat`, aber kein Löschen und kein `mkdir`. Löschen und Ordner anlegen gehen über `$.process.run(['rm', …])` bzw. `['mkdir', '-p', …]`.
 - Ein Tool-Fehler geht als `{ isError: true, text }` zurück (Union `ToolCallResult` in der d.ts, ab Zeile 16434), ein Erfolg als `{ result }`.
 - Tests faken den Host, indem sie `on('process.run' | 'fs.read' | 'fs.write' | 'fs.exists' | 'fs.list', …)` unter das Plugin hängen (Muster: `plugins/factory/tests/pane.test.tsx`).
-- `tsc` ist auf dieser Maschine nicht installiert, `vp` und `node` sind da. `doctor` muss `tsc` für den Stack `claude-plugin` prüfen und `brew install typescript` als Abhilfe nennen.
+- `tsc` ist installiert (TypeScript 7.0.2 über npm, `tsc` im PATH), `vp` und `node` sind da. `doctor` muss `tsc` für den Stack `claude-plugin` prüfen und beim Benutzer `brew install typescript` als Abhilfe nennen.
 - Das installierte 0.5 (`factory@software-factory`, Marketplace vom Typ `directory` auf genau diese Checkout) lädt als Cache-Kopie `~/.claude/plugins/cache/software-factory/factory/0.5.0`. Ein `claude plugin update` würde aus der Checkout kopieren, die wir gerade ändern. Darum Task 21.
 
 ## Global Constraints
 
+- „Konsequent subagent-driven: Die Hauptsitzung (Orchestrator) bleibt immer ansprechbar. Jede Job-Arbeit läuft als Hintergrund-Subagent mit eigenem Worktree: Intake, Spec, Build, Reviews, Approver und Documenter. Der Orchestrator verteilt die Arbeit, reagiert auf Benachrichtigungen und ruft die Tools auf. Er wartet nie blockierend und macht keine Job-Arbeit selbst. Mehrere Jobs laufen parallel.“ (Ziel 8) Im Bootstrap: jeder Agent mit `run_in_background: true`; der Orchestrator ruft nur Tools, die in Sekunden fertig sind; Gate-Läufe, Merge mit Gate und Setup-Probe laufen in einem Subagenten, dessen Tool-Aufruf lange dauern darf.
 - Kein Node beim Benutzer: die Logik läuft im Mod; Voraussetzungen nur `git`, `gh` und die Stack-Werkzeuge.
 - Code-Regeln: `.ts`, keine `enum`s, keine Parameter-Properties, Importe mit `.ts`-Endung, Typprüfung mit `tsc --noEmit` gegen die Engine-Typen (`strict`, `noUncheckedIndexedAccess`).
 - Nur `hooks/tools.ts` kennt `$`; `lib/*.ts` bekommen ein `Ctx`.
@@ -35,6 +36,7 @@
 - „Issue-Text geht nur als zitierte Daten in `issue.md` an Agenten, nie in einen Prompt; Kommentare nur vom Autor und vom Operator.“
 - Agenten bekommen Kontext nur aus Dateien; Spawn-Prompts nennen nur absolute Pfade. Erste Zeilen (`VERDICT:`, `DECISION:`, `STATUS:`) sind maschinenlesbar, danach `## Summary`.
 - Agenten- und Skill-Markdown auf Englisch in STE (ASD-STE100), Sätze höchstens 20 Wörter. Lean-Regeln (Optionsleiter, `shortcut:`-Kommentare, „no case, no finding“) in builder, spec-writer, allen Reviewern und approver gleich.
+- Ein Worktree je Job, angelegt von `job_create`. Lese-Agenten (intake, spec-writer, Reviewer, approver) lesen den Worktree des Jobs oder die Main-Checkout und schreiben keinen Code; nur der builder ändert den Worktree.
 - Agenten pushen nicht und haben keinen GitHub-Zugang; Push und PR macht das Tool. `git branch -D` nie; `worktree remove --force` nur, wenn nur unversionierte Dateien übrig sind.
 - Das Gate läuft aus Plugin und Config der Main-Checkout, nie aus dem Branch; `protectedPaths` darf ein Branch nicht ändern.
 - Max. `maxRounds` (Standard 3) Runden, danach `needs-human`.
@@ -85,8 +87,10 @@ plugins/factory/
   lib/cleanup.ts                  cleanupJob, sweep
   lib/merge.ts                    resolvePair, approve, merge
   lib/status.ts                   statusText
+  lib/review.ts                   parseReview, parseDecision
   agents/                         intake, spec-writer, builder, code-reviewer,
-                                  security-reviewer, ux-reviewer, ui-reviewer, approver
+                                  security-reviewer, ux-reviewer, ui-reviewer, approver,
+                                  gate-runner, merger
   pipeline.md                     Ablauf für die Skills (ersetzt orchestrator.md)
   skills/{setup,add,run,approve,merge,status}/SKILL.md
   tests/support/host.ts           fakeHost(on, …), fakeCtx(…)
@@ -104,11 +108,13 @@ Entfernt: `orchestrator.md`, `assets/` (dashboard.html, serve.py, dashboard, bac
 | `intake.md` | intake | `DECISION: ACCEPT\|NEEDS-INFO\|REJECT`, `RISK: low\|medium\|high`, `SURFACES: ui, api` (oder `none`), `LANE: regular`, `## Summary`, `## Scope`, `## Questions` (NEEDS-INFO), `## Reason` (REJECT) |
 | `spec.md` | spec-writer | `STATUS: READY`, `Title: <conventional PR-Titel>`, `## Summary`, `## Acceptance criteria` (`AC-1 …`), `## Tests`, `## Not tested` (Ausnahmen), `## Out of scope`, `## Notes for reviewers` |
 | `round-N/build.md` | builder | `STATUS: DONE`, `## Summary`, AC-Tabelle mit Test und roter Ausgabe vor der Umsetzung |
-| `round-N/checks.md`, `checks.log` | Tool `gate` | `VERDICT: PASS\|FAIL` |
+| `round-N/checks.md`, `checks.log` | Tool `gate` (aufgerufen von `gate-runner`) | `VERDICT: PASS\|FAIL`; `checks.log` bekommt je Lauf einen Abschnitt `## Attempt <k>` |
 | `round-N/review-{code,security,ux,ui}.md` | Reviewer | `VERDICT: PASS\|CHANGES` |
 | `decision.md` | approver | `DECISION: APPROVE\|ESCALATE`, `## Summary`, `## Question` (ESCALATE) |
 
-Marker-Kommentare im Issue: `<!-- factory:intake -->` (Inhalt von `intake.md`, Route, `PR: #m`), `<!-- factory:spec -->` (Inhalt von `spec.md`), `<!-- factory:round-N -->` (Gate-Verdikt, je Reviewer Verdikt und Blocker-Zeilen), `<!-- factory:decision -->` (Inhalt von `decision.md`). Ein Marker-Kommentar wird an Ort und Stelle aktualisiert.
+Das Setup-Gate schreibt nach `.factory/gate/setup/`, nie unter `.factory/jobs/`.
+
+Marker-Kommentare im Issue: `<!-- factory:intake -->` (Inhalt von `intake.md`, dann `## Job` mit `- Base:`, `- Spec updated:`, `- PR: #m`, dann `## Route`), `<!-- factory:spec -->` (Inhalt von `spec.md`), `<!-- factory:round-N -->` (Gate-Verdikt, je Reviewer Verdikt und Blocker-Zeilen), `<!-- factory:decision -->` (Inhalt von `decision.md`). Ein Marker-Kommentar wird an Ort und Stelle aktualisiert.
 
 ### Übergangstabelle (Bootstrap)
 
@@ -120,24 +126,24 @@ Marker-Kommentare im Issue: `<!-- factory:intake -->` (Inhalt von `intake.md`, R
 | `spec` | `build` |
 | `build` | `review`, `needs-human` |
 | `review` | `build`, `approved`, `needs-human` |
-| `approved` | `done` |
-| `needs-human` | `build`, `done` |
-| jeder laufende Zustand | `needs-human` (Abbruch mit Grund) |
+| `approved` | `done`, `needs-human` (Sync-Konflikt beim Merge) |
+| `needs-human` | `build`, `done`, `needs-human` (No-op: kein Label-Wechsel, nur Kommentar) |
+| jeder Zustand in `RUNNING` | `needs-human` (Abbruch mit Grund) |
 
-`fastlane`, `needs-design`, `docs` sind als Labels angelegt, aber ohne Übergang (kommen später). `done` und `rejected` sind Endzustände.
+`fastlane`, `needs-design`, `docs` sind als Labels angelegt, aber ohne Vorwärts-Übergang (kommen später); `fastlane` und `docs` stehen in `RUNNING` und dürfen darum nach `needs-human`. `done` und `rejected` sind Endzustände.
 
 ---
 
 ### Task 0: Spike Mod-Grundlagen
 
 **Files:**
-- Create (Wegwerf, nicht committen): `$SCRATCH/spike/.claude-plugin/plugin.json`, `$SCRATCH/spike/hooks/hooks.json`, `$SCRATCH/spike/hooks/tools.ts`, `$SCRATCH/spike/lib/echo.ts`, `$SCRATCH/spike/tests/echo.test.ts` (`$SCRATCH` = Scratchpad der Session)
-- Modify: dieser Plan, Abschnitt „Fakten vorab“
+- Create (Wegwerf, nicht committen): `$SCRATCH/spike/.claude-plugin/plugin.json`, `$SCRATCH/spike/hooks/hooks.json`, `$SCRATCH/spike/hooks/tools.ts`, `$SCRATCH/spike/lib/echo.ts`, `$SCRATCH/spike/tests/echo.test.ts`, `$SCRATCH/spike/agents/caller.md` (`$SCRATCH` = Scratchpad der Session)
+- Modify: dieser Plan, Abschnitt „Fakten vorab“ und die Tasks 1, 7, 20, soweit die Antworten sie ändern
 
 **Interfaces:**
-- Produces: belegte Antworten auf die fünf offenen Punkte in „Fakten vorab“.
+- Produces: belegte Antworten auf die sieben offenen Punkte in „Fakten vorab“, eingetragen vor Task 1.
 
-- [ ] **Step 1: Spike-Plugin `spike` schreiben.** `lib/echo.ts` exportiert `echo(s: string): string` (gibt `s` umgekehrt zurück). `hooks/tools.ts` importiert `'../lib/echo.ts'`, registriert `mcp__spike__echo` (`isDeferred: false`) und ein Tool `mcp__spike__write`, das `$.fs.write(<root>/.factory/a/b/c.txt, 'x')` aufruft.
+- [ ] **Step 1: Spike-Plugin `spike` schreiben.** `lib/echo.ts` exportiert `echo(s: string): string` (gibt `s` umgekehrt zurück). `hooks/tools.ts` importiert `'../lib/echo.ts'`, registriert `mcp__spike__echo` (`isDeferred: false`), ein Tool `mcp__spike__write`, das `$.fs.write(<root>/.factory/a/b/c.txt, 'x')` aufruft, und `mcp__spike__slow`, das `['sleep', '30']` ausführt und `done` zurückgibt. `agents/caller.md` hat `tools: mcp__spike__echo, mcp__spike__slow` und ruft das Tool, das der Prompt nennt.
 - [ ] **Step 2: Test schreiben, der `lib` direkt importiert**
 
 ```ts
@@ -148,12 +154,14 @@ test('tool uses lib', async ({ $ }) => {
 })
 ```
 
-- [ ] **Step 3: Ausführen.** Run: `claude plugin validate $SCRATCH/spike && claude plugin test $SCRATCH/spike`. Expected: beide Tests PASS. Schlägt nur der direkte Import fehl: Fakt „lib-Tests laufen über `$.tool.call`“ notieren, `fakeCtx` in Task 1 entfällt und alle lib-Tests in diesem Plan rufen das zugehörige Tool.
+- [ ] **Step 3: Ausführen.** Run: `claude plugin validate $SCRATCH/spike && claude plugin test $SCRATCH/spike`. Expected: beide Tests PASS. Schlägt nur der direkte Import fehl: Fakt „lib-Tests laufen über `$.tool.call`“ notieren; Step 10 passt Task 1 (`fakeCtx` entfällt) und alle lib-Tests an.
 - [ ] **Step 4: `fs.write` und Ordner prüfen.** In einem Wegwerf-Repo `claude -p "call mcp__spike__write" --plugin-dir $SCRATCH/spike`, dann `ls <repo>/.factory/a/b/c.txt`. Ergebnis notieren (legt an / legt nicht an → `mkdirp` vor jedem `write`).
 - [ ] **Step 5: Installiertes Plugin in `-p` prüfen.** Wegwerf-Marketplace mit `spike` anlegen, `claude plugin marketplace add <dir>`, `claude plugin install spike@<mp>`, dann `claude -p "call mcp__spike__echo with s=ab"`. Expected: Antwort `ba`. Danach `claude plugin uninstall spike@<mp>` und Marketplace entfernen.
 - [ ] **Step 6: Gleichnamige Plugins prüfen.** Mit installiertem `factory@software-factory` (0.5) ein Spike-Plugin namens `factory` per `--plugin-dir` laden und `claude -p "list mcp__factory tools"`. Notieren, ob `--plugin-dir` gewinnt oder beide laden. Gewinnt es nicht: Task 20 startet mit `claude plugin disable factory@software-factory`.
-- [ ] **Step 7: Engine-Typen für `tsc` klären.** Prüfen, ob nach `claude plugin validate <dir>` oder `claude plugin test <dir>` der Ordner `<dir>/.claude-plugin/types/claude-code/` existiert. Wenn nicht: festlegen, dass der Stack `claude-plugin` im Schritt `typecheck` die Engine-Typen aus dem Ordner des laufenden Builds kopiert (Pfad über `ls /private/tmp/claude-*/bundled-skills/$(claude --version | cut -d' ' -f1)/*/plugin-authoring/types/claude-code.d.ts` ermitteln) und das in Task 7 als `typesSource()` umsetzen.
-- [ ] **Step 8: Ergebnisse in „Fakten vorab“ eintragen** (je Punkt ein Satz, mit Befehl). Kein Commit des Spikes; der Plan selbst bleibt uncommittet, bis der Benutzer ihn freigibt.
+- [ ] **Step 7: Engine-Typen für `tsc` klären.** Prüfen, ob nach `claude plugin validate <dir>` oder `claude plugin test <dir>` der Ordner `<dir>/.claude-plugin/types/claude-code/` existiert. Wenn nicht: festlegen, dass der Stack `claude-plugin` im Schritt `typecheck` die Engine-Typen aus dem Ordner des laufenden Builds kopiert (Pfad über `ls /private/tmp/claude-*/bundled-skills/$(claude --version | cut -d' ' -f1)/*/plugin-authoring/types/claude-code.d.ts` ermitteln) und das in Task 7 als `typesSource()` umsetzen: ein Vorbereitungsbefehl, der mit dem `typecheck`-Aufruf zu einem `['sh', '-c', '<kopieren> && tsc -p <p>']` verbunden wird (kein eigener `StepName`).
+- [ ] **Step 8: Subagent ruft Mod-Tool.** Run: `claude -p "use the spike:caller agent to call mcp__spike__echo with s=ab" --plugin-dir $SCRATCH/spike`. Expected: Antwort `ba`. Schlägt das fehl: Plan anhalten und den Benutzer fragen (`gate-runner` und `merger` hängen daran).
+- [ ] **Step 9: `-p` und Hintergrund-Subagenten.** Run: `claude -p "dispatch spike:caller with run_in_background true to call mcp__spike__slow, then report its result" --plugin-dir $SCRATCH/spike`. Notieren: wartet `-p` auf die Benachrichtigung und meldet `done`, oder endet es vorher (und läuft der Agent danach weiter oder stirbt er)? Task 20 treibt den Ablauf in jedem Fall mit wiederholten `-p`-Aufrufen; das Ergebnis sagt nur, wie viele nötig sind.
+- [ ] **Step 10: Ergebnisse eintragen und committen.** Je Punkt ein Satz mit Befehl in „Fakten vorab“; die Tasks 1, 7, 20 an die Antworten anpassen, bevor Task 1 beginnt. Der Spike wird nicht committet. Run: `git add docs/superpowers/plans/2026-11-17-factory-1-0-bootstrap.md && git commit -m "docs: record the mod spike results in the bootstrap plan"`.
 
 ---
 
@@ -162,7 +170,7 @@ test('tool uses lib', async ({ $ }) => {
 **Files:**
 - Delete: siehe „Entfernt“ oben
 - Modify: `plugins/factory/.claude-plugin/plugin.json` (version `0.9.0`, description neu, Schlüssel `types` entfernen), `plugins/factory/hooks/hooks.json`, `.claude-plugin/marketplace.json` (description)
-- Create: `plugins/factory/tsconfig.json`, `plugins/factory/hooks/tools.ts`, `plugins/factory/lib/types.ts`, `plugins/factory/lib/exec.ts`, `plugins/factory/tests/support/host.ts`, `plugins/factory/tests/exec.test.ts`, `plugins/factory/.gitignore` (`.claude-plugin/types/`)
+- Create: `plugins/factory/tsconfig.json`, `plugins/factory/hooks/tools.ts`, `plugins/factory/lib/types.ts`, `plugins/factory/lib/exec.ts`, `plugins/factory/tests/support/host.ts`, `plugins/factory/tests/exec.test.ts`, `plugins/factory/tests/tools.test.ts`, `plugins/factory/.gitignore` (`.claude-plugin/types/`)
 
 **Interfaces:**
 - Produces (`lib/types.ts`):
@@ -187,8 +195,9 @@ test('tool uses lib', async ({ $ }) => {
 - Produces (`tests/support/host.ts`):
   - `fakeCtx(opts: { files?: Record<string, string>; replies?: Reply[]; root?: string }): Ctx & { calls: string[][]; files: Record<string, string> }` mit `type Reply = { argv: string[]; result?: Partial<RunResult> }` (Treffer per Präfix von `argv`, erste passende Antwort, kein Treffer → `exitCode 127`)
   - `fakeHost(on: On, opts): { calls: string[][]; files: Record<string, string> }` – dieselben Antworten als `process.run`- und `fs.*`-Hooks, plus `session.root`.
+- Produces (`tests/tools.test.ts`): `const EXPECTED: string[]` (anfangs leer). Jeder spätere Task, der ein Tool anlegt, trägt in seinem Step 1 zuerst den Namen in `EXPECTED` ein; so ist der Test je Task erst rot.
 
-- [ ] **Step 1: Failing tests** in `tests/exec.test.ts`
+- [ ] **Step 1: Failing tests** in `tests/exec.test.ts` und `tests/tools.test.ts`
 
 ```ts
 test('must returns trimmed stdout', ...)          // reply stdout 'abc\n' → 'abc'
@@ -196,11 +205,14 @@ test('must throws FactoryError on exit 1', ...)   // code 'command-failed', mess
 test('rmrf refuses a path outside .factory', ...) // rmrf(ctx, '/repo/src') rejects, code 'unsafe-path', calls == []
 test('rmrf removes a path under .factory', ...)   // calls[0] deepEquals ['rm', '-rf', '/repo/.factory/jobs/7']
 test('rmrf refuses .factory itself and ..', ...)  // '/repo/.factory', '/repo/.factory/../src' both reject
+test('registers exactly the expected tools undeferred', ...) // $.tool.list() names == EXPECTED, isDeferred false
+test('a tool success returns pretty JSON', ...)   // test-only ToolDef → result == JSON.stringify(v, null, 2)
+test('a FactoryError maps to isError with the fix', ...) // text == '<code>: <message>\nFix: <fix>'
 ```
 
 - [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL (module `lib/exec.ts` not found).
-- [ ] **Step 3: 0.5-Dateien löschen, `lib/types.ts`, `lib/exec.ts`, `hooks/tools.ts`, `tests/support/host.ts`, `tsconfig.json` anlegen.** `tsconfig.json` wie im Kopf der d.ts, mit `"include": [".claude-plugin/types", "hooks", "lib", "tests"]`. `rmrf` normalisiert den Pfad (`..`-Segmente auflösen) vor der Prüfung.
-- [ ] **Step 4: Run** `claude plugin validate plugins/factory && claude plugin test plugins/factory && claude plugin validate .`. Expected: alles PASS.
+- [ ] **Step 3: 0.5-Dateien löschen, `lib/types.ts`, `lib/exec.ts`, `hooks/tools.ts`, `tests/support/host.ts`, `tsconfig.json` anlegen.** `tsconfig.json` wie im Kopf der d.ts, mit `"noEmit": true` und `"include": [".claude-plugin/types", "hooks", "lib", "tests"]`. `rmrf` normalisiert den Pfad (`..`-Segmente auflösen) vor der Prüfung.
+- [ ] **Step 4: Run** `claude plugin validate plugins/factory && claude plugin test plugins/factory && claude plugin validate . && tsc -p plugins/factory`. Expected: alles PASS, `tsc` ohne Fehler.
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -246,6 +258,7 @@ test('migrate applies steps in order and backs up', ...)// list [{from:0,up:+a},
 test('migrate keeps the last three backups', ...)       // 4 old backups present → oldest removed via rm
 test('migrate leaves the config when the result is invalid', ...) // up returns {version:2} → throws 'config-invalid', config.json unchanged
 test('migrate on current version is a no-op', ...)      // applied [], no backup
+test('tool migrate returns the migrate result', ...)    // $.tool.call via fakeHost; 'migrate' added to EXPECTED
 ```
 
 - [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL (`lib/config.ts` missing).
@@ -278,7 +291,8 @@ test('backlog may only go to intake', ...)          // canTransition(null,'intak
 test('every running state may escalate', ...)       // for s of RUNNING: canTransition(s,'needs-human')
 test('done and rejected are final', ...)            // no target allowed
 test('review can loop back to build', ...)
-test('approved only goes to done', ...)             // ('approved','build') false
+test('approved goes only to done or needs-human', ...) // ('approved','build') false; ('approved','needs-human') true
+test('needs-human may stay needs-human', ...)       // canTransition('needs-human','needs-human') true
 test('stateOf finds exactly one status label', ...) // ['factory','factory:spec','bug'] → 'spec'
 test('stateOf reports two status labels as conflict', ...)
 test('stateOf ignores factory:pr', ...)             // ['factory:pr'] → null
@@ -363,11 +377,11 @@ type StandardCheck = { key: string; actual: string; expected: string; ok: boolea
 ```
 
 - Produces (`lib/github.ts`): `repoFromUrl(url: string): string` (`https://github.com/a/b(.git)?` und `git@github.com:a/b.git` → `a/b`), `githubTracker(ctx: Ctx, repo: string): Tracker`.
-- `gh`-Aufrufe (immer mit `-R <repo>` bzw. `repos/<repo>`; Texte immer über stdin, nie als Argument):
+- `gh`-Aufrufe (immer mit `-R <repo>` bzw. `repos/<repo>`; Bodies immer über stdin; Titel und Subjects als argv-Element ohne Shell, weil `gh` keine Titel-Datei kennt):
   - `login`: `gh api user --jq .login` (einmal je Tracker zwischengespeichert)
   - `backlog`: `gh issue list -R r --label factory --state open --limit 200 --json number,title,body,labels,author,createdAt,url,state`
   - `get`: `gh issue view n -R r --json number,title,body,labels,author,createdAt,url,state` und `gh api repos/r/issues/n/comments --paginate`
-  - `setState`: `get`, `stateOf` (bei `'conflict'` → `comment` mit den gefundenen Labels und `FactoryError('label-conflict')`), `assertTransition`, dann `gh issue edit n -R r --add-label factory:<to> --remove-label factory:<from>`
+  - `setState`: `get`, `stateOf` (bei `'conflict'` → `comment` mit den gefundenen Labels und `FactoryError('label-conflict')`), `assertTransition`, dann `gh issue edit n -R r --add-label factory:<to> --remove-label factory:<from>`; `needs-human → needs-human` ist ein No-op ohne `issue edit` (den Kommentar schreibt der Aufrufer)
   - `upsertComment`: vorhandenen Marker-Kommentar des Logins → `gh api -X PATCH repos/r/issues/comments/<id> --input -`, sonst `gh api -X POST repos/r/issues/n/comments --input -` (stdin `{"body": …}`)
   - `close`: `gh issue close n -R r --reason completed|"not planned"`
   - `createIssue`: `gh issue create -R r --title t --body-file - --label …` → Nummer aus der URL
@@ -387,6 +401,7 @@ test('get filters nothing but loads comments', ...)   // comments from /comments
 test('setState swaps exactly one status label', ...)  // argv contains '--add-label','factory:spec','--remove-label','factory:intake'
 test('setState rejects an illegal transition', ...)   // spec → done: code 'illegal-transition', no 'issue edit' call
 test('setState rejects an issue with two status labels', ...) // code 'label-conflict', one comment call naming both labels, no edit
+test('setState needs-human to needs-human edits no label', ...) // no 'issue edit' call
 test('upsertComment edits the existing marker comment', ...)  // PATCH .../comments/55
 test('upsertComment creates a comment when none exists', ...) // POST, stdin JSON body starts with '<!-- factory:spec -->'
 test('createIssue sends the body on stdin', ...)      // argv has '--body-file','-'; returns 12 from '.../issues/12'
@@ -414,11 +429,11 @@ test('applyStandard without apply only reads', ...)   // no PATCH call
 - Produces:
   - `type Check = { check: string; ok: boolean; detail: string; fix?: string }`
   - `doctor(ctx: Ctx, stacks: StackRef[]): Promise<Check[]>` – `git --version`, `gh --version`, `gh auth status` (Login und Scope `repo`), `git remote get-url origin` (GitHub-URL), und je Stack `requires()` aus Task 7. Abhilfen: macOS `brew install <x>`, `! gh auth login --web`.
-  - `type SetupInput = { apply: boolean; baseBranch?: string; concurrency?: number }`
+  - `type SetupInput = { apply: boolean; baseBranch?: string; concurrency?: number; migrations?: Migration[] }` (`migrations` nur intern für Tests, nicht im Tool-Schema; Standard `migrations` aus Task 2)
   - `type SetupReport = { checks: Check[]; config: Config; created: boolean; migrated: string[]; standard: StandardCheck[]; labels: number; gitignore: boolean; next: string[] }`
   - `setup(ctx: Ctx, input: SetupInput): Promise<SetupReport>` – Ablauf: `doctor`; bei rotem `git`/`gh`/Auth sofort zurück. Config laden oder aus `git remote` und `git symbolic-ref refs/remotes/origin/HEAD` neu bauen; vorhandene Config über `migrate`. Ohne `apply` nichts schreiben (Vorschau). Mit `apply`: `writeConfig`, `.factory/.gitignore` mit Inhalt `*\n!.gitignore\n!config.json\n!checks.local.ts\n`, `ensureLabels(labelSet(cfg))`, `applyStandard(true)`, dann `sweep` (Task 13; bis dahin ausgelassen). Idempotent.
 - Tools: `doctor` (`{}`), `setup` (`{ apply: boolean, baseBranch?: string, concurrency?: number }`).
-- Skill `/factory:setup`: ruft `setup` mit `apply: false`, erklärt jeden roten Check in Alltagssprache mit Abhilfe (Installation nur nach Zustimmung), zeigt Config-Vorschau, erkannte Stacks und Repo-Abweichungen, fragt mit `AskUserQuestion` (Empfehlung zuerst, „(recommended)“), ruft dann `setup` mit `apply: true`, danach einmal `gate` auf dem Base-Branch (Task 9) und meldet: rot heißt „erst das Projekt grün machen“. Schlägt `.factory/config.json` als Commit vor (`chore(factory): add factory config`), committet nur nach Zustimmung.
+- Skill `/factory:setup`: ruft `setup` mit `apply: false`, erklärt jeden roten Check in Alltagssprache mit Abhilfe (Installation nur nach Zustimmung), zeigt Config-Vorschau, erkannte Stacks und Repo-Abweichungen, fragt mit `AskUserQuestion` (Empfehlung zuerst, „(recommended)“), ruft dann `setup` mit `apply: true`. Die Probe läuft nie in der Hauptsitzung: der Skill verteilt `factory:gate-runner` (Task 18) mit `run_in_background: true` und dem Pfad `<root>/.factory/gate/setup`, bleibt ansprechbar und meldet bei der Benachrichtigung: rot heißt „erst das Projekt grün machen“. Schlägt `.factory/config.json` als Commit vor (`chore(factory): add factory config`), committet nur nach Zustimmung.
 
 - [ ] **Step 1: Failing tests**
 
@@ -431,7 +446,7 @@ test('setup reads the base branch from origin HEAD', ...) // 'refs/remotes/origi
 test('setup is idempotent', ...)                          // second run: created false, same files
 test('setup migrates an old config first', ...)           // version 0 + injected migration → migrated non-empty
 test('setup stops early when git is missing', ...)        // no gh calls after failed git check
-test('tool setup returns the report as JSON', ...)        // $.tool.call via fakeHost
+test('tool setup returns the report as JSON', ...)        // $.tool.call via fakeHost; 'doctor', 'setup' added to EXPECTED
 ```
 
 - [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL.
@@ -453,16 +468,17 @@ test('tool setup returns the report as JSON', ...)        // $.tool.call via fak
   - `type Detection = { stack: string; path: string; variant: string; versions: Record<string, string>; tools: string[]; after?: string[] }`
   - `type Step = { name: StepName; argv: string[]; cwd: string; source: 'config' | 'runner' | 'script' | 'default'; stack: string }`
   - `type ToolReq = { cmd: string; versionArgs: string[]; fix: string }`
-  - `interface Stack { id: string; detect(ctx: Ctx, repo: string, files: string[]): Promise<Detection[]>; requires(d: Detection): ToolReq[]; steps(ctx: Ctx, repo: string, d: Detection): Promise<Step[]> }`
+  - `type ReadFile = (rel: string) => Promise<string | null>` – liest Runner- und Script-Dateien (`Makefile`, `package.json`); das Gate übergibt einen Leser auf den Base-Stand (Task 9), nie auf den Branch.
+  - `interface Stack { id: string; detect(ctx: Ctx, repo: string, files: string[]): Promise<Detection[]>; requires(d: Detection): ToolReq[]; steps(ctx: Ctx, read: ReadFile, d: Detection): Promise<Step[]> }`
 - Produces (`lib/stacks/claude-plugin.ts`): `claudePlugin: Stack`
-  - Marker `<p>/.claude-plugin/plugin.json` → Variante `plugin`, Schritte: `typecheck` `['tsc', '--noEmit', '-p', <p>]` (nur mit `<p>/tsconfig.json`; davor `typesSource()` aus Task 0, Schritt 7, kopiert die Engine-Typen nach `<p>/.claude-plugin/types/`), `lint` `['claude', 'plugin', 'validate', <p>]`, `test` `['claude', 'plugin', 'test', <p>]` (nur wenn `*.test.ts(x)` unter `<p>` existiert).
+  - Marker `<p>/.claude-plugin/plugin.json` → Variante `plugin`, Schritte: `typecheck` `['sh', '-c', '<typesSource> && tsc -p <p>']` (nur mit `<p>/tsconfig.json`; `typesSource()` aus Task 0, Schritt 7, ist der Kopierbefehl für die Engine-Typen nach `<p>/.claude-plugin/types/`; ohne Kopierbedarf nur `['tsc', '-p', <p>]`), `lint` `['claude', 'plugin', 'validate', <p>]`, `test` `['claude', 'plugin', 'test', <p>]` (nur wenn `*.test.ts(x)` unter `<p>` existiert).
   - Marker `<p>/.claude-plugin/marketplace.json` → Variante `marketplace`, nur `lint` `['claude', 'plugin', 'validate', <p>]`.
   - `requires`: `claude` (`--version`, Fix: Claude Code installieren), `tsc` (`--version`, Fix `brew install typescript`) nur für Variante `plugin` mit tsconfig.
 - Produces (`lib/stacks/index.ts`):
   - `const STACKS: Stack[]` (`claudePlugin`; `node` ab Task 8)
   - `listFiles(ctx: Ctx, repo: string): Promise<string[]>` → `git -C repo ls-files --cached --others --exclude-standard`
   - `detectAll(ctx: Ctx, repo: string): Promise<Detection[]>`
-  - `resolveSteps(ctx: Ctx, repo: string, refs: StackRef[], ds: Detection[]): Promise<Step[]>` – Reihenfolge je Stack und Schritt: 1. `steps` aus der Config (`['sh', '-c', cmd]`, `source 'config'`); 2. `Makefile`-Ziel gleichen Namens am selben Pfad (Zeilen `^<name>:`; `['make', <name>]`, `source 'runner'`); 3. Stack-Scripts; 4. Standard. Ein Runner-Ziel gilt für alle Stacks am Pfad. Gleiche `argv`+`cwd` nur einmal.
+  - `resolveSteps(ctx: Ctx, repo: string, read: ReadFile, refs: StackRef[], ds: Detection[]): Promise<Step[]>` – Reihenfolge je Stack und Schritt: 1. `steps` aus der Config (`['sh', '-c', cmd]`, `source 'config'`); 2. `Makefile`-Ziel gleichen Namens am selben Pfad (Zeilen `^<name>:`; `['make', <name>]`, `source 'runner'`); 3. Stack-Scripts; 4. Standard. Ein Runner-Ziel gilt für alle Stacks am Pfad. Gleiche `argv`+`cwd` nur einmal.
 - `setup` schreibt die Funde als `stacks` in die neue Config; `doctor` prüft `requires()` je Fund.
 
 - [ ] **Step 1: Failing tests**
@@ -477,6 +493,8 @@ test('a Makefile target replaces the step of every stack at that path', ...) // 
 test('equal commands run once', ...)
 test('requires asks for tsc only with a tsconfig', ...)
 test('doctor reports a missing tsc for a plugin stack', ...) // fix 'brew install typescript'
+test('setup writes the detected stacks into a new config', ...) // config.stacks == [{id:'claude-plugin',path:'plugins/factory'},{id:'claude-plugin',path:'.'}]
+test('steps read the Makefile through the given reader', ...)   // reader returns 'test:' → 'make test'; worktree Makefile ignored
 ```
 
 - [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL.
@@ -496,7 +514,7 @@ test('doctor reports a missing tsc for a plugin stack', ...) // fix 'brew instal
 - Consumes: `Stack`, `Detection`, `Step`.
 - Produces: `node: Stack`
   - Marker `<p>/package.json` (nicht unter `node_modules/`). Paketmanager aus Lockfile: `pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, `bun.lock`/`bun.lockb` → bun, sonst npm. `versions.node` aus `.nvmrc`, `.node-version`, `engines.node` (erster Treffer); `variant` `typescript` mit `tsconfig.json`, sonst `javascript`.
-  - Schritte (Script mit gleichem Namen in `package.json` gewinnt vor dem Standard, `[<pm>, 'run', <name>]`):
+  - Schritte (Script mit gleichem Namen in `package.json` gewinnt vor dem Standard, `[<pm>, 'run', <name>]`; `package.json` kommt über `read`, also im Gate vom Base-Stand):
     - `install`: pnpm `['pnpm', 'install', '--frozen-lockfile']`, npm `['npm', 'ci']`, yarn `['yarn', 'install', '--immutable']`, bun `['bun', 'install', '--frozen-lockfile']`
     - `format`: `['vp', 'fmt', '--check']`
     - `lint`: `['vp', 'lint']`
@@ -541,12 +559,12 @@ test('reads the node version from .nvmrc', ...)       // versions.node '22'
   - `checkMessage(msg: string): string | null` – prüft die erste Zeile gegen `CC_PATTERN`; ein Footer `BREAKING CHANGE:` braucht keinen `!`, ein `!` braucht keinen Footer; `null` = ok, sonst Grund
   - `typeOf(title: string): { type: string; breaking: boolean } | null`
 - Produces (`lib/gate.ts`):
-  - `type GateInput = { worktree: string; round: string; base?: string; prTitle?: string; jobDir?: string }` (`round` ist `round-N` oder `setup`)
+  - `type GateInput = { worktree: string; round: string; base?: string; prTitle?: string; jobDir?: string }` (`round` ist `round-N`, `merge` oder `setup`)
   - `type StepResult = Step & { exitCode: number; ms: number; skipped?: string }`
-  - `type GateResult = { verdict: 'PASS' | 'FAIL'; steps: StepResult[]; commits: { sha: string; problem: string }[]; title?: string; protected: string[]; report: string }`
+  - `type GateResult = { verdict: 'PASS' | 'FAIL'; steps: StepResult[]; commits: { sha: string; problem: string }[]; title?: string; protected: string[]; scriptsChanged: string[]; report: string }`
   - `planGate(steps: Step[]): Step[]` – Reihenfolge `install, format, lint, typecheck, build, test, audit` über alle Stacks; `after` aus `Detection` verschiebt einen Schritt hinter den genannten.
-  - `runGate(ctx: Ctx, input: GateInput): Promise<GateResult>` – Config aus `ctx.root` (Main-Checkout), Stacks am `worktree` erkannt, Schritte im `worktree` ausgeführt mit `timeoutMs: 600000`; ein fehlendes Werkzeug (Exit 127) zählt als FAIL mit Fix aus `requires`. Mit `base`: `git -C wt log --no-merges --format=%H%x00%B%x1e <base>..HEAD` gegen `checkMessage`, `git -C wt diff --name-only <base>...HEAD` gegen `protectedPaths`. Mit `prTitle`: `checkMessage(prTitle)`. Schreibt `<jobDir>/<round>/checks.md` (erste Zeile `VERDICT: PASS|FAIL`, `## Summary`, Tabelle Schritt/Stack/Befehl/Exit/Dauer, Commit- und Pfad-Funde) und `checks.log` (vollständige Ausgaben); ohne `jobDir` nach `.factory/jobs/setup/`.
-- Tool `gate` (`{ issue?: number; round?: string }`): mit `issue` Worktree, Base und PR-Titel aus `job.md` (Task 11), sonst die Main-Checkout als Worktree ohne Commit-Prüfung.
+  - `runGate(ctx: Ctx, input: GateInput): Promise<GateResult>` – Config aus `ctx.root` (Main-Checkout), Stacks am `worktree` erkannt, Schritte im `worktree` ausgeführt mit `timeoutMs: 600000`; ein fehlendes Werkzeug (Exit 127) zählt als FAIL mit Fix aus `requires`. Runner- und Script-Dateien liest das Gate mit `base` über `git -C wt show <base>:<rel>`, ohne `base` aus der Main-Checkout; weicht ein `package.json`-Script oder ein `Makefile` im Branch davon ab, steht der Pfad in `scriptsChanged` und das Gate ist FAIL. Mit `base`: `git -C wt log --first-parent --no-merges --format=%H%x00%B%x1e <base>..HEAD` gegen `checkMessage` (gesyncte Base-Commits zählen nicht), `git -C wt diff --name-only <base>...HEAD` gegen `protectedPaths`. Mit `prTitle`: `checkMessage(prTitle)`. Schreibt `<jobDir>/<round>/checks.md` (erste Zeile `VERDICT: PASS|FAIL`, `## Summary`, Tabelle Schritt/Stack/Befehl/Exit/Dauer, Commit-, Pfad- und Script-Funde) und hängt an `checks.log` einen Abschnitt `## Attempt <k>` mit den vollständigen Ausgaben; ohne `jobDir` nach `<root>/.factory/gate/setup/`.
+- Tool `gate` (`{ issue?: number; round?: string }`): mit `issue` Worktree und Base aus `job.md` (Task 11), PR-Titel aus `spec.md` `Title:` (später aus `prState`), sonst die Main-Checkout als Worktree ohne Commit-Prüfung. Das Tool läuft lange (bis 600 s je Schritt): nur `factory:gate-runner` und `merge` rufen es, nie die Hauptsitzung.
 
 - [ ] **Step 1: Failing tests**
 
@@ -565,7 +583,12 @@ test('gate fails on a bad PR title', ...)
 test('gate fails when the branch touches a protected path', ...) // diff lists .factory/config.json → protected == ['.factory/config.json']
 test('gate reads config from the main checkout', ...)   // worktree has a different .factory/config.json → steps follow root config
 test('a missing tool is a FAIL with a fix', ...)        // exit 127 → report contains the requires() fix
-test('gate writes the full output to checks.log', ...)
+test('gate appends each run to checks.log as an attempt', ...) // two runs → '## Attempt 1' and '## Attempt 2'
+test('gate ignores commits synced from base', ...)      // argv contains '--first-parent'; base commit 'Update x' not in commits
+test('gate takes scripts from the base, not the branch', ...)  // branch scripts.test 'true' → step argv from base package.json
+test('gate fails when the branch changes a package.json script', ...) // scriptsChanged == ['package.json']
+test('setup gate writes to .factory/gate/setup', ...)
+test('tool gate reads the PR title from spec.md', ...)  // 'gate' added to EXPECTED
 ```
 
 - [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL.
@@ -591,7 +614,7 @@ test('gate writes the full output to checks.log', ...)
   - `type QueueItem = { number: number; title: string; priority: string; createdAt: string; resume?: boolean; blockedBy?: number[] }`
   - `type Queue = { running: { number: number; state: State }[]; waiting: { number: number; state: State }[]; ready: QueueItem[]; blocked: QueueItem[]; slots: number; next: QueueItem[] }`
   - `dependsOn(body: string): number[]` – Zeilen `Depends on #<n>` (Groß/klein egal, mehrere je Zeile mit Komma)
-  - `queue(ctx: Ctx, t: Tracker, cfg: Config): Promise<Queue>` – `backlog()`; laufend = Status in `RUNNING`; wartend = `needs-info`, `needs-human`, `approved`; bereit = kein Status-Label, Abhängigkeiten geschlossen (`gh issue view <dep> --json state`); `needs-info` mit einem Kommentar des Autors nach dem Intake-Kommentar → bereit mit `resume: true`. Sortierung: Priorität (`critical, high, medium, low`, ohne Label `medium`), dann `createdAt` aufsteigend. `slots = max(0, cfg.concurrency - running.length)`, `next = ready.slice(0, slots)`.
+  - `queue(ctx: Ctx, t: Tracker, cfg: Config): Promise<Queue>` – `backlog()`; laufend = Status in `RUNNING`; wartend = `needs-info`, `needs-human`, `approved`; bereit = kein Status-Label, Abhängigkeiten geschlossen (`t.get(dep).state`, kein roher `gh`-Aufruf); `needs-info` mit einem Kommentar des Autors nach dem Intake-Kommentar → bereit mit `resume: true` (Kommentare über `t.get(n)`, nur für `needs-info`-Tickets). Sortierung: Priorität (`critical, high, medium, low`, ohne Label `medium`), dann `createdAt` aufsteigend. `slots = max(0, cfg.concurrency - running.length)`, `next = ready.slice(0, slots)`.
 - Tool `queue` (`{}`).
 
 - [ ] **Step 1: Failing tests**
@@ -610,6 +633,7 @@ test('queue blocks a ticket with an open dependency', ...)         // blocked[0]
 test('queue resumes needs-info after an author answer', ...)
 test('queue does not resume needs-info on an operator note', ...)  // operator != author
 test('waiting jobs take no slot', ...)                             // concurrency 1, one needs-human → slots 1
+test('tool queue returns the queue', ...)                          // 'queue' added to EXPECTED
 ```
 
 - [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL.
@@ -633,18 +657,22 @@ test('waiting jobs take no slot', ...)                             // concurrenc
   - `parseJob(text: string): Job`, `renderJob(j: Job): string` (Format aus der Tabelle „Arbeitskopie“; `- PR: none`, `- Base: none` vor dem Build)
   - `readJob(ctx, n): Promise<Job>`, `writeJob(ctx, j): Promise<void>`
 - Produces (`lib/job.ts`):
-  - `jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job>` – nur aus Backlog oder `needs-info`-Resume: `setState(n, 'intake')`, schreibt `job.md` und `issue.md`. Kein Worktree.
+  - `jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job>` – nur aus Backlog oder `needs-info`-Resume: `setState(n, 'intake')`, `git fetch origin <base>`, Base-SHA = `origin/<base>`, `git worktree add -b factory/<n> <wt> origin/<base>` (bei Resume den vorhandenen Worktree behalten), schreibt `job.md` und `issue.md`. Ein Worktree je Job; alle Agenten des Jobs nutzen ihn, nur der builder schreibt darin.
   - `type SyncResult = { job: Job; state: State | null; rebuilt: string[]; specChanged: boolean }`
-  - `jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResult>` – lädt Issue neu und schreibt `issue.md`; fehlt `jobs/<n>/`, baut es aus den Marker-Kommentaren neu (`intake.md`, `spec.md`, `decision.md`; Runde = höchste `round-N`; PR aus `findPr`); ist der Spec-Kommentar neuer als `specUpdated`, überschreibt `spec.md` und setzt `specChanged`. Fehlt der Worktree, der Branch aber auf `origin`: `git fetch origin factory/<n>` und `git worktree add <wt> factory/<n>`.
+  - `jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResult>` – lädt Issue neu und schreibt `issue.md`; fehlt `jobs/<n>/`, baut es aus den Marker-Kommentaren neu (`intake.md` = Intake-Kommentar ohne Marker und ohne `## Job`/`## Route`; `job.md` mit Base, Route, Spec updated und PR aus dem `## Job`- und `## Route`-Teil des Intake-Kommentars, fehlt Base dort, dann `git merge-base origin/<base> factory/<n>`; `spec.md`, `decision.md`; Runde = höchste `round-N`); ist der Spec-Kommentar neuer als `specUpdated`, überschreibt `spec.md` und setzt `specChanged`. Fehlt der Worktree, der Branch aber auf `origin`: `git fetch origin factory/<n>` und `git worktree add <wt> factory/<n>`.
 - Tools: `job_create` (`{ issue: number }`), `job_sync` (`{ issue: number }`) → Job und Pfade.
 
 - [ ] **Step 1: Failing tests**
 
 ```ts
 test('renderJob and parseJob round-trip', ...)
-test('jobCreate sets intake and writes issue.md', ...)        // label call, files job.md + issue.md, no 'worktree add'
+test('jobCreate sets intake and writes issue.md', ...)        // label call, files job.md + issue.md
+test('jobCreate creates the worktree from origin/base', ...)  // ['git','worktree','add','-b','factory/7',<wt>,'origin/main'], job.md Base == SHA
+test('jobCreate on resume keeps the worktree', ...)           // needs-info resume → no second 'worktree add'
 test('jobCreate refuses an issue that already runs', ...)     // label factory:build → 'illegal-transition'
-test('jobSync rebuilds a deleted job folder from comments', ...) // intake.md == stripMarker(intake comment), round 2 from 'round-2'
+test('jobSync rebuilds a deleted job folder from comments', ...) // intake.md == intake comment without marker and ## Job, round 2 from 'round-2'
+test('jobSync rebuilds job.md from the intake comment', ...)  // base, route, specUpdated, pr equal to the original job.md
+test('tools job_create and job_sync are registered', ...)     // both added to EXPECTED
 test('jobSync takes a newer spec comment', ...)               // specChanged true, spec.md replaced
 test('jobSync keeps the local spec when the comment is older', ...)
 test('jobSync restores the worktree from origin', ...)        // calls contain 'git fetch origin factory/7' and 'git worktree add'
@@ -662,24 +690,28 @@ test('jobSync refreshes issue.md without third-party comments', ...)
 
 **Files:**
 - Modify: `plugins/factory/lib/job.ts` (Teil 2), `plugins/factory/hooks/tools.ts` (Tool `job_advance`)
-- Create: `plugins/factory/tests/job-advance.test.ts`
+- Create: `plugins/factory/lib/review.ts`, `plugins/factory/tests/review.test.ts`, `plugins/factory/tests/job-advance.test.ts`
 
 **Interfaces:**
 - Consumes: Tasks 3, 4, 5, 9, 10, 11; `cleanupJob` aus Task 13 (für `rejected`; bis dahin nur `rmrf(jobDir)`).
-- Produces:
+- Produces (`lib/review.ts`, hier statt in Task 18, damit `job_advance` die ersten Zeilen nicht doppelt prüft):
+  - `type Finding = { severity: 'blocker' | 'should' | 'nit'; text: string }`
+  - `parseReview(text: string): { verdict: 'PASS' | 'CHANGES'; findings: Finding[] }` – erste Zeile exakt `VERDICT: PASS|CHANGES`; Funde aus `## Findings` im Format `N. [severity] <text>`.
+  - `parseDecision(text: string): { decision: 'APPROVE' | 'ESCALATE'; summary: string; question?: string }`
+- Produces (`lib/job.ts`):
   - `type AdvanceInput = { issue: number; to: State; reason?: string }`
   - `type AdvanceResult = { job: Job; state: State; round: number; roundDir: string; reviewers?: Reviewer[]; note?: string }`
   - `jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Promise<AdvanceResult>` – liest den aktuellen Status per `get`, dann je Ziel:
-    - `spec` (von `intake`): `parseIntake` muss `ACCEPT` sein; `route()` in `job.md`; `upsertComment('intake', intake.md + "## Route" …)`.
+    - `spec` (von `intake`): `parseIntake` muss `ACCEPT` sein; `route()` in `job.md`; `upsertComment('intake', intake.md + "## Job" (Base, Spec updated, PR) + "## Route" …)`. Jede spätere Änderung an Base, Spec updated oder PR schreibt den Intake-Kommentar neu.
     - `needs-info` (von `intake`): `NEEDS-INFO`; Intake-Kommentar mit `## Questions` und `@<autor>`.
     - `rejected` (von `intake`): `REJECT`; Intake-Kommentar mit `## Reason`, `close(n, 'rejected')`, dann Aufräumen.
-    - `build` (von `spec`): `spec.md` mit `STATUS: READY` und gültigem `Title:` (`checkMessage`); `upsertComment('spec', spec.md)`, `specUpdated` merken; `git fetch origin <base>`, Base-SHA = `origin/<base>`, `git worktree add -b factory/<n> <wt> origin/<base>`; Runde 1, `mkdirp(round-1)`.
-    - `build` (von `review` oder `needs-human`): Runde +1; über `maxRounds` → stattdessen `needs-human` mit `note`.
+    - `build` (von `spec`): `spec.md` mit `STATUS: READY` und gültigem `Title:` (`checkMessage`); `upsertComment('spec', spec.md)`, `specUpdated` merken; der Worktree steht schon (Task 11); Runde 1, `mkdirp(round-1)`.
+    - `build` (von `review` oder `needs-human`): Runde +1; über `maxRounds` → stattdessen `needs-human` mit `note` (aus `needs-human` bleibt es `needs-human`, kein Label-Wechsel).
     - `review` (von `build`): `round-N/checks.md` muss `VERDICT: PASS` sein, sonst `FactoryError('gate-not-green')`; `git -C wt push -u origin factory/<n>`; PR öffnen, wenn keiner da ist (Titel aus `spec.md`, Body `Closes #<n>` + `## Summary` aus `build.md`, Labels `factory:pr`, `type:<typ>`, bei `!` `type:breaking`), sonst nur pushen; PR-Nummer in `job.md` und im Intake-Kommentar (`PR: #<m>`). Ergebnis `reviewers` = Schlüssel der Route.
-    - `approved` / `needs-human` (von `review`): **alle** gerouteten `round-N/review-<r>.md` müssen da sein und eine gültige erste Zeile haben, sonst `FactoryError('reviews-missing', <fehlende>)`; `decision.md` muss passen (`APPROVE` → `approved`, `ESCALATE` → `needs-human`); `upsertComment('round-N', <Kurzfassung>)`, `upsertComment('decision', decision.md)`, `prReady`, bei ESCALATE `prComment(## Question)`.
+    - `approved` / `needs-human` (von `review`, ohne `reason`): **alle** gerouteten `round-N/review-<r>.md` müssen da sein und `parseReview` bestehen, sonst `FactoryError('reviews-missing', <fehlende>)`; `decision.md` muss `parseDecision` bestehen und passen (`APPROVE` → `approved`, `ESCALATE` → `needs-human`); `upsertComment('round-N', <Kurzfassung>)`, `upsertComment('decision', decision.md)`, `prReady`, bei ESCALATE `prComment(## Question)`.
     - `build` aus `review` setzt voraus, dass mindestens eine Review-Datei `VERDICT: CHANGES` hat und alle gerouteten da sind; schreibt die Runden-Kurzfassung.
-    - `needs-human` aus jedem laufenden Zustand mit `reason`: Kommentar mit Grund.
-  - `roundSummary(job: Job, roundDir: string): Promise<string>` – Gate-Verdikt, je Reviewer Verdikt und alle `[blocker]`-Zeilen.
+    - `needs-human` aus jedem Zustand in `RUNNING` mit `reason` (Abbruch): Kommentar mit Grund; prüft weder Reviews noch `decision.md`.
+  - `roundSummary(job: Job, roundDir: string): Promise<string>` – Gate-Verdikt, je Reviewer Verdikt (über `parseReview`) und alle `[blocker]`-Zeilen.
 
 - [ ] **Step 1: Failing tests**
 
@@ -688,7 +720,7 @@ test('spec requires DECISION: ACCEPT', ...)
 test('spec writes the route into job.md and the intake comment', ...)
 test('needs-info posts the questions and mentions the author', ...)
 test('rejected closes the issue as not planned and removes the job folder', ...)
-test('build creates the worktree from origin/base', ...)       // ['git','worktree','add','-b','factory/7',<wt>,'origin/main']
+test('build starts round 1 in the existing worktree', ...)     // round-1 dir, no 'worktree add' call
 test('build refuses a spec title that is not conventional', ...)
 test('review refuses when the gate is not green', ...)          // 'gate-not-green', no push
 test('review pushes and opens one draft PR', ...)               // second advance to review: no second 'pr create'
@@ -697,11 +729,19 @@ test('approved waits for all routed reviews', ...)              // route code+se
 test('escalate sets needs-human and asks on the PR', ...)
 test('changes start the next round', ...)                       // round 2, round-2 dir
 test('round over maxRounds goes to needs-human', ...)           // maxRounds 3, round 3 → state 'needs-human', note set
+test('over maxRounds from needs-human changes no label', ...)   // no 'issue edit' call, note set
+test('review abort with a reason skips decision.md', ...)       // no decision.md → state 'needs-human', comment has the reason
 test('every advance writes exactly one label change', ...)
+test('job_advance uses parseReview for the round summary', ...) // summary lists the blocker line; 'job_advance' added to EXPECTED
+// tests/review.test.ts
+test('parseReview reads verdict and findings', ...)
+test('parseReview rejects a missing verdict line', ...)
+test('parseReview rejects CHANGES with only nits', ...)    // only [nit] findings + VERDICT: CHANGES → error 'changes without blocker or should'
+test('parseDecision reads ESCALATE with a question', ...)
 ```
 
 - [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL.
-- [ ] **Step 3: Implement.** Tool `job_advance` (`{ issue: number, to: State, reason?: string }`).
+- [ ] **Step 3: Implement** `lib/review.ts` und `lib/job.ts` Teil 2. Tool `job_advance` (`{ issue: number, to: State, reason?: string }`).
 - [ ] **Step 4: Run** `claude plugin test plugins/factory`. Expected: PASS.
 - [ ] **Step 5: Commit** `git commit -m "feat(factory): advance jobs through the pipeline with issue comments"`
 
@@ -720,9 +760,9 @@ test('every advance writes exactly one label change', ...)
   - `cleanupJob(ctx: Ctx, t: Tracker, n: number, end: 'done' | 'rejected'): Promise<CleanupReport>`:
     - Worktree: `git -C wt status --porcelain --untracked-files=no` nicht leer → behalten mit Grund; sonst `git worktree remove <wt>`, schlägt das nur an unversionierten Dateien fehl → `git worktree remove --force <wt>`.
     - Branch bei `done`: `git fetch --prune origin`, `git merge-base --is-ancestor factory/<n> origin/<base>` muss gelten, dann `git branch --set-upstream-to=origin/<base> factory/<n>` und `git branch -d factory/<n>` (so prüft `-d` gegen den gemergten Base-Branch). Kein `-D`.
-    - Branch bei `rejected`: nur, wenn ein PR existiert und `git ls-remote origin refs/pull/<m>/head` denselben SHA hat wie der lokale Branch; dann PR schließen (`gh pr close m -R r --delete-branch`), lokal `git branch --set-upstream-to=… `entfällt; der lokale Branch bleibt sonst mit Meldung stehen. (Ein Branch ohne Commit-Sicherung wird nie gelöscht.)
+    - Branch bei `rejected`: `rejected` kommt nur aus `intake`, also ohne PR und ohne eigene Commits. Dieselbe Regel wie bei `done` (`--is-ancestor`, dann `branch -d`); gilt sie nicht, bleibt der Branch mit Meldung stehen. Kein PR-Code.
     - `rmrf(jobDir)`.
-  - `sweep(ctx: Ctx, t: Tracker): Promise<CleanupReport>` – für jeden Ordner in `.factory/jobs/` und `.factory/worktrees/`, dessen Issue geschlossen ist: `cleanupJob(…, 'done' oder 'rejected' nach Label)`; Tickets in `approved`/`needs-human` mit gemergtem PR → `setState('done')` und `cleanupJob`; dann `git worktree prune`, `git fetch --prune`.
+  - `sweep(ctx: Ctx, t: Tracker): Promise<CleanupReport>` – überspringt Ordner, deren Name keine Zahl ist; für jeden Ordner in `.factory/jobs/` und `.factory/worktrees/`, dessen Issue geschlossen ist: `cleanupJob(…, 'done' oder 'rejected' nach Label)`; Tickets in `approved`/`needs-human` mit gemergtem PR → `setState('done')` und `cleanupJob`; dann `git worktree prune`, `git fetch --prune`.
 - Tool `cleanup` (`{ issue?: number }`): mit Nummer `cleanupJob`, sonst `sweep`.
 
 - [ ] **Step 1: Failing tests**
@@ -733,8 +773,10 @@ test('cleanup keeps a worktree with tracked changes', ...)     // kept[0].reason
 test('cleanup forces only when untracked files remain', ...)
 test('cleanup never uses branch -D', ...)                      // no call contains '-D'
 test('cleanup keeps an unmerged branch', ...)                  // is-ancestor exit 1 → kept
-test('rejected deletes the branch only when the PR head matches', ...)
+test('rejected removes worktree, empty branch and job folder', ...) // no 'gh pr' call
 test('sweep cleans jobs of closed issues', ...)
+test('sweep skips folders that are not issue numbers', ...)    // 'setup' folder untouched, no error
+test('tool cleanup is registered', ...)                        // 'cleanup' added to EXPECTED
 test('sweep finishes a ticket that was merged on GitHub', ...) // approved + PR MERGED → label done
 test('sweep prunes worktrees and remote refs', ...)
 ```
@@ -749,7 +791,7 @@ test('sweep prunes worktrees and remote refs', ...)
 ### Task 14: Freigabe und Merge
 
 **Files:**
-- Create: `plugins/factory/lib/merge.ts`, `plugins/factory/tests/merge.test.ts`, `plugins/factory/skills/approve/SKILL.md`, `plugins/factory/skills/merge/SKILL.md`
+- Create: `plugins/factory/lib/merge.ts`, `plugins/factory/tests/merge.test.ts`, `plugins/factory/skills/approve/SKILL.md`, `plugins/factory/skills/merge/SKILL.md` (verteilt `factory:merger` aus Task 18)
 - Modify: `plugins/factory/hooks/tools.ts` (Tools `approve`, `merge`)
 
 **Interfaces:**
@@ -759,15 +801,15 @@ test('sweep prunes worktrees and remote refs', ...)
   - `approve(ctx: Ctx, t: Tracker, n: number): Promise<{ issue: number; pr: number; how: 'review' | 'comment' }>` – PR-Autor = `login()` → `upsertComment(issue, 'approval', 'Approved by @<login> for merge.')` (GitHub lässt eigenes Approval nicht zu); sonst `approvePr`. Ändert kein Label.
   - `merge(ctx: Ctx, t: Tracker, n: number): Promise<{ issue: number; pr: number; sha: string; cleanup: CleanupReport }>`:
     1. Status muss `approved` oder `needs-human` sein, PR `OPEN`.
-    2. `jobSync`; im Worktree `git fetch origin <base>`, `git merge --no-edit -m "chore(factory): sync with <base>" origin/<base>`; Konflikt → `git merge --abort`, `setState('needs-human')` mit Grund, `FactoryError('sync-conflict')`.
+    2. `jobSync`; im Worktree `git fetch origin <base>`, `git merge --no-edit -m "chore(factory): sync with <base>" origin/<base>`; Konflikt → `git merge --abort`, `setState('needs-human')` mit Grund (aus `approved` legal, aus `needs-human` No-op plus Kommentar), `FactoryError('sync-conflict')`.
     3. `git push origin factory/<n>`.
     4. `runGate` mit Runde `merge`; FAIL → `FactoryError('gate-failed', <report>)`, kein Merge.
     5. `approve`, falls noch nicht festgehalten.
     6. `t.merge(pr, '<pr.title> (#<pr>)')`; `prState` muss `MERGED` sein.
     7. `setState(issue, 'done')`; Issue geschlossen? sonst `close(issue, 'done')`.
     8. `cleanupJob(…, 'done')`.
-- Tools `approve` (`{ number: number }`), `merge` (`{ number: number }`).
-- Skills: `/factory:approve <n>` und `/factory:merge <n>` rufen nur das Tool und melden Ergebnis oder Fehler mit Abhilfe. Der merge-Skill sagt vorher in einem Satz, dass der Aufruf die menschliche Freigabe ist.
+- Tools `approve` (`{ number: number }`, kurz), `merge` (`{ number: number }`, lang wegen Gate: nur `factory:merger` ruft es).
+- Skills: `/factory:approve <n>` ruft das Tool und meldet Ergebnis oder Fehler mit Abhilfe. `/factory:merge <n>` sagt vorher in einem Satz, dass der Aufruf die menschliche Freigabe ist, verteilt dann `factory:merger` mit `run_in_background: true` und dem Pfad `<root>/.factory/jobs/<issue>`, bleibt ansprechbar und meldet bei der Benachrichtigung Ergebnis oder Fehler mit Abhilfe.
 
 - [ ] **Step 1: Failing tests**
 
@@ -781,6 +823,7 @@ test('merge aborts on a sync conflict', ...)            // calls contain 'merge 
 test('merge refuses when the gate fails after sync', ...)
 test('merge uses the PR title as subject', ...)         // '--subject','feat(x): y (#9)'
 test('merge sets done and cleans up', ...)
+test('tools approve and merge are registered', ...)    // both added to EXPECTED
 ```
 
 - [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL.
@@ -798,7 +841,7 @@ test('merge sets done and cleans up', ...)
 
 **Interfaces:**
 - Consumes: `queue`, `Queue`, Tracker.
-- Produces: `statusText(repo: string, q: Queue, prs: Record<number, number>): string` – Kopf `Factory · <repo>  <laufend>/<concurrency> slots`, Abschnitte `Ready (<n>)`, `Running` (`#n title  state`), `Waiting for you`. Jede wartende Zeile nennt den nächsten Command mit echter Nummer: `approved` → `/factory:merge <n>` (darunter `/factory:approve <n>`), `needs-human` → `/factory:merge <n>` und PR-Link, `needs-info` → „author answers in the issue“. Leerlauf → `Nothing to do. Add work with /factory:add <text>`; Backlog > 0 ohne Lauf → `/factory:run`.
+- Produces: `statusText(repo: string, q: Queue, prs: Record<number, number>): string` – Kopf `Factory · <repo>  <laufend>/<concurrency> slots`, Abschnitte `Ready (<n>)`, `Running` (`#n title  state`), `Waiting for you`. Jede wartende Zeile nennt den nächsten Command mit echter Nummer: `approved` → `/factory:merge <n>` (darunter `/factory:approve <n>`), `needs-human` mit PR → `/factory:merge <n>` und PR-Link, `needs-human` ohne PR → „answer in the issue, then /factory:run“, `needs-info` → „author answers in the issue“. Ein menschlich ausgelöstes `needs-human → build` bleibt im Bootstrap manuell (`rework` kommt später). Leerlauf → `Nothing to do. Add work with /factory:add <text>`; Backlog > 0 ohne Lauf → `/factory:run`.
 - Tool `status` (`{}`) → Text; Skill zeigt ihn unverändert.
 
 - [ ] **Step 1: Failing tests**
@@ -808,6 +851,7 @@ test('shows slots and running jobs', ...)
 test('an approved job shows the merge command with its number', ...) // contains '/factory:merge 42'
 test('idle shows the add hint', ...)
 test('ready backlog without a run shows /factory:run', ...)
+test('needs-human without a PR shows the answer hint', ...) // no '/factory:merge' in that line; 'status' added to EXPECTED
 ```
 
 - [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL.
@@ -828,7 +872,7 @@ test('ready backlog without a run shows /factory:run', ...)
 - Produces:
   - Tool `issue_search` (`{ query: string }`) → offene Issues mit Nummer, Titel, Labels.
   - Tool `issue_create` (`{ items: { title: string; body: string; dependsOn?: number[]; ref?: string; dependsOnRefs?: string[] }[]; park?: boolean }`) – legt die Issues in Reihenfolge an, Label `factory` (nicht bei `park`); `dependsOnRefs` verweist auf `ref` eines früheren Eintrags und wird nach dem Anlegen zu `Depends on #<n>` am Ende des Body. Ergebnis: `{ ref, number, url }[]`.
-  - Skill `/factory:add <text>`: zerlegt den Text in Vorhaben (ein Issue je Vorhaben), Titel kurz im Imperativ, Body = Wortlaut des Benutzers ohne erfundene Anforderungen; sucht je Vorhaben mit `issue_search` nach Duplikaten und schlägt dann vor, dem bestehenden Issue `factory` zu geben; zeigt Liste, Reihenfolge und Abhängigkeiten zur Bestätigung; erst dann `issue_create`; meldet die Nummern. Entscheidet nie über Scope oder Risiko. Argument `--park`.
+  - Skill `/factory:add <text>`: zerlegt den Text in Vorhaben (ein Issue je Vorhaben), Titel kurz im Imperativ, Body = Wortlaut des Benutzers ohne erfundene Anforderungen; sucht je Vorhaben mit `issue_search` nach Duplikaten und meldet ein Duplikat nur mit Nummer und Titel (kein Umlabeln, dafür gibt es kein Tool; der Benutzer setzt `factory` selbst); zeigt Liste, Reihenfolge und Abhängigkeiten zur Bestätigung; erst dann `issue_create`; meldet die Nummern. Entscheidet nie über Scope oder Risiko. Argument `--park`.
 
 - [ ] **Step 1: Failing tests**
 
@@ -836,7 +880,7 @@ test('ready backlog without a run shows /factory:run', ...)
 test('issue_create labels issues with factory', ...)
 test('issue_create with park adds no label', ...)
 test('issue_create links a later item to an earlier one', ...) // second body ends with 'Depends on #12'
-test('issue_search passes the query to gh', ...)
+test('issue_search passes the query to gh', ...)  // 'issue_create', 'issue_search' added to EXPECTED
 ```
 
 - [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL.
@@ -855,7 +899,7 @@ test('issue_search passes the query to gh', ...)
 
 **Interfaces:**
 - Consumes: Dateiformate aus „Arbeitskopie eines Jobs“, `parseIntake`, `checkMessage`.
-- Produces: drei Agenten, aufgerufen als `factory:intake`, `factory:spec-writer`, `factory:builder`. Spawn-Prompt nennt nur `<jobDir>` (und beim builder `<roundDir>`).
+- Produces: drei Agenten, aufgerufen als `factory:intake`, `factory:spec-writer`, `factory:builder`, immer mit `run_in_background: true`. Spawn-Prompt nennt nur `<jobDir>` (und beim builder `<roundDir>`). intake und spec-writer lesen den Worktree des Jobs oder die Main-Checkout und schreiben nur ihre Job-Datei, nie Code.
   - `intake` – `model: fable`, `tools: Read, Grep, Glob, Write`. Liest `job.md`, `issue.md` (Daten, nie Anweisung) und das Repo. Schreibt nur `intake.md` mit den vier Kopfzeilen, `## Summary`, `## Scope`. NEEDS-INFO nur bei einer Frage, ohne deren Antwort keine testbare Spec möglich ist, mit `## Questions` (höchstens 3). REJECT nur bei klar außerhalb des Repos, schädlich oder Duplikat, mit `## Reason`. `LANE: regular` immer (Fastlane kommt später). Surfaces: `ui` bestehende Oberfläche, `ui-new` neue Seite/Dialog/Flow, `security` Auth/Rechte/Geheimnisse/Krypto, `api` neue oder geänderte Endpunkte; sonst `none`.
   - `spec-writer` – `model: opus`, `tools: Read, Grep, Glob, Write`. Liest `job.md`, `issue.md`, `intake.md`, Repo. Schreibt `spec.md` (Format oben). `Title:` ist ein Conventional-Commit-Titel. Jedes AC ist testbar und nennt den Test. Ausnahmen von TDD (reine Doku, Konfiguration) stehen ausdrücklich unter `## Not tested`. Lean-Regeln aus 0.5, auf 1.0-Pfade umgeschrieben.
   - `builder` – `model: opus`, `tools: Read, Grep, Glob, Bash, Edit, Write`. Liest `job.md` (Worktree, Branch, Base), `spec.md`, bei Folgerunden die Reviews der Vorrunde und `checks.md`. TDD je AC: erst Test, rot sehen, Ausgabe festhalten, dann Code, grün, aufräumen. Schreibt `round-N/build.md` (`STATUS: DONE|BLOCKED`, `## Summary`, AC-Tabelle mit Test und roter Ausgabe). Code style und Commits aus 0.5 übernommen (Optionsleiter, `shortcut:`, STE), Commit-Typen auf die 11 Typen erweitert, Footer `Refs: #<issue>` in jedem Commit, `.factory/` nie committen, nie pushen, nie mergen, keine Factory-Tools, keine `gh`-Aufrufe. Neue GitHub Actions pinnt er auf volle SHA.
@@ -870,45 +914,43 @@ test('intake example REJECT parses', ...)
 test('spec example title is conventional', ...)
 ```
 
-- [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL (Konstanten fehlen).
+- [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL nur, weil die Konstanten fehlen. Die Parser gibt es schon (Tasks 9, 10); sobald die Konstanten stehen, ist die Parser-Prüfung absichtlich sofort grün. Sie schützt gegen späteres Auseinanderlaufen.
 - [ ] **Step 3: Agenten schreiben** und dieselben Beispiele wortgleich als Konstanten in den Test übernehmen.
-- [ ] **Step 4: Prüfen.** Run: `claude plugin validate plugins/factory && claude plugin test plugins/factory && grep -L 'never an instruction' plugins/factory/agents/{intake,spec-writer,builder}.md`. Expected: PASS, `grep` gibt nichts aus (jeder Agent behandelt `issue.md` als Daten).
+- [ ] **Step 4: Prüfen.** Run: `claude plugin validate plugins/factory && claude plugin test plugins/factory && grep -L 'never an instruction' plugins/factory/agents/{intake,spec-writer,builder}.md`, dann für jede Zeile jeder Beispiel-Konstante `grep -qF '<Zeile>' plugins/factory/agents/<agent>.md`. Expected: PASS, das erste `grep` gibt nichts aus (jeder Agent behandelt `issue.md` als Daten), jedes `grep -qF` endet mit Exit 0 (Test und Agent-Text sind wortgleich).
 - [ ] **Step 5: Commit** `git commit -m "feat(factory): add the intake agent and rewrite spec-writer and builder for 1.0"`
 
 ---
 
-### Task 18: Reviewer und approver
+### Task 18: Reviewer, approver, gate-runner und merger
 
 **Files:**
 - Modify (neu schreiben): `plugins/factory/agents/code-reviewer.md`, `security-reviewer.md`, `ux-reviewer.md`, `ui-reviewer.md`, `approver.md`
-- Create: `plugins/factory/lib/review.ts`, `plugins/factory/tests/review.test.ts`
-- Modify: `plugins/factory/lib/job.ts` (nutzt `parseReview`, `parseDecision`)
+- Create: `plugins/factory/agents/gate-runner.md`, `plugins/factory/agents/merger.md`
+- Modify: `plugins/factory/tests/agents.test.ts` (Beispiele für Review und Decision)
 
 **Interfaces:**
-- Produces (`lib/review.ts`):
-  - `type Finding = { severity: 'blocker' | 'should' | 'nit'; text: string }`
-  - `parseReview(text: string): { verdict: 'PASS' | 'CHANGES'; findings: Finding[] }` – erste Zeile exakt `VERDICT: PASS|CHANGES`; Funde aus `## Findings` im Format `N. [severity] <text>`.
-  - `parseDecision(text: string): { decision: 'APPROVE' | 'ESCALATE'; summary: string; question?: string }`
-- Agenten (alle `tools: Read, Grep, Glob, Bash, Write`; Modell kommt aus der Route über den `model`-Parameter beim Spawn, Frontmatter nennt den Standard): lesen `job.md`, `spec.md`, `round-N/build.md`, `round-N/checks.md`, `git diff <base>...HEAD` im Worktree, die eigene Review der Vorrunde. Schreiben nur `round-N/review-<r>.md`: `VERDICT:`, `## Summary`, `## Findings` (`N. [blocker|should|nit] <file>:<line>: problem. Fix: …`), `## Checked`. „No case, no finding“, Nits blocken nie, CHANGES nur bei `blocker`/`should`. Kein Code ändern.
+- Consumes: `parseReview`, `parseDecision` (Task 12), Tools `gate` (Task 9) und `merge` (Task 14).
+- Alle Agenten laufen mit `run_in_background: true`. Reviewer und approver lesen den Worktree des Jobs oder die Main-Checkout und schreiben keinen Code.
+- Agenten (Reviewer und approver `tools: Read, Grep, Glob, Bash, Write`; Modell kommt aus der Route über den `model`-Parameter beim Spawn, Frontmatter nennt den Standard): lesen `job.md`, `spec.md`, `round-N/build.md`, `round-N/checks.md`, `git diff <base>...HEAD` im Worktree, die eigene Review der Vorrunde. Schreiben nur `round-N/review-<r>.md`: `VERDICT:`, `## Summary`, `## Findings` (`N. [blocker|should|nit] <file>:<line>: problem. Fix: …`), `## Checked`. „No case, no finding“, Nits blocken nie, CHANGES nur bei `blocker`/`should`. Kein Code ändern.
   - `code-reviewer` (Standard `sonnet`): zusätzlich je AC ein Test, der ohne die Änderung fehlschlägt (sonst CHANGES); prüft `build.md`-Belege der roten Ausgabe; prüft Commits (`git log --format='%H%n%B' <base>..HEAD`) auf Conventional Commits und `Refs: #<issue>`; Lean-Punkte aus 0.5.
   - `security-reviewer` (Standard `opus`): Neufassung des 0.5-Reviewers auf das 1.0-Layout (Job-Dateien, Worktree, Issue-Kommentare); Inhalt und Prüfpunkte wie in 0.5. Kein ASVS-Bezug im Bootstrap.
   - `ux-reviewer` (Standard `sonnet`), `ui-reviewer` (Standard `haiku`): wie 0.5 inhaltlich, auf 1.0-Pfade; ui-reviewer darf Screenshots nach `round-N/screenshots/` legen, sie bleiben lokal (Upload kommt später).
   - `approver` (Standard `opus`): liest alle Dateien der Runde und `spec.md`; schreibt `decision.md` (`DECISION: APPROVE|ESCALATE`, `## Summary`, bei ESCALATE `## Question` an den Menschen). APPROVE nur, wenn Gate PASS, alle Reviews PASS und jedes AC belegt; sonst ESCALATE. Der approver mergt nie; seine Entscheidung ist eine Empfehlung.
+  - `gate-runner` (`model: haiku`, `tools: Read, mcp__factory__gate`): Spawn-Prompt nennt nur einen Pfad, `<jobDir>/round-N` oder `<root>/.factory/gate/setup`. Leitet daraus `issue` und `round` ab, ruft `gate` einmal (der Aufruf darf lange dauern) und meldet die erste Zeile von `checks.md` als Ergebnis. Ändert nichts.
+  - `merger` (`model: haiku`, `tools: Read, mcp__factory__merge`): Spawn-Prompt nennt nur `<jobDir>`. Ruft `merge` mit der Issue-Nummer aus dem Pfad einmal und meldet Ergebnis oder Fehler mit Abhilfe. Ruft es nur nach dem Skill `/factory:merge` (menschliche Freigabe).
 
-- [ ] **Step 1: Failing tests**
+- [ ] **Step 1: Failing tests** in `tests/agents.test.ts`
 
 ```ts
-test('parseReview reads verdict and findings', ...)
-test('parseReview rejects a missing verdict line', ...)
-test('parseReview rejects CHANGES with only nits', ...)    // only [nit] findings + VERDICT: CHANGES → error 'changes without blocker or should'
-test('parseDecision reads ESCALATE with a question', ...)
-test('job_advance uses parseReview for the round summary', ...) // summary lists the blocker line
+test('review example CHANGES parses with a blocker', ...)  // parseReview on the code-reviewer example
+test('review example PASS parses', ...)
+test('decision example ESCALATE parses with a question', ...) // parseDecision on the approver example
 ```
 
-- [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL.
-- [ ] **Step 3: `lib/review.ts` implementieren, `job.ts` umstellen, Agenten schreiben.**
-- [ ] **Step 4: Prüfen.** Run: `claude plugin validate plugins/factory && claude plugin test plugins/factory && grep -L 'VERDICT: PASS|CHANGES' plugins/factory/agents/*-reviewer.md`. Expected: PASS, `grep` ohne Ausgabe.
-- [ ] **Step 5: Commit** `git commit -m "feat(factory): rewrite the reviewers and approver for 1.0"`
+- [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL nur, weil die Konstanten fehlen (Parser aus Task 12, wie in Task 17).
+- [ ] **Step 3: Agenten schreiben** und die Beispiele wortgleich als Konstanten übernehmen.
+- [ ] **Step 4: Prüfen.** Run: `claude plugin validate plugins/factory && claude plugin test plugins/factory && grep -L 'VERDICT: PASS|CHANGES' plugins/factory/agents/*-reviewer.md && grep -n '^tools:' plugins/factory/agents/{gate-runner,merger}.md`, dann je Beispielzeile `grep -qF` wie in Task 17. Expected: PASS, das erste `grep` ohne Ausgabe, `gate-runner` nennt als einziges Mod-Tool `mcp__factory__gate`, `merger` nur `mcp__factory__merge`, kein `Bash`, kein `Write`.
+- [ ] **Step 5: Commit** `git commit -m "feat(factory): rewrite the reviewers and approver and add the gate and merge runners"`
 
 ---
 
@@ -916,26 +958,35 @@ test('job_advance uses parseReview for the round summary', ...) // summary lists
 
 **Files:**
 - Create: `plugins/factory/pipeline.md`, `plugins/factory/skills/run/SKILL.md` (neu)
-- Modify: `CLAUDE.md`, `README.md` (Abschnitt Installation und Commands für den Bootstrap)
-- Create: `plugins/factory/tests/tools.test.ts`
+- Modify: `CLAUDE.md`, `README.md` (Abschnitt Installation und Commands für den Bootstrap), `plugins/factory/tests/tools.test.ts` (Endstand von `EXPECTED`), `plugins/factory/skills/{setup,merge}/SKILL.md` (gegen die Regel unten prüfen)
 
 **Interfaces:**
-- Consumes: alle Tools.
+- Consumes: alle Tools und Agenten.
 - Produces:
-  - `pipeline.md` (Englisch, STE) für die Hauptsitzung: Start → `cleanup` (sweep) → `queue`. Je Job aus `next` (parallel bis `slots`, Merges gibt es hier nicht): `job_create` → `factory:intake` → `job_advance spec|needs-info|rejected` → `factory:spec-writer` → `job_advance build` → `factory:builder` → `gate {issue}` → bei FAIL builder erneut mit `checks.md` (gleiche Runde, höchstens 2 Versuche, dann `job_advance needs-human` mit Grund) → `job_advance review` → die gerouteten Reviewer parallel mit `model` aus `job.md` `## Route`, **WAIT FOR ALL** → CHANGES: `job_advance build` und builder mit dem neuen `roundDir` → sonst `factory:approver` → `job_advance approved|needs-human`. Vor jedem Agenten `job_sync`; bei `specChanged` zurück zum builder. Spawn-Prompts nur mit `<jobDir>` und `<roundDir>` als absolute Pfade. Am Ende `status`. Die Hauptsitzung mergt nie; sie nennt `/factory:merge <n>`.
-  - `/factory:run [n]`: liest `${CLAUDE_PLUGIN_ROOT}/pipeline.md`; mit `n` nur dieses Issue (muss bereit sein), sonst die Queue bis nichts mehr bereit ist.
-  - `CLAUDE.md`: 0.5-Architektur und -Invarianten durch die 1.0-Bootstrap-Invarianten ersetzen (Tools in `lib/`, `hooks/tools.ts` als einzige `$`-Schicht, Übergangstabelle, Issue ist die Wahrheit, kein lokaler Merge, `branch -d` nur nach Merge, Frozen Copy aus Task 21).
-  - `tests/tools.test.ts`: alle Tools registriert und nicht deferred.
+  - `pipeline.md` (Englisch, STE) für die Hauptsitzung als Ereignisschleife. Regeln:
+    - Die Hauptsitzung bleibt ansprechbar. Sie verteilt jeden Agenten mit `run_in_background: true`, beendet ihren Zug und antwortet dem Menschen jederzeit zwischen Benachrichtigungen.
+    - Sie ruft nur kurze Tools, die in Sekunden fertig sind: `cleanup`, `queue`, `job_create`, `job_sync`, `job_advance`, `status`, `approve`. Nie `gate` oder `merge`, nie Bash, nie Code lesen, nie Job-Dateien schreiben.
+    - Lange Arbeit läuft in einem Subagenten: Gate-Läufe in `factory:gate-runner`, Merge mit Gate in `factory:merger`, die Setup-Probe in `factory:gate-runner`.
+    - Spawn-Prompts nennen nur `<jobDir>` und `<roundDir>` als absolute Pfade; Reviewer mit `model` aus `job.md` `## Route`.
+  - Start: `cleanup` (sweep) → `queue` → je Job aus `next` (bis `slots`) `job_create` und `factory:intake` verteilen. Für laufende Jobs ohne Agent in dieser Sitzung: `job_sync` und den Schritt neu verteilen, dessen Ausgabedatei fehlt (so setzt ein neuer Aufruf einen abgebrochenen Lauf fort).
+  - Je Benachrichtigung zu Job `<n>` erst `job_sync`, dann:
+    - intake fertig → `job_advance spec|needs-info|rejected` nach `DECISION`; bei `spec` `factory:spec-writer` verteilen.
+    - spec-writer fertig → `job_advance build` → `factory:builder` mit `roundDir`.
+    - builder fertig → `factory:gate-runner` mit `roundDir`.
+    - gate-runner fertig → `checks.md` PASS: `job_advance review`, dann alle gerouteten Reviewer in einer Nachricht verteilen. FAIL: builder erneut mit derselben Runde; nach 2 Wiederholungen (3 Abschnitte `## Attempt` in `checks.log`) `job_advance needs-human` mit Grund.
+    - ein Reviewer fertig → **WAIT FOR ALL** ist eine Zustandsregel, kein Warten: fehlt noch eine geroutete Review-Datei, nichts tun. Kommt die letzte Benachrichtigung: eine `CHANGES` → `job_advance build` und builder mit dem neuen `roundDir`; sonst `factory:approver`.
+    - approver fertig → `job_advance approved|needs-human`; `status` zeigen; den Menschen auf `/factory:merge <n>` hinweisen. Die Hauptsitzung mergt nie.
+    - `specChanged` aus `job_sync` → builder erneut in der laufenden Runde.
+    - Agent ohne Ausgabedatei → `job_advance needs-human` mit Grund.
+    - Verlässt ein Job `RUNNING`: `queue` und freie Slots füllen.
+  - Ende: läuft kein Job mehr und ist nichts bereit, `status` zeigen.
+  - `/factory:run [n]`: liest `${CLAUDE_PLUGIN_ROOT}/pipeline.md`; mit `n` nur dieses Issue (muss bereit sein), sonst die Queue. Der Skill endet nach dem Verteilen; Benachrichtigungen setzen den Lauf fort, bis kein Job mehr läuft und nichts bereit ist.
+  - `CLAUDE.md`: 0.5-Architektur und -Invarianten durch die 1.0-Bootstrap-Invarianten ersetzen (Tools in `lib/`, `hooks/tools.ts` als einzige `$`-Schicht, Übergangstabelle, Issue ist die Wahrheit, subagent-driven Ereignisschleife ohne blockierendes Warten, lange Tools nur in Subagenten, ein Worktree je Job, kein lokaler Merge, `branch -d` nur nach Merge, Frozen Copy aus Task 21).
 
-- [ ] **Step 1: Failing test**
-
-```ts
-test('registers every factory tool undeferred', ...) // $.tool.list() contains exactly mcp__factory__{doctor,setup,migrate,issue_create,issue_search,queue,job_create,job_sync,job_advance,gate,cleanup,approve,merge,status}, isDeferred false
-```
-
-- [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL, solange ein Name fehlt oder abweicht.
-- [ ] **Step 3: Tool-Namen angleichen, `pipeline.md`, Skill, `CLAUDE.md`, `README.md` schreiben.**
-- [ ] **Step 4: Prüfen.** Run: `claude plugin validate . && claude plugin validate plugins/factory && claude plugin test plugins/factory && grep -rn 'board.json\|serve.py\|orchestrator.md' plugins/factory CLAUDE.md`. Expected: PASS, `grep` ohne Treffer.
+- [ ] **Step 1: Failing test.** `EXPECTED` in `tests/tools.test.ts` auf den Endstand prüfen: genau `mcp__factory__{doctor,setup,migrate,issue_create,issue_search,queue,job_create,job_sync,job_advance,gate,cleanup,approve,merge,status}`. Fehlt ein Name aus früheren Tasks, zuerst in `EXPECTED` eintragen.
+- [ ] **Step 2: Run** `claude plugin test plugins/factory`. Expected: FAIL nur, wenn ein Name fehlt oder abweicht; sonst schon grün (der Test wächst seit Task 1).
+- [ ] **Step 3: Tool-Namen angleichen, `pipeline.md`, Skill `run`, `CLAUDE.md`, `README.md` schreiben; Skills `setup` und `merge` gegen die Regeln oben prüfen.**
+- [ ] **Step 4: Prüfen.** Run: `claude plugin validate . && claude plugin validate plugins/factory && claude plugin test plugins/factory && tsc -p plugins/factory && grep -rn 'board.json\|serve.py\|orchestrator.md' plugins/factory CLAUDE.md`, dann `grep -c 'run_in_background: true' plugins/factory/pipeline.md plugins/factory/skills/{setup,merge}/SKILL.md` und `grep -inE '\bsleep\b|\bpoll|mcp__factory__(gate|merge)' plugins/factory/pipeline.md plugins/factory/skills/run/SKILL.md`. Expected: PASS, `tsc` ohne Fehler, das erste `grep` ohne Treffer, jede Datei zählt mindestens 1, das letzte `grep` ohne Treffer (keine blockierende Schleife, kein langes Tool in der Hauptsitzung).
 - [ ] **Step 5: Commit** `git commit -m "feat(factory): add the run pipeline and document the 1.0 bootstrap"`
 
 ---
@@ -944,14 +995,16 @@ test('registers every factory tool undeferred', ...) // $.tool.list() contains e
 
 **Files:** keine im Plugin; Befunde werden als Fix-Commits in den betroffenen Tasks-Dateien behoben (jeweils mit Regressionstest zuerst).
 
+Ein `claude -p`-Aufruf endet, wenn der Hauptzug endet; Hintergrund-Subagenten können dann unfertig sein (Ergebnis aus Task 0, Schritt 9). Darum treibt jeder Schritt unten den Ablauf mit wiederholten Aufrufen: denselben Befehl erneut ausführen, bis das Expected gilt, höchstens 10 Aufrufe. Jeder neue Aufruf setzt über `job_sync`, `queue` und `cleanup` (sweep) dort fort, wo der vorige endete.
+
 - [ ] **Step 1: Repo anlegen.** Run (in `$SCRATCH/e2e`): `git init -b main`, eine kleine Node-Bibliothek mit `package.json` (`"type": "module"`), `vite-plus` als Dev-Abhängigkeit, `src/math.ts` mit `add`, ein Vitest-Test, Commit `chore: initial project`; dann `gh repo create <login>/factory-e2e-<datum> --private --source . --push`. Expected: Repo existiert, `gh repo view` zeigt `visibility: PRIVATE`.
 - [ ] **Step 2: Gleichnamiges Plugin klären** (Ergebnis aus Task 0, Schritt 6); falls nötig `claude plugin disable factory@software-factory`.
-- [ ] **Step 3: Setup.** Run: `claude -p "/factory:setup" --plugin-dir <abs>/plugins/factory` (Zustimmungen im Prompt vorgeben: „apply all recommended settings“). Expected: `.factory/config.json` mit `stacks: [{"id":"node","path":"."}]`; `gh label list` enthält alle Labels aus `labelSet`; `gh api repos/<r> --jq '[.allow_squash_merge,.allow_rebase_merge,.merge_commit_title,.delete_branch_on_merge]'` = `[false,false,"PR_TITLE",true]`; Probe-Gate PASS.
+- [ ] **Step 3: Setup.** Run: `claude -p "/factory:setup" --plugin-dir <abs>/plugins/factory` (Zustimmungen im Prompt vorgeben: „apply all recommended settings“). Expected: `.factory/config.json` mit `stacks: [{"id":"node","path":"."}]`; `gh label list` enthält alle Labels aus `labelSet`; `gh api repos/<r> --jq '[.allow_squash_merge,.allow_rebase_merge,.merge_commit_title,.delete_branch_on_merge]'` = `[false,false,"PR_TITLE",true]`; Probe-Gate PASS in `.factory/gate/setup/checks.md` (vom `gate-runner`, wiederholte Aufrufe wie oben).
 - [ ] **Step 4: Ticket anlegen.** Run: `claude -p "/factory:add add a subtract function next to add" --plugin-dir …`. Expected: ein Issue mit Label `factory`.
-- [ ] **Step 5: Durchlauf.** Run: `claude -p "/factory:run" --plugin-dir …`. Expected: Issue durchläuft `intake → spec → build → review → approved` (`gh issue view <n> --json labels`), Kommentare mit den Markern `intake`, `spec`, `round-1`, `decision`; ein PR mit `factory:pr`, `type:feat`, Body `Closes #<n>`, nicht mehr Draft; lokale Commits conventional mit `Refs: #<n>`.
+- [ ] **Step 5: Durchlauf.** Run wiederholt: `claude -p "/factory:run" --plugin-dir …`, bis das Label `factory:approved` ist. Expected: jeder Agent wurde im Hintergrund verteilt, die Hauptsitzung rief nie `gate` oder `merge`; Issue durchläuft `intake → spec → build → review → approved` (`gh issue view <n> --json labels`), Kommentare mit den Markern `intake`, `spec`, `round-1`, `decision`; ein PR mit `factory:pr`, `type:feat`, Body `Closes #<n>`, nicht mehr Draft; lokale Commits conventional mit `Refs: #<n>`.
 - [ ] **Step 6: Neuaufbau prüfen.** `rm -rf .factory/jobs/<n>`, dann `claude -p "call mcp__factory__job_sync for issue <n>" --plugin-dir …`. Expected: `intake.md`, `spec.md`, `decision.md` wieder da, gleicher Inhalt wie die Kommentare.
-- [ ] **Step 7: Merge.** Run: `claude -p "/factory:merge <n>" --plugin-dir …`. Expected: PR `MERGED`, Merge-Commit-Titel `feat(...): ... (#<pr>)` (`git log origin/main -1 --format=%s`), Issue geschlossen mit `factory:done`, `.factory/jobs/<n>` und `.factory/worktrees/<n>` weg, `git branch --list 'factory/*'` leer, Remote-Branch gelöscht.
-- [ ] **Step 8: NEEDS-INFO und REJECT kurz prüfen.** Ein vages Issue („make it better“) und ein fremdes („order pizza“) mit `/factory:add`, dann `/factory:run`. Expected: `factory:needs-info` mit Fragen, `factory:rejected` und geschlossen; nach einer Antwort des Autors im Issue nimmt `/factory:run` das erste wieder auf.
+- [ ] **Step 7: Merge.** Run: `claude -p "/factory:merge <n>" --plugin-dir …`; endet der Aufruf vor dem `merger`, `claude -p "/factory:run" --plugin-dir …` wiederholen (sweep schließt einen auf GitHub gemergten PR ab). Expected: PR `MERGED`, Merge-Commit-Titel `feat(...): ... (#<pr>)` (`git log origin/main -1 --format=%s`), Issue geschlossen mit `factory:done`, `.factory/jobs/<n>` und `.factory/worktrees/<n>` weg, `git branch --list 'factory/*'` leer, Remote-Branch gelöscht.
+- [ ] **Step 8: NEEDS-INFO und REJECT kurz prüfen.** Ein vages Issue („make it better“) und ein fremdes („order pizza“) mit `/factory:add`, dann `/factory:run` (wiederholt). Expected: beide Jobs laufen parallel; `factory:needs-info` mit Fragen, `factory:rejected` und geschlossen; nach einer Antwort des Autors im Issue nimmt `/factory:run` das erste wieder auf.
 - [ ] **Step 9: Jeden Fehler fixen** (Regressionstest zuerst, `fix(factory): …`-Commit), dann Schritte 3–8 in einem frischen Wegwerf-Repo wiederholen, bis alles grün ist.
 - [ ] **Step 10: Aufräumen.** `gh repo delete <r> --yes` nur nach Rückfrage beim Benutzer; lokale Wegwerf-Ordner löschen.
 
@@ -960,7 +1013,7 @@ test('registers every factory tool undeferred', ...) // $.tool.list() contains e
 ### Task 21: Eingefrorene Kopie, Push und PR
 
 **Files:**
-- Modify: `README.md` (Abschnitt „Developing the factory with the factory“)
+- Modify: `README.md` (Abschnitt „Developing the factory with the factory“), `CLAUDE.md` (dieselbe Regel, Step 5)
 
 **Interfaces:**
 - Produces: die laufende Factory kommt aus einer eingefrorenen Kopie, nie aus der Checkout, die sie ändert.
@@ -989,8 +1042,8 @@ test('registers every factory tool undeferred', ...) // $.tool.list() contains e
 
 ## Self-Review
 
-1. **Spec-Abdeckung:** Tracker/Labels/Marker (T3–T5), Setup inkl. Doctor, Config, Migration, Repo-Minimalstandard (T2, T6), `/factory:add` (T16), Intake/Routing mit NEEDS-INFO und REJECT (T10, T12, T17), Spec im Issue und Vorrang des Issue-Kommentars (T11, T12), TDD-Builder im Worktree (T17), Gate mit Stacks `claude-plugin` und `node` und Conventional Commits (T7–T9), vier Reviewer und approver (T18), approve/merge/cleanup (T13, T14), Status (T15), Übergangstabelle (T3, T12), Frozen Copy (T21), E2E (T20), Selbst-Hosting (T22). Bewusst ausgelassen laut Auftrag: Pane und `status.json`, Fastlane, documenter (darum `approved → done` direkt), Design, Probe, Projects, Bot, Workflows/Grundgerüst, `/factory:config`, `feedback`/`reject`/`answer`/`choose`, fremde PRs als Tickets (`kind: 'pr'` nur im Typ), `factory-assets`, ASVS-basierter Security-Review (eigenes Konzept, später als Factory-Ticket), repo-weites ASVS-Audit.
+1. **Spec-Abdeckung:** Tracker/Labels/Marker (T3–T5), Setup inkl. Doctor, Config, Migration, Repo-Minimalstandard (T2, T6), `/factory:add` (T16), Intake/Routing mit NEEDS-INFO und REJECT (T10, T12, T17), Spec im Issue und Vorrang des Issue-Kommentars (T11, T12), TDD-Builder im Worktree (T17), Gate mit Stacks `claude-plugin` und `node` und Conventional Commits (T7–T9), vier Reviewer, approver, gate-runner und merger (T18), approve/merge/cleanup (T13, T14), Status (T15), Übergangstabelle (T3, T12), Ziel 8 subagent-driven (Global Constraints, T0 Schritte 8–9, T6, T14, T19, T20), Frozen Copy (T21), E2E (T20), Selbst-Hosting (T22). Bewusst ausgelassen laut Auftrag: Pane und `status.json`, Fastlane, documenter (darum `approved → done` direkt; kommt er später, läuft er nach Ziel 8 als Hintergrund-Subagent mit eigenem Zustand `docs`), Design, Probe, Projects, Bot, Workflows/Grundgerüst, `/factory:config`, `feedback`/`reject`/`answer`/`choose`, fremde PRs als Tickets (`kind: 'pr'` nur im Typ), `factory-assets`, ASVS-basierter Security-Review (eigenes Konzept, später als Factory-Ticket), repo-weites ASVS-Audit.
 2. **Schritte:** Jeder Code-Schritt nennt Datei und Signatur, jeder Test Name und Assertion.
-3. **Typen:** `Ctx` bleibt ab T1 unverändert. `StepName` entsteht in T2 in `lib/types.ts` und wird in T7 nach `lib/stacks/types.ts` verschoben und re-exportiert. Tool-Namen sind in T19 abschließend festgelegt (14 Tools).
+3. **Typen:** `Ctx` bleibt ab T1 unverändert. `StepName` entsteht in T2 in `lib/types.ts` und wird in T7 nach `lib/stacks/types.ts` verschoben und re-exportiert. Tool-Namen wachsen ab T1 in `EXPECTED` (`tests/tools.test.ts`); T19 prüft den Endstand (14 Tools). `parseReview`/`parseDecision` entstehen in T12, nicht in T18.
 4. **Review Focus:** fünf Punkte, je mit Test im zuständigen Task.
 5. **Umfang:** Signaturen und Testnamen statt Bodies.

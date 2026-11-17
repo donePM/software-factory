@@ -18,6 +18,12 @@ Wir starten schlank und holen Teile aus 0.5 Stück für Stück zurück.
 5. Nicht-Techniker kommen mit einer geführten Setup-Routine zum Laufen.
 6. Die Logik in TypeScript, als Mod-Tools in der Engine: kein Node, kein Build.
 7. Doku der Implementierung am Ende, ins Wiki oder nach `docs/`.
+8. Konsequent subagent-driven: Die Hauptsitzung (Orchestrator) bleibt immer
+   ansprechbar. Jede Job-Arbeit läuft als Hintergrund-Subagent mit eigenem
+   Worktree: Intake, Spec, Build, Reviews, Approver und Documenter. Der
+   Orchestrator verteilt die Arbeit, reagiert auf Benachrichtigungen und ruft
+   die Tools auf. Er wartet nie blockierend und macht keine Job-Arbeit selbst.
+   Mehrere Jobs laufen parallel.
 
 ## Nicht-Ziele (vorerst)
 
