@@ -87,8 +87,11 @@ Run only issue `<n>`. Skip step 4 for other issues.
 For each notification about job `<n>`, first call `job_sync` with the issue.
 Then follow the rule for the agent that finished.
 
-If `job_sync` returns `specChanged: true` during a build, start
-`factory:builder` again in the current round. Ignore the old result.
+If `job_sync` returns `specChanged: true`, a human changed the spec:
+- State `build`: start `factory:builder` again in the current round. Ignore
+  the result of the agent that finished.
+- State `review`: remember the spec change for this job. Follow the reviewer
+  rule below.
 
 ### intake finished
 Read the first line of `intake.md`.
@@ -109,8 +112,9 @@ Call `job_advance` with `to: build`. Start `factory:builder` with the
 
 ### gate-runner finished
 Read the first line of `<roundDir>/checks.md`.
-- `VERDICT: PASS`: call `job_advance` with `to: review`. Start all reviewers
-  in the `reviewers` list of the result. Start them in one message.
+- `VERDICT: PASS`: call `job_advance` with `to: review`. It reuses the
+  result of the gate-runner at the same HEAD. Start all reviewers in the
+  `reviewers` list of the result. Start them in one message.
 - `VERDICT: FAIL`: count the `## Attempt` sections in `<roundDir>/checks.log`.
   - Fewer than 3: start `factory:builder` again with the same `<roundDir>`.
   - 3 or more: call `job_advance` with `to: needs-human` and the reason
@@ -120,10 +124,11 @@ Read the first line of `<roundDir>/checks.md`.
 WAIT FOR ALL is a state rule. It is not a wait.
 - A routed `review-<r>.md` is still missing: do nothing. End your turn.
 - All routed review files exist:
-  - One file starts with `VERDICT: CHANGES`: call `job_advance` with
-    `to: build`. Start `factory:builder` with the new `<roundDir>`. If the
-    result state is `needs-human`, the round limit is reached. Start nothing.
-  - All files start with `VERDICT: PASS`: start `factory:approver`.
+  - The spec changed during this review, or one file starts with
+    `VERDICT: CHANGES`: call `job_advance` with `to: build`. Start
+    `factory:builder` with the new `<roundDir>`. If the result state is
+    `needs-human`, the round limit is reached. Start nothing.
+  - Else all files start with `VERDICT: PASS`: start `factory:approver`.
 
 ### approver finished
 Read the first line of `decision.md`.
