@@ -89,7 +89,7 @@ test('tool gate rejects a relative worktree', () =>
   fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd('.factory/worktrees/7') }), 'bad-job'))
 
 test('tool gate rejects a worktree outside .factory/worktrees/<n>', () =>
-  fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd('/repo') }), 'bad-job-worktree'))
+  fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd('/repo') }), 'bad-job'))
 
 test('tool gate rejects a base that is not a full sha', () =>
   fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd(WT7, 'abc123') }), 'bad-job'))

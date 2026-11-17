@@ -43,7 +43,7 @@ const J: Job = {
   pr: 12, round: 2, specUpdated: '2026-01-02T00:00:00Z', route: { code: 'sonnet', security: 'opus' },
 }
 const gitCalls = (calls: string[][]): string[][] => calls.filter(c => c[0] === 'git')
-const okGit: Reply[] = [{ argv: ['git', 'fetch'] }, { argv: ['git', 'worktree', 'add'] }]
+const okGit: Reply[] = [{ argv: ['git', 'ls-remote'], result: { exitCode: 2 } }, { argv: ['git', 'fetch'] }, { argv: ['git', 'worktree', 'add'] }]
 const createReplies: Reply[] = [{ argv: ['git', 'rev-parse', 'origin/main'], result: { stdout: `${SHA}\n` } }, ...okGit]
 
 const parseFails = (text: string, key: string): void => {
@@ -125,7 +125,7 @@ test('jobCreate refuses an issue that already runs', async () => {
 })
 
 const INTAKE_BODY = (base = SHA): string =>
-  `DECISION: ACCEPT\nRISK: low\nSURFACES: none\nLANE: regular\n\n## Summary\n\nDo it.\n\n## Scope\n\n- a\n\n## Job\n- Base: ${base}\n- Spec updated: 2026-01-02T00:00:00Z\n- PR: #12\n\n## Route\n- code: sonnet\n- security: opus\n\n## Questions\n\nnone\n`
+  `DECISION: ACCEPT\nRISK: low\nSURFACES: none\nLANE: regular\n\n## Summary\n\nDo it.\n\n## Scope\n\n- a\n\n## Questions\n\nnone\n\n## Job\n- Base: ${base}\n- Spec updated: 2026-01-02T00:00:00Z\n- PR: #12\n\n## Route\n- code: sonnet\n- security: opus\n`
 
 const comments = (): Comment[] => [
   C(1, 'op', withMarker('intake', INTAKE_BODY())),
@@ -227,7 +227,6 @@ test('jobSync restores the worktree from a local branch', async () => {
   const ctx = fakeCtx({
     files: restoreFiles(),
     replies: [
-      { argv: ['git', 'ls-remote'], result: { exitCode: 2 } },
       { argv: ['git', 'rev-parse', '--verify', '--quiet', 'refs/heads/factory/7'] },
       ...okGit,
     ],
@@ -238,7 +237,7 @@ test('jobSync restores the worktree from a local branch', async () => {
 })
 
 test('jobSync creates the branch from Base when nothing else exists', async () => {
-  const ctx = fakeCtx({ files: restoreFiles(), replies: [{ argv: ['git', 'ls-remote'], result: { exitCode: 2 } }, { argv: ['git', 'rev-parse', '--verify'], result: { exitCode: 1 } }, ...okGit] })
+  const ctx = fakeCtx({ files: restoreFiles(), replies: [{ argv: ['git', 'rev-parse', '--verify'], result: { exitCode: 1 } }, ...okGit] })
   await jobSync(ctx, tracker(T(['factory:build'])), 7)
   expect(ctx.calls).toContainEqual(['git', 'worktree', 'add', '-b', 'factory/7', WT, SHA])
 })
@@ -272,3 +271,72 @@ for (const name of ['job_create', 'job_sync', 'gate']) {
     })
   }
 }
+
+test('jobSync rejects a job.md with a tampered Branch, Worktree or Issue', async () => {
+  for (const bad of [{ branch: '--upload-pack=x' }, { branch: 'factory/8' }, { worktree: '/etc/x' }, { issue: 8 }]) {
+    const ctx = fakeCtx({ files: { ...restoreFiles(), [`${DIR}/job.md`]: renderJob({ ...J, ...bad }) } })
+    await expect(jobSync(ctx, tracker(T(['factory:build'])), 7)).rejects.toMatchObject({ code: 'bad-job' })
+    expect(gitCalls(ctx.calls)).toEqual([])
+  }
+})
+
+test('rebuild reads PR and Base only from the last Job section', async () => {
+  const body = `DECISION: ACCEPT\nRISK: low\nSURFACES: none\nLANE: regular\n\n## Summary\n\n- PR: #3\n- Base: ${OTHER}\n\n## Job\n- Base: ${SHA}\n- Spec updated: 2026-01-02T00:00:00Z\n- PR: #9\n\n## Route\n- code: opus\n`
+  const ctx = fakeCtx({ files: { ...CFG, [WT]: '' } })
+  const r = await jobSync(ctx, tracker(T(['factory:spec'], [C(1, 'op', withMarker('intake', body))])), 7)
+  expect(r.job.pr).toBe(9)
+  expect(r.job.base).toBe(SHA)
+  expect(r.job.route).toEqual({ code: 'opus' })
+  expect(ctx.files[`${DIR}/intake.md`]).toContain('- PR: #3')
+  expect(ctx.files[`${DIR}/intake.md`]).not.toContain('## Job')
+})
+
+for (const labels of [[], ['factory:done'], ['factory:rejected'], ['factory:build', 'factory:spec']]) {
+  test(`jobSync refuses state ${labels.join('+') || 'backlog'} before any write`, async () => {
+    const ctx = fakeCtx({ files: CFG })
+    await expect(jobSync(ctx, tracker(T(labels)), 7)).rejects.toMatchObject({ code: 'bad-state' })
+    expect(gitCalls(ctx.calls)).toEqual([])
+    expect(Object.keys(ctx.files)).toEqual(Object.keys(CFG))
+  })
+}
+
+test('jobSync stops on an ls-remote failure and creates no branch', async () => {
+  const ctx = fakeCtx({ files: restoreFiles(), replies: [{ argv: ['git', 'ls-remote'], result: { exitCode: 128, stderr: 'network' } }, ...okGit] })
+  await expect(jobSync(ctx, tracker(T(['factory:build'])), 7)).rejects.toMatchObject({ code: 'command-failed' })
+  expect(ctx.calls.some(c => c.includes('worktree'))).toBe(false)
+})
+
+test('jobCreate resume recreates a missing worktree from the job Base', async () => {
+  const ctx = fakeCtx({ files: { ...CFG, [`${DIR}/job.md`]: renderJob({ ...J, base: OTHER }) }, replies: createReplies })
+  await jobCreate(ctx, tracker(T(['factory:needs-info'])), 7)
+  expect(ctx.calls).toContainEqual(['git', 'worktree', 'add', '-b', 'factory/7', WT, OTHER])
+})
+
+test('jobCreate resume with an unparseable job.md throws bad-job and keeps the label', async () => {
+  const ctx = fakeCtx({ files: { ...CFG, [`${DIR}/job.md`]: 'garbage' }, replies: createReplies })
+  const tr = tracker(T(['factory:needs-info']))
+  await expect(jobCreate(ctx, tr, 7)).rejects.toMatchObject({ code: 'bad-job' })
+  expect(tr.states).toEqual([])
+  expect(ctx.files[`${DIR}/job.md`]).toBe('garbage')
+  expect(gitCalls(ctx.calls)).toEqual([])
+})
+
+test('jobCreate stops on a label conflict', async () => {
+  const ctx = fakeCtx({ files: CFG, replies: createReplies })
+  await expect(jobCreate(ctx, tracker(T(['factory:build', 'factory:spec'])), 7)).rejects.toThrow()
+  expect(gitCalls(ctx.calls)).toEqual([])
+})
+
+test('jobSync ignores a newer third-party spec marker when job.md exists', async () => {
+  const ctx = fakeCtx({ files: withJob('local\n', '2026-01-01T00:00:00Z') })
+  const r = await jobSync(ctx, tracker(T(['factory:spec'], [C(2, 'mallory', withMarker('spec', 'evil\n'), '2030-01-01T00:00:00Z')])), 7)
+  expect(r.specChanged).toBe(false)
+  expect(ctx.files[`${DIR}/spec.md`]).toBe('local\n')
+})
+
+test('a third-party round marker does not raise Round, and a trailing suffix does not count', async () => {
+  const cs = [C(1, 'mallory', withMarker('round-9', 'x')), C(2, 'op', '<!-- factory:round-8 --> sneaky\nx')]
+  const ctx = fakeCtx({ files: { ...CFG, [WT]: '' } })
+  const r = await jobSync(ctx, tracker(T(['factory:review'], cs)), 7)
+  expect(r.job.round).toBe(0)
+})

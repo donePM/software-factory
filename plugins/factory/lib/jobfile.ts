@@ -34,16 +34,26 @@ export function fieldOf(md: string, key: string): string | null {
   return null
 }
 
+// Body of the last "## <name>" section, or null. Tool-appended sections come last.
+export function lastSection(md: string, name: string): string | null {
+  let found: string[] | null = null
+  let cur: string[] | null = null
+  for (const line of md.split(/\r\n|\r|\n/)) {
+    if (line.startsWith('## ')) {
+      cur = line.trim() === `## ${name}` ? [] : null
+      if (cur !== null) found = cur
+    } else cur?.push(line)
+  }
+  return found === null ? null : found.join('\n')
+}
+
 export function parseRoute(md: string): Route | null {
   const out: Route = {}
-  let inRoute = false
-  for (const line of md.split(/\r\n|\r|\n/)) {
-    if (line.startsWith('## ')) inRoute = line.trim() === '## Route'
-    else if (inRoute && line.startsWith('- ')) {
-      const m = /^- ([a-z]+):\s*([a-z]+)\s*$/.exec(line)
-      if (!m || !REVIEWERS.includes(m[1]!) || !MODELS.includes(m[2]!)) return null
-      out[m[1] as Reviewer] = m[2] as Model
-    }
+  for (const line of (lastSection(md, 'Route') ?? '').split('\n')) {
+    if (!line.startsWith('- ')) continue
+    const m = /^- ([a-z]+):\s*([a-z]+)\s*$/.exec(line)
+    if (!m || !REVIEWERS.includes(m[1]!) || !MODELS.includes(m[2]!)) return null
+    out[m[1] as Reviewer] = m[2] as Model
   }
   return out
 }
@@ -124,7 +134,12 @@ export function renderJob(j: Job): string {
 
 export async function readJob(ctx: Ctx, n: number): Promise<Job> {
   const dir = jobDir(ctx.root, n)
-  return parseJob(await ctx.fs.read(`${dir}/job.md`), dir)
+  const job = parseJob(await ctx.fs.read(`${dir}/job.md`), dir)
+  // Agents can edit job.md: bind the paths and the branch to the issue number.
+  if (job.issue !== n) throw bad('Issue')
+  if (job.worktree !== worktreeDir(ctx.root, n)) throw bad('Worktree')
+  if (job.branch !== branchName(n)) throw bad('Branch')
+  return job
 }
 
 export async function writeJob(ctx: Ctx, j: Job): Promise<void> {
