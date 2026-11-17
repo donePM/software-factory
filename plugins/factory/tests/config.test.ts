@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { CONFIG_VERSION, configPath, defaultConfig, loadConfig, validateConfig } from '../lib/config.ts'
+import { CONFIG_VERSION, configPath, defaultConfig, loadConfig, validateConfig, writeConfig } from '../lib/config.ts'
 import { fakeCtx } from './support/host.ts'
 
 const url = 'https://github.com/o/r'
@@ -50,4 +50,31 @@ test('loadConfig rejects a config newer than the plugin', async () => {
   const err = await loadConfig(ctx).catch(e => e)
   expect(err.code).toBe('config-too-new')
   expect(err.fix).toBe('Update the factory plugin.')
+})
+
+// A formatter of the repo (Prettier, oxfmt in vp fmt) checks config.json too. The builder cannot fix it: it is a protected path.
+test('writeConfig writes config.json in the form that Prettier-style formatters keep', async () => {
+  const ctx = fakeCtx()
+  await writeConfig(ctx, defaultConfig(url, 'main', [{ id: 'node', path: '.' }]))
+  const text = ctx.files[configPath('/repo')]!
+  expect(text).toContain('  "protectedPaths": [".factory/config.json", ".factory/checks.local.ts"]\n}\n')
+  expect(text).toContain('  "stacks": [\n    {\n      "id": "node",\n      "path": "."\n    }\n  ],\n')
+  expect(text).toContain('  "merge": {\n    "method": "merge"\n  },\n')
+  expect(JSON.parse(text)).toEqual(defaultConfig(url, 'main', [{ id: 'node', path: '.' }]))
+})
+
+test('writeConfig breaks an array of strings that does not fit in 80 columns', async () => {
+  const ctx = fakeCtx()
+  const c = defaultConfig(url, 'main', [])
+  c.protectedPaths = ['.factory/config.json', '.factory/checks.local.ts', 'deploy/production-secrets.yml']
+  await writeConfig(ctx, c)
+  expect(ctx.files[configPath('/repo')]).toContain(
+    '  "protectedPaths": [\n    ".factory/config.json",\n    ".factory/checks.local.ts",\n    "deploy/production-secrets.yml"\n  ]\n',
+  )
+})
+
+test('writeConfig keeps an empty array on one line', async () => {
+  const ctx = fakeCtx()
+  await writeConfig(ctx, defaultConfig(url, 'main', []))
+  expect(ctx.files[configPath('/repo')]).toContain('  "stacks": [],\n')
 })

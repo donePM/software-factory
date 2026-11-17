@@ -150,8 +150,35 @@ export async function loadConfig(ctx: Ctx): Promise<Config> {
   return raw as Config
 }
 
+const WIDTH = 80
+
+// JSON.stringify with indent 2, but an array of plain values stays on one line when it fits in 80 columns.
+// Prettier and oxfmt (vp fmt) print JSON this way, so the format step of the gate accepts the file.
+function formatJson(v: unknown, indent: string, prefix: string, suffix: string): string {
+  if (Array.isArray(v) && v.length > 0 && v.every(x => x === null || typeof x !== 'object')) {
+    const flat = `[${v.map(x => JSON.stringify(x)).join(', ')}]`
+    if (indent.length + prefix.length + flat.length + suffix.length <= WIDTH) return flat
+  }
+  const inner = `${indent}  `
+  if (Array.isArray(v)) {
+    if (v.length === 0) return '[]'
+    const items = v.map((x, i) => inner + formatJson(x, inner, '', i < v.length - 1 ? ',' : ''))
+    return `[\n${items.join(',\n')}\n${indent}]`
+  }
+  if (v !== null && typeof v === 'object') {
+    const entries = Object.entries(v).filter(([, x]) => x !== undefined)
+    if (entries.length === 0) return '{}'
+    const items = entries.map(([k, x], i) => {
+      const key = `${JSON.stringify(k)}: `
+      return inner + key + formatJson(x, inner, key, i < entries.length - 1 ? ',' : '')
+    })
+    return `{\n${items.join(',\n')}\n${indent}}`
+  }
+  return JSON.stringify(v)
+}
+
 export async function writeConfig(ctx: Ctx, c: Config): Promise<void> {
-  await ctx.fs.write(configPath(ctx.root), `${JSON.stringify(c, null, 2)}\n`)
+  await ctx.fs.write(configPath(ctx.root), `${formatJson(c, '', '', '')}\n`)
 }
 
 export type MigrateResult = { from: number; to: number; applied: string[]; backup?: string }
