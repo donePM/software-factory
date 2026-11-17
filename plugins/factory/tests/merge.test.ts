@@ -24,7 +24,7 @@ const J: Job = {
 }
 const at = '2026-02-01T00:00:00Z'
 
-type Opts = { labels?: string[]; pr?: Partial<PrState>; author?: string; approved?: boolean; closed?: boolean; noMerge?: boolean; prs?: PrState[] }
+type Opts = { job?: Partial<Job>; labels?: string[]; pr?: Partial<PrState>; author?: string; approved?: boolean; closed?: boolean; noMerge?: boolean; prs?: PrState[] }
 
 function tracker(o: Opts = {}) {
   const log: string[] = []
@@ -35,7 +35,7 @@ function tracker(o: Opts = {}) {
   const upserts: { name: string; body: string }[] = []
   let merged = false
   let closed = o.closed ?? false
-  const comments: Comment[] = [{ id: 1, author: 'op', body: withMarker('intake', intakeComment(J, INTAKE)), createdAt: at, updatedAt: at }]
+  const comments: Comment[] = [{ id: 1, author: 'op', body: withMarker('intake', intakeComment({ ...J, ...o.job }, INTAKE)), createdAt: at, updatedAt: at }]
   const issue: Ticket = {
     kind: 'issue', number: 7, title: 'Add thing', body: 'b', author: 'alice', labels: ['factory', ...(o.labels ?? ['factory:approved'])],
     state: 'open', createdAt: at, url: 'u/7', comments,
@@ -86,7 +86,7 @@ function setup(o: Opts = {}, over: Reply[] = [], files: Record<string, string> =
       '/repo/package.json': pkg,
       [WT]: '',
       [`${WT}/package.json`]: pkg,
-      [`${DIR}/job.md`]: renderJob(J),
+      [`${DIR}/job.md`]: renderJob({ ...J, ...o.job }),
       [`${DIR}/intake.md`]: INTAKE,
       [`${DIR}/spec.md`]: 'STATUS: READY\nTitle: feat(x): y\n',
       ...files,
@@ -143,7 +143,7 @@ test('approve on an own PR writes a comment', async () => {
   const { ctx, t } = setup({ author: 'op' })
   const r = await approve(ctx, t, 7)
   expect(r).toEqual({ issue: 7, pr: 9, how: 'comment' })
-  expect(t.upserts).toEqual([{ name: 'approval', body: 'Approved by @op for merge.' }])
+  expect(t.upserts).toEqual([{ name: 'approval', body: `Approved by @op for merge. Reviewed commit: ${HEAD}.` }])
   expect(t.reviews).toEqual([])
   expect(t.states).toEqual([])
 })
@@ -152,7 +152,7 @@ test('approve on a foreign PR approves', async () => {
   const { ctx, t } = setup({ author: 'bob' })
   const r = await approve(ctx, t, 7)
   expect(r).toEqual({ issue: 7, pr: 9, how: 'review' })
-  expect(t.reviews).toEqual(['Approved by @op for merge.'])
+  expect(t.reviews).toEqual([`Approved by @op for merge. Reviewed commit: ${HEAD}.`])
   expect(t.upserts).toEqual([])
 })
 
@@ -301,11 +301,62 @@ test('merge uses the PR title as subject and pins the sha', async () => {
 test('merge approves when no approval is recorded, and not when one is', async () => {
   const a = setup()
   await merge(a.ctx, a.t, 7)
-  expect(a.t.reviews).toEqual(['Approved by @op for merge.'])
+  expect(a.t.reviews).toEqual([`Approved by @op for merge. Reviewed commit: ${HEAD}.`])
   const b = setup({ approved: true })
   await merge(b.ctx, b.t, 7)
   expect(b.t.reviews).toEqual([])
   expect(b.t.upserts.some(u => u.name === 'approval')).toBe(false)
+})
+
+test('approve refuses a job with no reviewed commit', async () => {
+  const { ctx, t } = setup({ author: 'op', job: { reviewed: null } })
+  await rejects(approve(ctx, t, 7), 'not-reviewed')
+  expect(t.upserts).toEqual([])
+})
+
+test('merge records the approval again when it names another commit', async () => {
+  const { ctx, t } = setup({ author: 'op' })
+  await t.upsertComment(7, 'approval', `Approved by @op for merge. Reviewed commit: ${MOVED}.`)
+  t.upserts.length = 0
+  await merge(ctx, t, 7)
+  expect(t.upserts.filter(u => u.name === 'approval')).toEqual([{ name: 'approval', body: `Approved by @op for merge. Reviewed commit: ${HEAD}.` }])
+})
+
+test('merge refuses a job with no reviewed commit', async () => {
+  const { ctx, t } = setup({ job: { reviewed: null } })
+  await rejects(merge(ctx, t, 7), 'not-reviewed')
+  expect(count(ctx.calls, 'git', '-C', WT, 'merge')).toBe(0)
+  expect(t.merges).toEqual([])
+})
+
+const TREE = 'f'.repeat(40)
+const moved = (parents: string, tree = TREE): Reply[] => [
+  { argv: ['git', '-C', WT, 'rev-parse', 'HEAD'], result: { stdout: `${MOVED}\n` } },
+  { argv: ['git', '-C', WT, 'rev-list', '--parents', '-n', '1', 'HEAD'], result: { stdout: `${MOVED} ${parents}\n` } },
+  { argv: ['git', '-C', WT, 'merge-tree', '--write-tree'], result: { stdout: `${TREE}\n` } },
+  { argv: ['git', '-C', WT, 'rev-parse', 'HEAD^{tree}'], result: { stdout: `${tree}\n` } },
+]
+
+for (const [what, parents, tree] of [
+  ['a commit on top of the reviewed commit', HEAD, TREE],
+  ['a merge of another commit', `${SHA} ${NEWBASE}`, TREE],
+  ['a merge with a changed tree', `${HEAD} ${NEWBASE}`, MOVED],
+] as const) {
+  test(`merge refuses when HEAD is ${what}`, async () => {
+    const { ctx, t } = setup({ pr: { headRefOid: MOVED } }, moved(parents, tree))
+    await rejects(merge(ctx, t, 7), 'not-reviewed')
+    expect(count(ctx.calls, 'git', '-C', WT, 'merge', '--no-edit')).toBe(0)
+    expect(count(ctx.calls, 'git', '-C', WT, 'push')).toBe(0)
+    expect(t.states).toEqual([])
+    expect(t.merges).toEqual([])
+  })
+}
+
+test('merge accepts a clean sync merge of the reviewed commit and the base', async () => {
+  const { ctx, t } = setup({ pr: { headRefOid: MOVED } }, moved(`${HEAD} ${NEWBASE}`))
+  await merge(ctx, t, 7)
+  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'merge-base', '--is-ancestor', NEWBASE, 'origin/main'])
+  expect(t.merges).toEqual([{ pr: 9, subject: 'feat(x): y (#9)', sha: MOVED }])
 })
 
 test('merge sets done, closes the issue and cleans up', async () => {

@@ -19,5 +19,6 @@ Use plain words. The user may not be a developer.
    - Error: give the error text and its `Fix` line.
      - `sync-conflict`: the branch conflicts with the base branch. The job is now `needs-human`. The factory undid the merge. The job must go back to build: the builder merges the base branch, then the reviews run again.
      - `sync-failed`: git could not merge the base branch, but there is no conflict. Nothing changed. Fix the git problem, then run `/factory:merge` again.
+     - `not-reviewed`: the branch has commits that no review saw. Nothing was merged. The job must go back to build for a new review.
      - `gate-failed`: the gate is red after the sync. Nothing was merged. Fix the failures first.
      - `head-mismatch`, `gate-not-green`: the branch changed during the merge. Run `/factory:merge` again.

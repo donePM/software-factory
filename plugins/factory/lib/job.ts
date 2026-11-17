@@ -270,6 +270,13 @@ function checkSpec(spec: string): string {
 }
 
 // The ticket is the authority; job.md is a cache an agent can edit. Refuse when it differs.
+// The reviewed commit from the intake comment: the operator wrote it, agents cannot change it.
+export function reviewedOf(ticket: Ticket, operator: string): string | null {
+  const comment = findMarked(ticket.comments, 'intake', operator)
+  if (comment === undefined) return null
+  return parseReviewed(fieldOf(lastSection(stripMarker(comment.body), 'Job') ?? '', 'Reviewed')) ?? null
+}
+
 export async function verifyJob(ctx: Ctx, t: Tracker, ticket: Ticket, job: Job): Promise<void> {
   const differs = (key: string): FactoryError => new FactoryError('bad-job', `job.md differs from the ticket: ${key}`, 'Run job_sync after you remove job.md, or restore the file.')
   if (job.baseBranch !== (await loadConfig(ctx)).baseBranch) throw differs('Base branch')

@@ -16,3 +16,4 @@ Use plain words. The user may not be a developer.
    Then tell the user to run `/factory:merge <issue>` to merge. Name the `issue` from the result.
 3. On an error, give the error text in one or two simple sentences. Then give its `Fix` line.
    - `no-pair`: the number is not a factory issue with a PR, or not a factory PR. Ask for the right number.
+   - `not-reviewed`: no review ran on the current commit. Nothing was approved.
