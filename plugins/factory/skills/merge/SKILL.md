@@ -17,6 +17,7 @@ Use plain words. The user may not be a developer.
 4. When the notification comes, report the result in simple words:
    - Success: the PR is merged, the issue is done, and the cleanup report lists what was removed and what was kept.
    - Error: give the error text and its `Fix` line.
-     - `sync-conflict`: the branch conflicts with the base branch. The job is now `needs-human`. Resolve the conflict, then run `/factory:merge` again.
+     - `sync-conflict`: the branch conflicts with the base branch. The job is now `needs-human`. The factory undid the merge. The job must go back to build: the builder merges the base branch, then the reviews run again.
+     - `sync-failed`: git could not merge the base branch, but there is no conflict. Nothing changed. Fix the git problem, then run `/factory:merge` again.
      - `gate-failed`: the gate is red after the sync. Nothing was merged. Fix the failures first.
      - `head-mismatch`, `gate-not-green`: the branch changed during the merge. Run `/factory:merge` again.

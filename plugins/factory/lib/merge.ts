@@ -79,11 +79,16 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   await must(ctx, ['git', '-C', wt, 'fetch', 'origin', base])
   const sync = await ctx.run(['git', '-C', wt, 'merge', '--no-edit', '-m', `chore(factory): sync with ${base}`, origin])
   if (sync.exitCode !== 0) {
+    // Only a stopped merge leaves MERGE_HEAD. Other failures (lock, disk, bad ref) are no conflict.
+    const conflict = (await ctx.run(['git', '-C', wt, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0
+    if (!conflict) {
+      throw new FactoryError('sync-failed', `git merge ${origin} failed in ${wt}: ${(sync.stderr || sync.stdout).trim()}`, 'Fix the git problem in the worktree, then merge again. The label did not change.')
+    }
     await ctx.run(['git', '-C', wt, 'merge', '--abort'])
-    const reason = `merging ${origin} into ${job.branch} has a conflict. Resolve it in the branch, then merge again.`
-    await t.comment(issue, `Factory stopped: ${reason}`)
+    const reason = `merging ${origin} into ${job.branch} has a conflict.`
+    await t.comment(issue, `Factory stopped: ${reason} The job needs a new build: the builder merges ${origin}, then the reviews run again.`)
     if (state === 'approved') await t.setState(issue, 'needs-human')
-    throw new FactoryError('sync-conflict', reason, 'Resolve the conflict in the worktree, or send the job back to build.')
+    throw new FactoryError('sync-conflict', reason, `The factory undid the merge, so the worktree has no conflict now. Send the job back to build: the builder merges ${origin}, then the reviews run again.`)
   }
 
   const head = async (): Promise<string> => must(ctx, ['git', '-C', wt, 'rev-parse', 'HEAD'])

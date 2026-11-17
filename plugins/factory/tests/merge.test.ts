@@ -184,6 +184,27 @@ test('merge refuses a PR that is not open', async () => {
 })
 
 const CONFLICT: Reply = { argv: ['git', '-C', WT, 'merge', '--no-edit'], result: { exitCode: 1, stderr: 'CONFLICT' } }
+const MERGE_HEAD = ['git', '-C', WT, 'rev-parse', '-q', '--verify', 'MERGE_HEAD']
+
+test('a sync conflict says that the merge was undone', async () => {
+  const { ctx, t } = setup({}, [CONFLICT, { argv: MERGE_HEAD, result: { stdout: `${HEAD}\n` } }])
+  const err = (await merge(ctx, t, 7).catch((e: unknown) => e)) as { code: string; fix: string }
+  expect(err.code).toBe('sync-conflict')
+  expect(err.fix).not.toContain('in the worktree')
+  expect(err.fix).toContain('undid')
+})
+
+test('a failed sync without MERGE_HEAD is not a conflict', async () => {
+  const fail: Reply = { argv: ['git', '-C', WT, 'merge', '--no-edit'], result: { exitCode: 128, stderr: 'fatal: Unable to create index.lock' } }
+  const { ctx, t } = setup({}, [fail, { argv: MERGE_HEAD, result: { exitCode: 1 } }])
+  const err = (await merge(ctx, t, 7).catch((e: unknown) => e)) as { code: string; message: string }
+  expect(err.code).toBe('sync-failed')
+  expect(err.message).toContain('index.lock')
+  expect(ctx.calls).not.toContainEqual(['git', '-C', WT, 'merge', '--abort'])
+  expect(t.states).toEqual([])
+  expect(t.posts).toEqual([])
+  expect(t.merges).toEqual([])
+})
 
 test('merge aborts on a sync conflict', async () => {
   const { ctx, t } = setup({}, [CONFLICT])
