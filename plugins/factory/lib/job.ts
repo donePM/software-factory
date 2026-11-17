@@ -323,7 +323,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
     return result('rejected', { cleanup: await cleanupJob(ctx, t, n, 'rejected') })
   }
 
-  if (to === 'build') return advanceBuild(ctx, t, job, from)
+  if (to === 'build') return advanceBuild(ctx, t, job, from, await specMoved(t, ticket, job))
   if (to === 'review') return advanceReview(ctx, t, job)
   if (to === 'needs-human' && from !== 'review') throw new FactoryError('reason-required', 'needs-human outside review needs a reason', 'Pass reason.')
   return advanceDecision(ctx, t, job, to)
@@ -341,7 +341,15 @@ async function startRound(ctx: Ctx, t: Tracker, job: Job): Promise<AdvanceResult
   return done(job, 'build')
 }
 
-async function advanceBuild(ctx: Ctx, t: Tracker, old: Job, from: State | null): Promise<AdvanceResult> {
+// job_sync took a newer spec after the round started: job.md differs from the intake comment.
+async function specMoved(t: Tracker, ticket: Ticket, job: Job): Promise<boolean> {
+  const comment = findMarked(ticket.comments, 'intake', await t.login())
+  if (comment === undefined) return false
+  const posted = fieldOf(lastSection(stripMarker(comment.body), 'Job') ?? '', 'Spec updated') ?? 'none'
+  return posted !== (job.specUpdated ?? 'none')
+}
+
+async function advanceBuild(ctx: Ctx, t: Tracker, old: Job, from: State | null, specChanged: boolean): Promise<AdvanceResult> {
   const n = old.issue
   if (from !== 'spec' && old.round === 0) {
     throw new FactoryError('bad-state', 'no round has started yet', 'Advance spec to build first.')
@@ -357,7 +365,7 @@ async function advanceBuild(ctx: Ctx, t: Tracker, old: Job, from: State | null):
   const over = (job: Job): boolean => job.round + 1 > max
   if (from === 'review') {
     const { parsed } = await readReviews(ctx, old, roundOf(old))
-    if (!Object.values(parsed).some(p => p.verdict === 'CHANGES')) {
+    if (!specChanged && !Object.values(parsed).some(p => p.verdict === 'CHANGES')) {
       throw new FactoryError('no-changes', 'no review asks for changes', 'Use approved or needs-human when every review passes.')
     }
     await t.upsertComment(n, `round-${old.round}`, await roundSummary(ctx, old, roundOf(old)))

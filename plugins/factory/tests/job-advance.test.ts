@@ -330,6 +330,17 @@ test('build from review needs a CHANGES review and all routed files', async () =
   await rejects(jobAdvance(missing.ctx, missing.t, { issue: 7, to: 'build' }), 'reviews-missing')
 })
 
+test('a spec changed during review starts the next round without a CHANGES review', async () => {
+  const pass = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS') }
+  const moved = inReview(pass, { tamper: { specUpdated: '2026-03-01T00:00:00Z' } })
+  const r = await jobAdvance(moved.ctx, moved.t, { issue: 7, to: 'build' })
+  expect(r.state).toBe('build')
+  expect(r.round).toBe(2)
+  expect(moved.t.comments.find(c => c.name === 'intake')!.body).toContain('- Spec updated: 2026-03-01T00:00:00Z\n')
+  const same = inReview(pass)
+  await rejects(jobAdvance(same.ctx, same.t, { issue: 7, to: 'build' }), 'no-changes')
+})
+
 test('round over maxRounds goes to needs-human', async () => {
   const files = { [`${DIR}/round-3/review-code.md`]: rv('CHANGES', 'x'), [`${DIR}/round-3/review-security.md`]: rv('PASS'), [`${DIR}/round-3/checks.md`]: 'VERDICT: PASS\n' }
   const { ctx, t } = inReview(files, { maxRounds: 3 }, { round: 3 })
