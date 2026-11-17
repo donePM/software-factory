@@ -170,7 +170,11 @@ async function pruneBackups(ctx: Ctx, dir: string): Promise<void> {
   }
 }
 
-export async function migrate(ctx: Ctx, list: Migration[] = migrations): Promise<MigrateResult> {
+// Runs the migrations in memory. Writes nothing.
+export async function planMigration(
+  ctx: Ctx,
+  list: Migration[] = migrations,
+): Promise<MigrateResult & { config: Config; text: string }> {
   const path = configPath(ctx.root)
   if (!(await ctx.fs.exists(path))) throw new FactoryError('no-config', `${path} does not exist`, SETUP)
   const text = await ctx.fs.read(path)
@@ -186,7 +190,7 @@ export async function migrate(ctx: Ctx, list: Migration[] = migrations): Promise
   if (from > target) {
     throw new FactoryError('config-too-new', `config version ${from} is newer than the plugin's ${target}`, 'Update the factory plugin.')
   }
-  if (from === target) return { from, to: from, applied: [] }
+  if (from === target) return { from, to: from, applied: [], config: cfg as Config, text }
   const applied: string[] = []
   let cur: unknown = cfg
   for (let v = from; v < target; v++) {
@@ -198,10 +202,16 @@ export async function migrate(ctx: Ctx, list: Migration[] = migrations): Promise
   }
   const errs = validateConfig(cur)
   if (errs.length > 0) throw new FactoryError('config-invalid', `migration result is invalid:\n${errs.join('\n')}`)
+  return { from, to: target, applied, config: cur as Config, text }
+}
+
+export async function migrate(ctx: Ctx, list: Migration[] = migrations): Promise<MigrateResult> {
+  const { from, to, applied, config, text } = await planMigration(ctx, list)
+  if (applied.length === 0) return { from, to, applied }
   const dir = `${ctx.root}/.factory/backup`
   const backup = `.factory/backup/config.${from}.json`
   await ctx.fs.write(`${ctx.root}/${backup}`, text)
   await pruneBackups(ctx, dir)
-  await writeConfig(ctx, cur as Config)
-  return { from, to: target, applied, backup }
+  await writeConfig(ctx, config)
+  return { from, to, applied, backup }
 }

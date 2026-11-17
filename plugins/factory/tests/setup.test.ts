@@ -89,3 +89,23 @@ test('tool setup returns the report as JSON', async () => {
   const out = await invoke(def, fakeCtx({ replies: replies() }), { apply: false })
   expect('result' in out && out.result !== undefined && JSON.parse(out.result).config.baseBranch).toBe('main')
 })
+
+test('preview shows standard drift and the planned label count', async () => {
+  const drift = JSON.stringify({ ...JSON.parse(repoJson), allow_squash_merge: true })
+  const rs = replies().map(r => (r.argv[0] === 'gh' && r.argv[1] === 'api' && r.argv[2] === 'repos/a/b' ? { argv: r.argv, result: { stdout: drift } } : r))
+  const ctx = fakeCtx({ replies: rs })
+  const r = await setup(ctx, { apply: false })
+  expect(r.standard.filter(c => !c.ok).map(c => c.key)).toEqual(['allow_squash_merge'])
+  expect(r.labels).toBe(labelSet(r.config).length)
+  expect(ctx.calls.some(c => c.includes('PATCH') || c[2] === 'create')).toBe(false)
+})
+
+test('preview migrates in memory only and lists the planned migrations', async () => {
+  const old = { ...defaultConfig('https://github.com/a/b', 'main', []), version: 0 }
+  const ctx = fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify(old) } })
+  const before = { ...ctx.files }
+  const r = await setup(ctx, { apply: false, migrations: [{ from: 0, name: 'zero-to-one', up: o => o }] })
+  expect(r.migrated).toEqual(['zero-to-one'])
+  expect(r.config.version).toBe(1)
+  expect(ctx.files).toEqual(before)
+})

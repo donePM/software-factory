@@ -1,5 +1,5 @@
 import { type Check, doctor } from './doctor.ts'
-import { type Config, configPath, defaultConfig, loadConfig, migrate, writeConfig } from './config.ts'
+import { type Config, configPath, defaultConfig, loadConfig, migrate, planMigration, writeConfig } from './config.ts'
 import { githubTracker, repoFromUrl } from './github.ts'
 import { labelSet } from './labels.ts'
 import type { Migration } from './migrations/index.ts'
@@ -51,9 +51,14 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
     migrated = (await migrate(ctx, input.migrations)).applied
     cfg = await loadConfig(ctx)
   } else {
-    cfg = JSON.parse(await ctx.fs.read(path)) as Config
+    const plan = await planMigration(ctx, input.migrations)
+    cfg = plan.config
+    migrated = plan.applied
   }
-  if (!input.apply) return { checks, config: cfg, ...empty, next: ['Run setup again with apply true.'] }
+  if (!input.apply) {
+    const standard = await githubTracker(ctx, repoFromUrl(cfg.tracker.url)).applyStandard(false)
+    return { checks, config: cfg, ...empty, migrated, standard, labels: labelSet(cfg).length, next: ['Run setup again with apply true.'] }
+  }
 
   const created = !exists
   if (created) await writeConfig(ctx, cfg)
