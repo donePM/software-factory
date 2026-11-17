@@ -180,7 +180,10 @@ export async function migrate(ctx: Ctx, list: Migration[] = migrations): Promise
   if (!isObj(cfg) || typeof cfg.version !== 'number') throw new FactoryError('config-invalid', 'version must be a number')
   const from = cfg.version
   const target = list.length > 0 ? Math.max(...list.map(m => m.from)) + 1 : CONFIG_VERSION
-  if (from >= target) return { from, to: from, applied: [] }
+  if (from > target) {
+    throw new FactoryError('config_too_new', `config version ${from} is newer than the plugin's ${target}`, 'Update the factory plugin.')
+  }
+  if (from === target) return { from, to: from, applied: [] }
   const applied: string[] = []
   let cur: unknown = cfg
   for (let v = from; v < target; v++) {

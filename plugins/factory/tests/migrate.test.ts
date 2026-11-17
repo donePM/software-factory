@@ -59,3 +59,14 @@ test('tool migrate returns the migrate result', async ($, on) => {
   const r = await $.tool.call({ tool: 'mcp__factory__migrate' })
   expect(JSON.parse((r as { result: string }).result)).toEqual({ from: 1, to: 1, applied: [] })
 })
+
+test('migrate rejects a config newer than the plugin', async () => {
+  const before = JSON.stringify(cfgAt(9))
+  const ctx = fakeCtx({ files: { [path]: before } })
+  const err = await migrate(ctx).catch(e => e)
+  expect(err.code).toBe('config_too_new')
+  expect(err.message).toContain('9')
+  expect(err.message).toContain('1')
+  expect(err.fix).toBe('Update the factory plugin.')
+  expect(ctx.files[path]).toBe(before)
+})
