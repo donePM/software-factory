@@ -1,9 +1,10 @@
 // Factory agents have no GitHub access: only the tools talk to GitHub, and only the tools push.
 // A best-effort word match, not a sandbox: a command can still hide `gh` (sh -c "$(…)", another language).
-const START = String.raw`(?:^|[\s;&|()\x60/])`
-const END = String.raw`(?=$|[\s;&|()\x60])`
+// A quote can open or close a command (bash -c "git push"). A quoted git argument counts as one argument, so a commit message that names push is not a push.
+const START = String.raw`(?:^|[\s;&|()\x60/'"])`
+const END = String.raw`(?=$|[\s;&|()\x60'"])`
 const GH = new RegExp(`${START}gh${END}`)
-const PUSH = new RegExp(`${START}git(?:\\s[^;&|\\n]*)?\\spush${END}`)
+const PUSH = new RegExp(`${START}git(?:\\s(?:"[^"]*"|'[^']*'|[^;&|\\n'"])*)?\\spush${END}`)
 
 export const reachesGitHub = (command: string): boolean => GH.test(command) || PUSH.test(command)
 

@@ -5,13 +5,18 @@ import { reachesGitHub } from '../lib/guard.ts'
 for (const cmd of [
   'gh pr list', 'cd /w && gh issue comment 3 --body x', '/opt/homebrew/bin/gh api user', 'echo hi; gh pr merge 9',
   'git push origin HEAD', 'cd /w && git -C /w push --force', 'git commit -m x && git push',
+  'bash -c "git push origin HEAD"', "sh -c 'gh pr list'", 'git commit -m "docs: x" && git push', 'git -C "/Users/me/Application Support/w" push',
 ]) {
   test(`reachesGitHub finds: ${cmd}`, () => {
     expect(reachesGitHub(cmd)).toBe(true)
   })
 }
 
-for (const cmd of ['git status', 'git log --oneline', 'npm run test', 'grep -rn high .', 'git commit -m "fix: x"', 'ls ghost']) {
+for (const cmd of [
+  'git status', 'git log --oneline', 'npm run test', 'grep -rn high .', 'git commit -m "fix: x"', 'ls ghost',
+  // Seen in the E2E: a commit message that names push is not a push.
+  'git commit --allow-empty -m "docs: explain push rules"', "git commit -m 'feat(api): add push notifications'",
+]) {
   test(`reachesGitHub allows: ${cmd}`, () => {
     expect(reachesGitHub(cmd)).toBe(false)
   })
