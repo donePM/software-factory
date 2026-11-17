@@ -2,7 +2,7 @@ import { loadConfig } from './config.ts'
 import { checkMessage, typeOf } from './conventional.ts'
 import { type CleanupReport, cleanupJob } from './cleanup.ts'
 import { FactoryError, must, mkdirp, rmrf } from './exec.ts'
-import { gateJob } from './gatejob.ts'
+import { gateJob, passedAt } from './gatejob.ts'
 import { parseIntake } from './intake.ts'
 import { parseDecision, parseReview } from './review.ts'
 import { route } from './route.ts'
@@ -386,9 +386,12 @@ async function advanceReview(ctx: Ctx, t: Tracker, old: Job): Promise<AdvanceRes
   // checks.md can be written by agents: run the gate here, through the gate tool's own path.
   const head = async (): Promise<string> => (await must(ctx, ['git', '-C', old.worktree, 'rev-parse', 'HEAD']))
   const sha = await head()
-  const gate = await gateJob(ctx, n, `round-${old.round}`)
-  if (gate.verdict !== 'PASS') throw new FactoryError('gate-not-green', `the gate is ${gate.verdict}, see ${roundDir}/checks.md`, 'Fix the failures and run the gate again.')
-  if ((await head()) !== sha) throw new FactoryError('gate-not-green', 'HEAD moved during the gate', 'Run the gate again.')
+  // gate-runner usually ran the gate at this HEAD already: run it again only when it did not pass here.
+  if (passedAt(ctx, n, `round-${old.round}`) !== sha) {
+    const gate = await gateJob(ctx, n, `round-${old.round}`)
+    if (gate.verdict !== 'PASS') throw new FactoryError('gate-not-green', `the gate is ${gate.verdict}, see ${roundDir}/checks.md`, 'Fix the failures and run the gate again.')
+    if ((await head()) !== sha) throw new FactoryError('gate-not-green', 'HEAD moved during the gate', 'Run the gate again.')
+  }
   await must(ctx, ['git', '-C', old.worktree, 'push', 'origin', `${sha}:refs/heads/${old.branch}`])
   let job = old
   if (job.pr === null) {

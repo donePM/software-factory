@@ -184,7 +184,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'job_advance',
     description:
-      'Move a job to the next state: checks the job files, writes the issue comments, pushes and opens the PR (review), then sets the one status label. Re-runs the gate for review.',
+      'Move a job to the next state: checks the job files, writes the issue comments, pushes and opens the PR (review), then sets the one status label. For review it reuses a passing gate-runner result at the same HEAD, else it runs the gate.',
     inputSchema: {
       type: 'object',
       properties: { issue: { type: 'integer', minimum: 1 }, to: { type: 'string', enum: STATUS }, reason: { type: 'string' } },

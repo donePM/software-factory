@@ -30,5 +30,20 @@ export async function gateJob(ctx: Ctx, n: number, round: string): Promise<GateR
   const title = /^Title:\s*(.+)$/m.exec(await ctx.fs.read(`${dir}/spec.md`))?.[1]?.trim()
   if (title === undefined) throw new FactoryError('spec-no-title', 'spec.md has no "Title:" line', 'The spec-writer must add a Title line.')
   await checkBase(ctx, job.worktree, job.base)
-  return runGate(ctx, { worktree: job.worktree, round, base: job.base, prTitle: title, jobDir: dir })
+  const before = await headOf(ctx, job.worktree)
+  const result = await runGate(ctx, { worktree: job.worktree, round, base: job.base, prTitle: title, jobDir: dir })
+  const key = keyOf(ctx, n, round)
+  passed.delete(key)
+  if (result.verdict === 'PASS' && before !== '' && (await headOf(ctx, job.worktree)) === before) passed.set(key, before)
+  return result
 }
+
+// Passing gates of this process: a later job_advance review at the same HEAD reuses the result.
+const passed = new Map<string, string>()
+const keyOf = (ctx: Ctx, n: number, round: string): string => `${ctx.root}#${n}#${round}`
+const headOf = async (ctx: Ctx, wt: string): Promise<string> => (await ctx.run(['git', '-C', wt, 'rev-parse', 'HEAD'])).stdout.trim()
+
+// The HEAD sha of the last passing gate for this job round, if the HEAD did not move during it.
+export const passedAt = (ctx: Ctx, n: number, round: string): string | undefined => passed.get(keyOf(ctx, n, round))
+
+export const forgetGates = (): void => passed.clear()

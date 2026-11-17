@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { defaultConfig } from '../lib/config.ts'
 import { jobAdvance, jobSync, roundSummary, intakeComment } from '../lib/job.ts'
+import { forgetGates, gateJob, passedAt } from '../lib/gatejob.ts'
 import { parseIntake } from '../lib/intake.ts'
 import { renderJob, readJob, type Job } from '../lib/jobfile.ts'
 import { stateOf } from '../lib/labels.ts'
@@ -72,6 +73,7 @@ function tracker(labels: string[], author = 'alice', initial: Comment[] = [], he
 }
 
 function setup(state: string, over: Partial<Job> = {}, files: Record<string, string> = {}, o: { maxRounds?: number; replies?: Reply[]; author?: string; tamper?: Partial<Job>; head?: string } = {}): Run {
+  forgetGates()
   const job = { ...J, ...over }
   const opComment = (): Comment => ({ id: 1, author: 'op', body: withMarker('intake', intakeComment(job, INTAKE)), createdAt: '2026-02-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z' })
   const replies: Reply[] = [
@@ -213,6 +215,41 @@ test('review pushes and opens one draft PR', async () => {
   await jobAdvance(again.ctx, again.t, { issue: 7, to: 'review' })
   expect(again.t.prs).toHaveLength(0)
   expect(count(again.ctx, 'git', '-C', WT, 'push')).toBe(1)
+})
+
+const attempts = (ctx: Run['ctx']): number =>
+  (ctx.files[`${DIR}/round-1/checks.log`] ?? '').split('\n').filter(l => l.startsWith('## Attempt ')).length
+
+test('review reuses a passing gate at the same HEAD', async () => {
+  const { ctx, t } = inBuild()
+  expect((await gateJob(ctx, 7, 'round-1')).verdict).toBe('PASS')
+  expect(passedAt(ctx, 7, 'round-1')).toBe(HEAD)
+  const lints = count(ctx, 'vp', 'lint')
+  await jobAdvance(ctx, t, { issue: 7, to: 'review' })
+  expect(attempts(ctx)).toBe(1)
+  expect(count(ctx, 'vp', 'lint')).toBe(lints)
+  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'push', 'origin', `${HEAD}:refs/heads/factory/7`])
+  expect(t.states).toEqual(['review'])
+})
+
+test('review runs the gate again when HEAD moved after the gate', async () => {
+  const { ctx, t } = inBuild()
+  await gateJob(ctx, 7, 'round-1')
+  const moved = 'c'.repeat(40)
+  const run = ctx.run
+  ctx.run = async (argv, opts) =>
+    argv.join(' ') === `git -C ${WT} rev-parse HEAD` ? { exitCode: 0, stdout: `${moved}\n`, stderr: '' } : run(argv, opts)
+  await jobAdvance(ctx, t, { issue: 7, to: 'review' })
+  expect(attempts(ctx)).toBe(2)
+  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'push', 'origin', `${moved}:refs/heads/factory/7`])
+})
+
+test('a failing gate is never recorded', async () => {
+  const { ctx, t } = inBuild({}, { replies: [{ argv: ['vp', 'lint'], result: { exitCode: 1 } }] })
+  expect((await gateJob(ctx, 7, 'round-1')).verdict).toBe('FAIL')
+  expect(passedAt(ctx, 7, 'round-1')).toBeUndefined()
+  await rejects(jobAdvance(ctx, t, { issue: 7, to: 'review' }), 'gate-not-green')
+  expect(attempts(ctx)).toBe(2)
 })
 
 test('PR body closes the issue', async () => {
