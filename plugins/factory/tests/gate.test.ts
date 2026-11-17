@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { defaultConfig, type Config, type StackRef } from '../lib/config.ts'
-import { jobField, planGate, runGate } from '../lib/gate.ts'
+import { planGate, runGate } from '../lib/gate.ts'
 import type { Detection, Step } from '../lib/stacks/types.ts'
 import type { Ctx } from '../lib/types.ts'
 import { fakeCtx, type Reply } from './support/host.ts'
@@ -209,14 +209,6 @@ test('a job gate writes to the round folder of the job', async () => {
   const ctx = make()
   await runGate(ctx, { worktree: WT, round: 'round-2', jobDir: '/repo/.factory/jobs/5' })
   expect(ctx.files['/repo/.factory/jobs/5/round-2/checks.md']).toBeDefined()
-})
-
-test('jobField reads a bullet field', () => {
-  const md = '# Job #1\n\n## Job\n- Worktree: /w\n- Base: abc\n- PR:\n'
-  expect(jobField(md, 'Worktree')).toBe('/w')
-  expect(jobField(md, 'Base')).toBe('abc')
-  expect(jobField(md, 'PR')).toBeNull()
-  expect(jobField(md, 'Nope')).toBeNull()
 })
 
 const diffReply = (out: string): Reply[] => [{ argv: git('diff'), result: { stdout: out } }, ...baseReplies()]

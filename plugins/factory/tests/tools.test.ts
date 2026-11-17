@@ -2,9 +2,10 @@ import { expect, test } from 'claude-code/testing'
 import { defaultConfig } from '../lib/config.ts'
 import { FactoryError } from '../lib/exec.ts'
 import { invoke, serve, TOOLS, type ToolDef } from '../hooks/tools.ts'
+import { renderJob } from '../lib/jobfile.ts'
 import { fakeCtx, fakeHost, type Reply } from './support/host.ts'
 
-export const EXPECTED: string[] = ['doctor', 'gate', 'migrate', 'queue', 'setup']
+export const EXPECTED: string[] = ['doctor', 'gate', 'job_create', 'job_sync', 'migrate', 'queue', 'setup']
 
 test('registers exactly the expected tools undeferred', async ($, on) => {
   const { registered } = fakeHost(on)
@@ -47,7 +48,8 @@ const HEAD = 'b'.repeat(40)
 const DIR = '/repo/.factory/jobs/7'
 const WT7 = '/repo/.factory/worktrees/7'
 const jobMd = (wt: string | null = WT7, base: string | null = SHA): string =>
-  `# Job #7\n\n## Job\n${wt === null ? '' : `- Worktree: ${wt}\n`}${base === null ? '' : `- Base: ${base}\n`}`
+  renderJob({ issue: 7, title: 't', jobDir: DIR, worktree: wt ?? '/x', branch: 'factory/7', base: base ?? SHA, baseBranch: 'main', pr: null, round: 0, specUpdated: null, route: {} })
+    .split('\n').filter(l => !((wt === null && l.startsWith('- Worktree:')) || (base === null && l.startsWith('- Base:')))).join('\n')
 
 function jobCtx(files: Record<string, string>, replies: Reply[] = []): ReturnType<typeof fakeCtx> {
   return fakeCtx({
@@ -78,21 +80,22 @@ test('tool gate reads the PR title from spec.md', async () => {
 })
 
 test('tool gate fails without job.md', () => fails(jobCtx({}), 'no-job'))
-test('tool gate fails without a Worktree field', () => fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd(null) }), 'job-no-worktree'))
-test('tool gate fails without a Base field', () => fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd(WT7, null) }), 'job-no-base'))
+test('tool gate fails without a Worktree field', () => fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd(null) }), 'bad-job'))
+test('tool gate fails without a Base field', () => fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd(WT7, null) }), 'bad-job'))
 test('tool gate fails without spec.md', () => fails(jobCtx({ [`${DIR}/job.md`]: jobMd() }), 'no-spec'))
 test('tool gate fails without a Title line', () => fails(jobCtx({ ...okFiles(), [`${DIR}/spec.md`]: 'STATUS: READY\n' }), 'spec-no-title'))
 
-test('tool gate resolves a relative worktree against the root', async () => {
-  const ctx = jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd('.factory/worktrees/7') })
-  expect(((await gateDef().handler(ctx, { issue: 7 })) as { verdict: string }).verdict).toBeDefined()
-})
+test('tool gate rejects a relative worktree', () =>
+  fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd('.factory/worktrees/7') }), 'bad-job'))
 
 test('tool gate rejects a worktree outside .factory/worktrees/<n>', () =>
   fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd('/repo') }), 'bad-job-worktree'))
 
 test('tool gate rejects a base that is not a full sha', () =>
-  fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd(WT7, 'abc123') }), 'bad-job-base'))
+  fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd(WT7, 'abc123') }), 'bad-job'))
+
+test('tool gate rejects Base none', () =>
+  fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd(WT7, 'none') }), 'bad-job-base'))
 
 test('tool gate rejects a base equal to HEAD', () =>
   fails(jobCtx({ ...okFiles(), [`${DIR}/job.md`]: jobMd(WT7, HEAD) }), 'bad-job-base'))
@@ -101,7 +104,14 @@ test('tool gate rejects a base that is not an ancestor of HEAD', () =>
   fails(jobCtx(okFiles(), [{ argv: ['git', '-C', WT7, 'merge-base', '--is-ancestor'], result: { exitCode: 1 } }]), 'bad-job-base'))
 
 test('tool gate rejects a base that is not on the base branch', () =>
-  fails(jobCtx(okFiles(), [{ argv: ['git', '-C', '/repo', 'merge-base', '--is-ancestor', SHA, 'main'], result: { exitCode: 1 } }]), 'bad-job-base'))
+  fails(jobCtx(okFiles(), [{ argv: ['git', '-C', '/repo', 'merge-base', '--is-ancestor', SHA, 'origin/main'], result: { exitCode: 1 } }]), 'bad-job-base'))
+
+test('tool gate accepts a base that is on origin/main but not on local main', async () => {
+  const ctx = jobCtx(okFiles(), [{ argv: ['git', '-C', '/repo', 'merge-base', '--is-ancestor', SHA, 'main'], result: { exitCode: 1 } }])
+  const out = (await gateDef().handler(ctx, { issue: 7 })) as { verdict: string }
+  expect(out.verdict).toBeDefined()
+  expect(ctx.calls).toContainEqual(['git', '-C', '/repo', 'merge-base', '--is-ancestor', SHA, 'origin/main'])
+})
 
 test('tool gate rejects a bad round', async () => {
   const props = gateDef().inputSchema.properties as { round: { pattern: string } }

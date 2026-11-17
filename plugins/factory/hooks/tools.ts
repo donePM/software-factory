@@ -2,10 +2,13 @@ import type { Register } from 'claude-code'
 import { FactoryError } from '../lib/exec.ts'
 import { loadConfig, migrate } from '../lib/config.ts'
 import { doctor } from '../lib/doctor.ts'
-import { jobField, runGate } from '../lib/gate.ts'
+import { runGate } from '../lib/gate.ts'
+import { jobCreate, jobSync } from '../lib/job.ts'
+import { jobDir, readJob } from '../lib/jobfile.ts'
 import { githubTracker, repoFromUrl } from '../lib/github.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
+import type { Tracker } from '../lib/tracker.ts'
 import type { Ctx } from '../lib/types.ts'
 
 export type ToolDef = {
@@ -15,6 +18,25 @@ export type ToolDef = {
   // biome-ignore lint: tool input is validated by the engine against inputSchema
   handler: (ctx: Ctx, input: any) => Promise<unknown>
 }
+
+function issueOf(input: { issue?: unknown }): number {
+  const n = input.issue
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < 1) {
+    throw new FactoryError('bad-input', `issue must be a positive integer, got ${JSON.stringify(n)}`)
+  }
+  return n
+}
+
+const issueTool = (name: string, description: string, run: (ctx: Ctx, t: Tracker, n: number) => Promise<unknown>): ToolDef => ({
+  name,
+  description,
+  inputSchema: { type: 'object', properties: { issue: { type: 'integer', minimum: 1 } }, required: ['issue'], additionalProperties: false },
+  handler: async (ctx, input) => {
+    const n = issueOf(input)
+    const t = githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url))
+    return run(ctx, t, n)
+  },
+})
 
 export const TOOLS: ToolDef[] = [
   {
@@ -64,6 +86,14 @@ export const TOOLS: ToolDef[] = [
       return queue(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
     },
   },
+  issueTool('job_create', 'Start a job: set the intake label, create the worktree from origin/<base>, write job.md and issue.md.', async (ctx, t, n) => {
+    const job = await jobCreate(ctx, t, n)
+    return { job, jobDir: job.jobDir, worktree: job.worktree, files: ['job.md', 'issue.md'] }
+  }),
+  issueTool('job_sync', 'Refresh issue.md, rebuild a missing job folder from the marker comments, restore the worktree, take a newer spec comment.', async (ctx, t, n) => {
+    const r = await jobSync(ctx, t, n)
+    return { ...r, jobDir: r.job.jobDir, worktree: r.job.worktree }
+  }),
 ]
 
 const NO_JOB = 'Run job_create first.'
@@ -78,35 +108,33 @@ async function checkBase(ctx: Ctx, wt: string, base: string): Promise<void> {
   if ((await ctx.run(['git', '-C', wt, 'merge-base', '--is-ancestor', base, 'HEAD'])).exitCode !== 0) {
     throw bad('job.md Base is not an ancestor of the worktree HEAD')
   }
-  const branch = (await loadConfig(ctx)).baseBranch
+  const branch = `origin/${(await loadConfig(ctx)).baseBranch}`
   if ((await ctx.run(['git', '-C', ctx.root, 'merge-base', '--is-ancestor', base, branch])).exitCode !== 0) {
     throw bad(`job.md Base is not an ancestor of ${branch}`)
   }
 }
 
-async function gateTool(ctx: Ctx, input: { issue?: number; round?: string }): Promise<unknown> {
+async function gateTool(ctx: Ctx, input: { issue?: unknown; round?: string }): Promise<unknown> {
   const round = input.round ?? 'setup'
   if (!/^(round-[1-9][0-9]*|merge|setup)$/.test(round)) {
     throw new FactoryError('bad-round', `round "${round}" is not valid`, 'Use round-<n>, merge or setup.')
   }
   if (input.issue === undefined) return runGate(ctx, { worktree: ctx.root, round })
-  const jobDir = `${ctx.root}/.factory/jobs/${input.issue}`
-  if (!(await ctx.fs.exists(`${jobDir}/job.md`))) throw new FactoryError('no-job', `${jobDir}/job.md does not exist`, NO_JOB)
-  const md = await ctx.fs.read(`${jobDir}/job.md`)
-  const wt = jobField(md, 'Worktree')
-  const base = jobField(md, 'Base')
-  if (wt === null) throw new FactoryError('job-no-worktree', `job.md has no "- Worktree:" field`, NO_JOB)
-  if (base === null) throw new FactoryError('job-no-base', `job.md has no "- Base:" field`, NO_JOB)
-  if (!(await ctx.fs.exists(`${jobDir}/spec.md`))) throw new FactoryError('no-spec', `${jobDir}/spec.md does not exist`, 'Run the spec step first.')
-  const title = /^Title:\s*(.+)$/m.exec(await ctx.fs.read(`${jobDir}/spec.md`))?.[1]?.trim()
+  const n = issueOf(input)
+  const dir = jobDir(ctx.root, n)
+  if (!(await ctx.fs.exists(`${dir}/job.md`))) throw new FactoryError('no-job', `${dir}/job.md does not exist`, NO_JOB)
+  const job = await readJob(ctx, n)
+  if (!(await ctx.fs.exists(`${dir}/spec.md`))) throw new FactoryError('no-spec', `${dir}/spec.md does not exist`, 'Run the spec step first.')
+  const title = /^Title:\s*(.+)$/m.exec(await ctx.fs.read(`${dir}/spec.md`))?.[1]?.trim()
   if (title === undefined) throw new FactoryError('spec-no-title', 'spec.md has no "Title:" line', 'The spec-writer must add a Title line.')
-  const worktree = wt.startsWith('/') ? wt : `${ctx.root}/${wt}`
-  const expected = `${ctx.root}/.factory/worktrees/${input.issue}`
+  const worktree = job.worktree
+  const expected = `${ctx.root}/.factory/worktrees/${n}`
   if (worktree !== expected) {
-    throw new FactoryError('bad-job-worktree', `job.md names worktree ${wt}, not ${expected}`, NO_JOB)
+    throw new FactoryError('bad-job-worktree', `job.md names worktree ${worktree}, not ${expected}`, NO_JOB)
   }
+  const base = job.base
   await checkBase(ctx, worktree, base)
-  return runGate(ctx, { worktree, round, base, prTitle: title, jobDir })
+  return runGate(ctx, { worktree, round, base, prTitle: title, jobDir: dir })
 }
 
 const DEFAULT_TIMEOUT_MS = 120000

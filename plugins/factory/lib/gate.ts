@@ -54,15 +54,6 @@ export function planGate(steps: Step[], ds: Detection[] = []): Step[] {
   return out
 }
 
-export function jobField(md: string, key: string): string | null {
-  for (const line of md.split('\n')) {
-    if (!line.startsWith(`- ${key}:`)) continue
-    const v = line.slice(key.length + 3).trim()
-    return v === '' ? null : v
-  }
-  return null
-}
-
 const at = (path: string, name: string): string => (path === '.' ? name : `${path}/${name}`)
 
 async function git(ctx: Ctx, wt: string, args: string[]): Promise<string> {
