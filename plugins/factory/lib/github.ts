@@ -27,7 +27,7 @@ const parseLines = <T>(text: string): T[] =>
   text.split('\n').filter(l => l.trim() !== '').map(l => JSON.parse(l) as T)
 
 const toTicket = (r: RawIssue, comments: Comment[]): Ticket => ({
-  kind: 'issue', number: r.number, title: r.title, body: r.body, author: r.author.login,
+  kind: /\/pull\/\d+\/?$/.test(r.url) ? 'pr' : 'issue', number: r.number, title: r.title, body: r.body, author: r.author.login,
   labels: r.labels.map(l => l.name), state: r.state === 'CLOSED' ? 'closed' : 'open',
   createdAt: r.createdAt, url: r.url, comments,
 })

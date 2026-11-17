@@ -124,6 +124,20 @@ test('jobCreate refuses an issue that already runs', async () => {
   expect(ctx.files[`${DIR}/job.md`]).toBeUndefined()
 })
 
+for (const [name, ticket] of [
+  ['an issue without the factory label', T([], [], { labels: [] })],
+  ['a closed issue', T([], [], { state: 'closed' })],
+  ['a pull request', T([], [], { kind: 'pr' })],
+] as const) {
+  test(`jobCreate refuses ${name}`, async () => {
+    const ctx = fakeCtx({ files: CFG, replies: createReplies })
+    const tr = tracker(ticket)
+    await expect(jobCreate(ctx, tr, 7)).rejects.toMatchObject({ code: 'not-factory' })
+    expect(tr.states).toEqual([])
+    expect(gitCalls(ctx.calls)).toEqual([])
+  })
+}
+
 const INTAKE_BODY = (base = SHA): string =>
   `DECISION: ACCEPT\nRISK: low\nSURFACES: none\nLANE: regular\n\n## Summary\n\nDo it.\n\n## Scope\n\n- a\n\n## Questions\n\nnone\n\n## Job\n- Base: ${base}\n- Spec updated: 2026-01-02T00:00:00Z\n- PR: #12\n\n## Route\n- code: sonnet\n- security: opus\n`
 

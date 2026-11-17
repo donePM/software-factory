@@ -64,6 +64,13 @@ test('get filters nothing but loads comments', async () => {
   expect(ctx.calls).toContainEqual(['gh', 'api', 'repos/a/b/issues/5/comments', '--paginate', '--jq', '.[]'])
 })
 
+test('get marks a pull request as kind pr', async () => {
+  const pr = JSON.stringify({ ...JSON.parse(issueJson(['factory:pr'], 9)), url: 'https://github.com/a/b/pull/9' })
+  const ctx = spyCtx([{ argv: ['gh', 'issue', 'view', '9'], result: { stdout: pr } }, ...getReplies([], [], 9)])
+  expect((await githubTracker(ctx, 'a/b').get(9)).kind).toBe('pr')
+  expect((await githubTracker(spyCtx(getReplies(['factory'])), 'a/b').get(5)).kind).toBe('issue')
+})
+
 test('setState swaps exactly one status label', async () => {
   const ctx = spyCtx([...writes, ...getReplies(['factory', 'factory:intake'])])
   await githubTracker(ctx, 'a/b').setState(5, 'spec')

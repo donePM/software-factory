@@ -47,6 +47,10 @@ async function ensureWorktree(ctx: Ctx, wt: string, branch: string, start: strin
 export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
   const operator = await t.login()
   const ticket = await t.get(n)
+  // The factory label is the trust boundary: only a person with triage rights sets it.
+  if (ticket.kind !== 'issue' || ticket.state !== 'open' || !ticket.labels.includes('factory')) {
+    throw new FactoryError('not-factory', `#${n} is not an open issue with the label factory`, 'Add the label factory to an open issue, then run it again.')
+  }
   const from = stateOf(ticket.labels)
   const resume = from === 'needs-info'
   let old: Job | null = null
