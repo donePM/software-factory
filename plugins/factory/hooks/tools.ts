@@ -21,7 +21,7 @@ export type ToolDef = {
   name: string
   description: string
   inputSchema: Record<string, unknown>
-  // biome-ignore lint: tool input is validated by the engine against inputSchema
+  // any: the engine checks the input against inputSchema before the handler runs.
   handler: (ctx: Ctx, input: any) => Promise<unknown>
 }
 
@@ -221,6 +221,7 @@ async function gateTool(ctx: Ctx, input: { issue?: unknown; round?: string }): P
 const DEFAULT_TIMEOUT_MS = 120000
 const MAX_TIMEOUT_MS = 600000
 
+// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run and fs.
 export async function makeCtx($: any): Promise<Ctx> {
   const root: string = await $.session.root()
   return {
@@ -257,7 +258,7 @@ export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<To
   }
 }
 
-// biome-ignore lint: hook arguments are typed by the on() call sites
+// any: the tool.run event carries a different input type per tool, and tests call serve with a small fake $.
 export const serve = async ($: any, e: any, next: any): Promise<any> => {
   const def = TOOLS.find(d => `mcp__factory__${d.name}` === e.tool)
   if (!def) return next(e)

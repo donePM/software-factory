@@ -1,7 +1,7 @@
 export type Migration = {
   from: number
   name: string
-  // biome-ignore lint: old config shapes are unknown by definition
+  // any: an old config shape has no type. Each migration checks the fields it reads.
   up(old: any): any
 }
 
