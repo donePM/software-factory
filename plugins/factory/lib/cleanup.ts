@@ -1,5 +1,5 @@
 import { loadConfig } from './config.ts'
-import { must, rmrf } from './exec.ts'
+import { rmrf } from './exec.ts'
 import { branchName, jobDir, worktreeDir } from './jobfile.ts'
 import { stateOf } from './labels.ts'
 import type { Tracker } from './tracker.ts'
@@ -80,24 +80,35 @@ export async function sweep(ctx: Ctx, t: Tracker): Promise<CleanupReport> {
     report.removed.push(...r.removed)
     report.kept.push(...r.kept)
   }
+  const failed = (n: number, e: unknown): void => {
+    report.kept.push({ path: jobDir(ctx.root, n), reason: e instanceof Error ? e.message : String(e), command: `/factory:cleanup ${n}` })
+  }
   const tickets = new Map<number, Ticket>()
   for (const n of new Set([...(await folders(ctx, 'jobs')), ...(await folders(ctx, 'worktrees'))])) {
-    tickets.set(n, await t.get(n))
+    try {
+      tickets.set(n, await t.get(n))
+    } catch (e) {
+      failed(n, e)
+    }
   }
   for (const b of await t.backlog()) if (!tickets.has(b.number)) tickets.set(b.number, b)
 
   for (const [n, ticket] of tickets) {
-    const state = stateOf(ticket.labels)
-    if (ticket.state === 'closed') {
-      add(await cleanupJob(ctx, t, n, state === 'rejected' ? 'rejected' : 'done'))
-    } else if (state === 'approved' || state === 'needs-human') {
-      const branch = branchName(n)
-      const pr = await t.findPr(branch)
-      if (pr?.state === 'MERGED' && pr.headRefName === branch) {
-        await t.setState(n, 'done')
-        await t.close(n, 'done')
-        add(await cleanupJob(ctx, t, n, 'done'))
+    try {
+      const state = stateOf(ticket.labels)
+      if (ticket.state === 'closed') {
+        add(await cleanupJob(ctx, t, n, state === 'rejected' ? 'rejected' : 'done'))
+      } else if (state === 'approved' || state === 'needs-human') {
+        const branch = branchName(n)
+        const pr = await t.findPr(branch)
+        if (pr?.state === 'MERGED' && pr.headRefName === branch) {
+          await t.setState(n, 'done')
+          await t.close(n, 'done')
+          add(await cleanupJob(ctx, t, n, 'done'))
+        }
       }
+    } catch (e) {
+      failed(n, e)
     }
   }
   await ctx.run(['git', 'worktree', 'prune'])

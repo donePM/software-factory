@@ -1,6 +1,6 @@
 import { loadConfig } from './config.ts'
 import { checkMessage, typeOf } from './conventional.ts'
-import { cleanupJob } from './cleanup.ts'
+import { type CleanupReport, cleanupJob } from './cleanup.ts'
 import { FactoryError, must, mkdirp, rmrf } from './exec.ts'
 import { gateJob } from './gatejob.ts'
 import { parseIntake } from './intake.ts'
@@ -174,7 +174,7 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
 }
 
 export type AdvanceInput = { issue: number; to: State; reason?: string }
-export type AdvanceResult = { job: Job; state: State; round: number; roundDir: string; reviewers?: Reviewer[]; note?: string }
+export type AdvanceResult = { job: Job; state: State; round: number; roundDir: string; reviewers?: Reviewer[]; note?: string; cleanup?: CleanupReport }
 
 const SUPPORTED: State[] = ['spec', 'needs-info', 'rejected', 'build', 'review', 'approved', 'needs-human']
 const MENTION = /^[A-Za-z0-9-]+(\[bot\])?$/
@@ -320,8 +320,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
     await upsertIntake()(text)
     await t.setState(n, 'rejected')
     await t.close(n, 'rejected')
-    await cleanupJob(ctx, t, n, 'rejected')
-    return result('rejected')
+    return result('rejected', { cleanup: await cleanupJob(ctx, t, n, 'rejected') })
   }
 
   if (to === 'build') return advanceBuild(ctx, t, job, from)

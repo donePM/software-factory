@@ -181,6 +181,44 @@ test('tool cleanup is registered and refuses a ticket that is still running', as
   expect(out).toMatchObject({ isError: true })
 })
 
+test('tool cleanup refuses an open ticket in a running state and removes nothing', async () => {
+  const def = TOOLS.find(t => t.name === 'cleanup')!
+  const ticket = JSON.stringify({ number: 7, title: 't', body: '', labels: [{ name: 'factory' }, { name: 'factory:build' }], author: { login: 'a' }, createdAt: '2026-01-01T00:00:00Z', url: 'u', state: 'OPEN' })
+  const ctx = ctxOf([
+    { argv: ['gh', 'issue', 'view'], result: { stdout: ticket } },
+    { argv: ['gh', 'api'], result: { stdout: '' } },
+  ])
+  const out = await invoke(def, ctx, { issue: 7 })
+  expect(out).toMatchObject({ isError: true })
+  expect('text' in out && out.text).toContain('not-finished')
+  expect(has(ctx.calls, 'rm')).toBe(false)
+  expect(has(ctx.calls, 'git')).toBe(false)
+})
+
+test('sweep records a failing ticket as kept and continues', async () => {
+  const ctx = ctxOf([], { [`${DIR}/job.md`]: 'x', '/repo/.factory/jobs/8/job.md': 'x' })
+  const t = tracker({ closed: [8] })
+  t.get = async (n: number) => {
+    if (n === 7) throw new Error('issue gone')
+    return (await tracker({ closed: [8] }).get(n))
+  }
+  const r = await sweep(ctx, t)
+  expect(r.kept).toEqual([{ path: DIR, reason: 'issue gone', command: '/factory:cleanup 7' }])
+  expect(r.removed).toContain('factory/8')
+  expect(ctx.calls).toContainEqual(['git', 'worktree', 'prune'])
+  expect(ctx.calls).toContainEqual(['git', 'fetch', '--prune', 'origin'])
+})
+
+test('sweep records a failing setState as kept and continues', async () => {
+  const a = { ...(await tracker().get(9)), labels: ['factory', 'factory:approved'] }
+  const b = { ...(await tracker().get(10)), labels: ['factory', 'factory:approved'] }
+  const t = tracker({ backlog: [a, b], prs: { 9: { state: 'MERGED' }, 10: { state: 'MERGED' } } })
+  t.setState = async (n: number) => { if (n === 9) throw new Error('label conflict') }
+  const r = await sweep(ctxOf(), t)
+  expect(r.kept[0]).toMatchObject({ reason: 'label conflict', command: '/factory:cleanup 9' })
+  expect(r.removed).toContain('factory/10')
+})
+
 test('tool cleanup without an issue sweeps', async () => {
   const def = TOOLS.find(t => t.name === 'cleanup')!
   const ctx = ctxOf([{ argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } }])

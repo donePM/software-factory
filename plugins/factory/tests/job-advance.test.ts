@@ -493,3 +493,12 @@ test('jobSync takes Round from the intake comment, with round markers as a floor
     expect((await jobSync(ctx, t, 7)).job.round).toBe(want)
   }
 })
+
+test('rejected reports what cleanup kept', async () => {
+  const text = 'DECISION: REJECT\nRISK: low\nSURFACES: none\nLANE: regular\n\n## Reason\nOut of scope.\n'
+  const { ctx, t } = setup('intake', {}, { [`${DIR}/intake.md`]: text }, { replies: [{ argv: ['git', 'fetch', '--prune'], result: { exitCode: 1, stderr: 'offline' } }] })
+  const r = await jobAdvance(ctx, t, { issue: 7, to: 'rejected' })
+  expect(r.cleanup!.kept[0]).toMatchObject({ path: 'factory/7' })
+  expect(r.cleanup!.kept[0]!.reason).toContain('offline')
+  expect(r.cleanup!.removed).toContain(DIR)
+})
