@@ -11,39 +11,39 @@ const item = (number: number) => ({ number, title: `t${number}`, priority: 'medi
 const lineWith = (text: string, s: string): string => text.split('\n').find(l => l.includes(s)) ?? ''
 
 test('shows slots and running jobs', () => {
-  const text = statusText('o/r', Q({ running: [{ number: 3, state: 'build' }], slots: 1 }), {}, { 3: 'Add login' })
+  const text = statusText('o/r', Q({ running: [{ number: 3, state: 'build' }], slots: 1 }), {}, 2, { 3: 'Add login' })
   expect(text).toContain('Factory · o/r  1/2 slots')
   expect(text).toContain('Running')
   expect(text).toContain('#3 Add login  build')
 })
 
 test('an approved job shows the merge command with its number', () => {
-  const text = statusText('o/r', Q({ waiting: [{ number: 42, state: 'approved' }], slots: 2 }), { 42: 50 })
+  const text = statusText('o/r', Q({ waiting: [{ number: 42, state: 'approved' }], slots: 2 }), { 42: 50 }, 2)
   expect(text).toContain('Waiting for you')
   expect(text).toContain('/factory:merge 42')
   expect(text).toContain('/factory:approve 42')
 })
 
 test('idle shows the add hint', () => {
-  expect(statusText('o/r', Q({ slots: 2 }), {})).toContain('Nothing to do. Add work with /factory:add <text>')
+  expect(statusText('o/r', Q({ slots: 2 }), {}, 2)).toContain('Nothing to do. Add work with /factory:add <text>')
 })
 
 test('ready backlog without a run shows /factory:run', () => {
-  const text = statusText('o/r', Q({ ready: [item(5), item(6)], next: [item(5), item(6)], slots: 2 }), {})
+  const text = statusText('o/r', Q({ ready: [item(5), item(6)], next: [item(5), item(6)], slots: 2 }), {}, 2)
   expect(text).toContain('Ready (2)')
   expect(text).toContain('/factory:run')
   expect(text).not.toContain('Nothing to do')
 })
 
 test('needs-human without a PR shows the answer hint', () => {
-  const text = statusText('o/r', Q({ waiting: [{ number: 8, state: 'needs-human' }], slots: 2 }), {})
+  const text = statusText('o/r', Q({ waiting: [{ number: 8, state: 'needs-human' }], slots: 2 }), {}, 2)
   const l = lineWith(text, '#8')
   expect(l).toContain('answer in the issue, then /factory:run')
   expect(l).not.toContain('/factory:merge')
 })
 
 test('needs-human with a PR shows merge and the PR link; needs-info shows the author hint', () => {
-  const text = statusText('o/r', Q({ waiting: [{ number: 9, state: 'needs-human' }, { number: 10, state: 'needs-info' }], slots: 2 }), { 9: 77 })
+  const text = statusText('o/r', Q({ waiting: [{ number: 9, state: 'needs-human' }, { number: 10, state: 'needs-info' }], slots: 2 }), { 9: 77 }, 2)
   expect(lineWith(text, '#9')).toContain('/factory:merge 9')
   expect(lineWith(text, '#9')).toContain('https://github.com/o/r/pull/77')
   expect(lineWith(text, '#10')).toContain('author answers in the issue')
@@ -71,4 +71,14 @@ test('statusFor asks for a PR only for approved and needs-human tickets', async 
   expect(text).toContain('Factory · o/r  1/2 slots')
   expect(lineWith(text, '#2')).toContain('/factory:merge 2')
   expect(lineWith(text, '#4')).toContain('answer in the issue')
+})
+
+test('the header shows running over concurrency even when running exceeds it', () => {
+  const running = [1, 2, 3].map(number => ({ number, state: 'build' as const }))
+  expect(statusText('o/r', Q({ running, slots: 0 }), {}, 2)).toContain('Factory · o/r  3/2 slots')
+})
+
+test('a waiting state without its own hint points to the issue', () => {
+  const text = statusText('o/r', Q({ waiting: [{ number: 11, state: 'needs-design' }], slots: 2 }), {}, 2)
+  expect(lineWith(text, '#11')).toContain('see the issue https://github.com/o/r/issues/11')
 })

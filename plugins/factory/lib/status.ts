@@ -8,8 +8,8 @@ import type { Ctx } from './types.ts'
 const label = (n: number, titles: Record<number, string>): string => (titles[n] ? `#${n} ${titles[n]}` : `#${n}`)
 
 // prs maps an issue number to its PR number; titles maps an issue number to its title.
-export function statusText(repo: string, q: Queue, prs: Record<number, number>, titles: Record<number, string> = {}): string {
-  const lines = [`Factory · ${repo}  ${q.running.length}/${q.running.length + q.slots} slots`]
+export function statusText(repo: string, q: Queue, prs: Record<number, number>, concurrency: number, titles: Record<number, string> = {}): string {
+  const lines = [`Factory · ${repo}  ${q.running.length}/${concurrency} slots`]
   const section = (name: string, rows: string[]): void => {
     lines.push('', name, ...rows.map(r => `  ${r}`))
   }
@@ -29,7 +29,8 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
     } else if (w.state === 'needs-info') {
       rows.push(`${label(n, titles)}  needs info: author answers in the issue`)
     } else {
-      rows.push(`${label(n, titles)}  ${w.state}`)
+      // needs-design and any state without its own hint
+      rows.push(`${label(n, titles)}  ${w.state}: see the issue https://github.com/${repo}/issues/${n}`)
     }
   }
   if (rows.length > 0) section('Waiting for you', rows)
@@ -52,5 +53,5 @@ export async function statusFor(ctx: Ctx, tr: Tracker, cfg: Config): Promise<str
     const pr = await tr.findPr(branchName(w.number)).catch(() => null)
     if (pr) prs[w.number] = pr.number
   }
-  return statusText(tr.repo, q, prs, titles)
+  return statusText(tr.repo, q, prs, cfg.concurrency, titles)
 }
