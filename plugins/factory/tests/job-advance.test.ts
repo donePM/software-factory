@@ -15,6 +15,7 @@ import { fakeCtx, type Reply } from './support/host.ts'
 
 const SHA = 'a'.repeat(40)
 const HEAD = 'b'.repeat(40)
+const MOVED = 'd'.repeat(40)
 const DIR = '/repo/.factory/jobs/7'
 const WT = '/repo/.factory/worktrees/7'
 const cfgOf = (maxRounds = 3): string =>
@@ -23,7 +24,7 @@ const pkg = JSON.stringify({ name: 'x', scripts: { test: 'vitest' } })
 
 const J: Job = {
   issue: 7, title: 'Add thing', jobDir: DIR, worktree: WT, branch: 'factory/7', base: SHA, baseBranch: 'main',
-  pr: null, round: 0, specUpdated: null, route: { code: 'sonnet', security: 'opus' },
+  pr: null, round: 0, specUpdated: null, reviewed: null, route: { code: 'sonnet', security: 'opus' },
 }
 const INTAKE = 'DECISION: ACCEPT\nRISK: high\nSURFACES: security\nLANE: regular\n\n## Summary\nDo it.\n\n## Scope\nsmall\n'
 const SPEC = 'STATUS: READY\nTitle: feat: add thing\n\n## Summary\nx\n'
@@ -260,6 +261,30 @@ test('a failing gate is never recorded', async () => {
   expect(attempts(ctx)).toBe(2)
 })
 
+test('review records the pushed commit as the reviewed commit', async () => {
+  const { ctx, t } = inBuild()
+  await jobAdvance(ctx, t, { issue: 7, to: 'review' })
+  expect((await readJob(ctx, 7)).reviewed).toBe(HEAD)
+  expect(t.comments.find(c => c.name === 'intake')!.body).toContain(`- Reviewed: ${HEAD}\n`)
+})
+
+test('a new round clears the reviewed commit', async () => {
+  const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('CHANGES', 'fix it') }
+  const { ctx, t } = inReview(files)
+  await jobAdvance(ctx, t, { issue: 7, to: 'build' })
+  expect((await readJob(ctx, 7)).reviewed).toBeNull()
+  expect(t.comments.find(c => c.name === 'intake')!.body).toContain('- Reviewed: none\n')
+})
+
+test('approved is refused when HEAD is not the reviewed commit', async () => {
+  const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE }
+  const { ctx, t } = inReview(files, {}, { reviewed: MOVED })
+  await rejects(jobAdvance(ctx, t, { issue: 7, to: 'approved' }), 'head-moved')
+  expect(t.states).toEqual([])
+  expect(t.log).not.toContain('ready 12')
+  expect(t.comments).toEqual([])
+})
+
 test('PR body closes the issue', async () => {
   const { ctx, t } = inBuild()
   await jobAdvance(ctx, t, { issue: 7, to: 'review' })
@@ -286,7 +311,7 @@ test('a breaking title adds the breaking label', async () => {
 })
 
 const inReview = (files: Record<string, string>, o: Parameters<typeof setup>[3] = {}, over: Partial<Job> = {}): Run =>
-  setup('review', { round: 1, pr: 12, ...over }, { [`${DIR}/spec.md`]: SPEC, [`${DIR}/round-1/checks.md`]: 'VERDICT: PASS\n', ...files }, o)
+  setup('review', { round: 1, pr: 12, reviewed: HEAD, ...over }, { [`${DIR}/spec.md`]: SPEC, [`${DIR}/round-1/checks.md`]: 'VERDICT: PASS\n', ...files }, o)
 
 test('approved waits for all routed reviews', async () => {
   const { ctx, t } = inReview({ [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE })
@@ -506,6 +531,13 @@ test('a tampered Route in job.md is refused', async () => {
   const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE }
   const r = inReview(files, { tamper: { route: { code: 'sonnet' } } })
   await expect(jobAdvance(r.ctx, r.t, { issue: 7, to: 'approved' })).rejects.toMatchObject({ code: 'bad-job', message: 'job.md differs from the ticket: Route' })
+  noEffects(r)
+})
+
+test('a tampered Reviewed in job.md is refused', async () => {
+  const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE }
+  const r = inReview(files, { tamper: { reviewed: MOVED } }, { reviewed: null })
+  await expect(jobAdvance(r.ctx, r.t, { issue: 7, to: 'approved' })).rejects.toMatchObject({ code: 'bad-job', message: 'job.md differs from the ticket: Reviewed' })
   noEffects(r)
 })
 

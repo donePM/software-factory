@@ -20,7 +20,7 @@ const pkg = JSON.stringify({ name: 'x', scripts: { test: 'vitest' } })
 const INTAKE = 'DECISION: ACCEPT\nRISK: high\nSURFACES: security\nLANE: regular\n\n## Summary\nDo it.\n'
 const J: Job = {
   issue: 7, title: 'Add thing', jobDir: DIR, worktree: WT, branch: 'factory/7', base: SHA, baseBranch: 'main',
-  pr: 9, round: 1, specUpdated: null, route: { code: 'sonnet' },
+  pr: 9, round: 1, specUpdated: null, reviewed: HEAD, route: { code: 'sonnet' },
 }
 const at = '2026-02-01T00:00:00Z'
 

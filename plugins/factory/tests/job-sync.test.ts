@@ -12,6 +12,7 @@ import { fakeCtx, type Reply } from './support/host.ts'
 
 const SHA = 'a'.repeat(40)
 const OTHER = 'c'.repeat(40)
+const REVIEWED = 'e'.repeat(40)
 const DIR = '/repo/.factory/jobs/7'
 const WT = '/repo/.factory/worktrees/7'
 const CFG = { '/repo/.factory/config.json': JSON.stringify(defaultConfig('u', 'main', [])) }
@@ -40,7 +41,7 @@ function tracker(t: Ticket): Tracker & { states: State[] } {
 
 const J: Job = {
   issue: 7, title: 'Add thing', jobDir: DIR, worktree: WT, branch: 'factory/7', base: SHA, baseBranch: 'main',
-  pr: 12, round: 2, specUpdated: '2026-01-02T00:00:00Z', route: { code: 'sonnet', security: 'opus' },
+  pr: 12, round: 2, specUpdated: '2026-01-02T00:00:00Z', reviewed: REVIEWED, route: { code: 'sonnet', security: 'opus' },
 }
 const gitCalls = (calls: string[][]): string[][] => calls.filter(c => c[0] === 'git')
 const okGit: Reply[] = [{ argv: ['git', 'ls-remote'], result: { exitCode: 2 } }, { argv: ['git', 'fetch'] }, { argv: ['git', 'worktree', 'add'] }]
@@ -60,7 +61,7 @@ test('paths follow the layout', () => {
 
 test('renderJob and parseJob round-trip', () => {
   expect(parseJob(renderJob(J), DIR)).toEqual(J)
-  const none = { ...J, base: 'none', pr: null, specUpdated: null, round: 0, route: {} }
+  const none = { ...J, base: 'none', pr: null, specUpdated: null, round: 0, reviewed: null, route: {} }
   expect(parseJob(renderJob(none), DIR)).toEqual(none)
   expect(renderJob(J)).toContain('- PR: #12\n')
   expect(renderJob(J)).toContain('- code: sonnet\n')
@@ -74,11 +75,16 @@ for (const [key, from, to] of [
   ['Round', '- Round: 2', '- Round: -1'],
   ['Spec updated', '- Spec updated: 2026-01-02T00:00:00Z', '- Spec updated: yesterday'],
   ['Title', '- Title: Add thing\n', ''],
+  ['Reviewed', `- Reviewed: ${REVIEWED}`, '- Reviewed: abc123'],
 ] as const) {
   test(`parseJob rejects an invalid ${key}`, () => {
     parseFails(renderJob(J).replace(from, to), key)
   })
 }
+
+test('parseJob reads a job.md without Reviewed as not reviewed', () => {
+  expect(parseJob(renderJob(J).replace(/- Reviewed:.*\n/, ''), DIR).reviewed).toBeNull()
+})
 
 test('parseJob rejects a missing key', () => {
   parseFails(renderJob(J).replace(/- Branch:.*\n/, ''), 'Branch')
@@ -139,7 +145,7 @@ for (const [name, ticket] of [
 }
 
 const INTAKE_BODY = (base = SHA): string =>
-  `DECISION: ACCEPT\nRISK: low\nSURFACES: none\nLANE: regular\n\n## Summary\n\nDo it.\n\n## Scope\n\n- a\n\n## Questions\n\nnone\n\n## Job\n- Base: ${base}\n- Spec updated: 2026-01-02T00:00:00Z\n- PR: #12\n\n## Route\n- code: sonnet\n- security: opus\n`
+  `DECISION: ACCEPT\nRISK: low\nSURFACES: none\nLANE: regular\n\n## Summary\n\nDo it.\n\n## Scope\n\n- a\n\n## Questions\n\nnone\n\n## Job\n- Base: ${base}\n- Spec updated: 2026-01-02T00:00:00Z\n- PR: #12\n- Reviewed: ${REVIEWED}\n\n## Route\n- code: sonnet\n- security: opus\n`
 
 const comments = (): Comment[] => [
   C(1, 'op', withMarker('intake', INTAKE_BODY())),

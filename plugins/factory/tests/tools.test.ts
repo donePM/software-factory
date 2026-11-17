@@ -48,7 +48,7 @@ const HEAD = 'b'.repeat(40)
 const DIR = '/repo/.factory/jobs/7'
 const WT7 = '/repo/.factory/worktrees/7'
 const jobMd = (wt: string | null = WT7, base: string | null = SHA): string =>
-  renderJob({ issue: 7, title: 't', jobDir: DIR, worktree: wt ?? '/x', branch: 'factory/7', base: base ?? SHA, baseBranch: 'main', pr: null, round: 0, specUpdated: null, route: {} })
+  renderJob({ issue: 7, title: 't', jobDir: DIR, worktree: wt ?? '/x', branch: 'factory/7', base: base ?? SHA, baseBranch: 'main', pr: null, round: 0, specUpdated: null, reviewed: null, route: {} })
     .split('\n').filter(l => !((wt === null && l.startsWith('- Worktree:')) || (base === null && l.startsWith('- Base:')))).join('\n')
 
 function jobCtx(files: Record<string, string>, replies: Reply[] = []): ReturnType<typeof fakeCtx> {

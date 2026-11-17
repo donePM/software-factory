@@ -13,6 +13,8 @@ export type Job = {
   pr: number | null
   round: number
   specUpdated: string | null
+  // The commit that the gate passed and the reviewers saw. A new round clears it.
+  reviewed: string | null
   route: Route
 }
 
@@ -66,6 +68,11 @@ export function parsePr(v: string | null): number | null | undefined {
   return m ? Number(m[1]) : undefined
 }
 
+export function parseReviewed(v: string | null): string | null | undefined {
+  if (v === null || v === 'none') return null // an older job.md has no Reviewed line
+  return SHA40.test(v) ? v : undefined
+}
+
 export function parseSpecUpdated(v: string | null): string | null | undefined {
   if (v === 'none') return null
   return v !== null && /^\d{4}-\d{2}-\d{2}T/.test(v) && !Number.isNaN(Date.parse(v)) ? v : undefined
@@ -89,6 +96,8 @@ export function parseJob(text: string, dir = ''): Job {
   if (pr === undefined) throw bad('PR')
   const specUpdated = parseSpecUpdated(fieldOf(text, 'Spec updated'))
   if (specUpdated === undefined) throw bad('Spec updated')
+  const reviewed = parseReviewed(fieldOf(text, 'Reviewed'))
+  if (reviewed === undefined) throw bad('Reviewed')
   const route = parseRoute(text)
   if (route === null) throw bad('Route')
   return {
@@ -102,6 +111,7 @@ export function parseJob(text: string, dir = ''): Job {
     pr,
     round: num('Round', 0),
     specUpdated,
+    reviewed,
     route,
   }
 }
@@ -124,6 +134,7 @@ export function renderJob(j: Job): string {
     `- PR: ${j.pr === null ? 'none' : `#${j.pr}`}`,
     `- Round: ${j.round}`,
     `- Spec updated: ${j.specUpdated ?? 'none'}`,
+    `- Reviewed: ${j.reviewed ?? 'none'}`,
     '',
     '## Route',
   ]

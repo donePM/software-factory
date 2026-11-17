@@ -10,7 +10,7 @@ import { renderIssue } from './issue-file.ts'
 import { stateOf } from './labels.ts'
 import { findMarked, stripMarker } from './markers.ts'
 import {
-  branchName, fieldOf, jobDir, lastSection, parseBase, parsePr, parseRoute, parseSpecUpdated, readJob, renderRoute, worktreeDir, writeJob,
+  branchName, fieldOf, jobDir, lastSection, parseBase, parsePr, parseReviewed, parseRoute, parseSpecUpdated, readJob, renderRoute, worktreeDir, writeJob,
   type Job,
 } from './jobfile.ts'
 import type { Tracker } from './tracker.ts'
@@ -86,6 +86,7 @@ export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
     pr: old?.pr ?? null,
     round: old?.round ?? 0,
     specUpdated: old?.specUpdated ?? null,
+    reviewed: old?.reviewed ?? null,
     route: old?.route ?? {},
   }
   await writeJob(ctx, job)
@@ -155,6 +156,7 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
       pr: parsePr(fieldOf(jobPart, 'PR')) ?? null,
       round,
       specUpdated: parseSpecUpdated(fieldOf(jobPart, 'Spec updated')) ?? null,
+      reviewed: parseReviewed(fieldOf(jobPart, 'Reviewed')) ?? null,
       route: parseRoute(text) ?? {},
     }
     await writeJob(ctx, job)
@@ -201,6 +203,7 @@ export function intakeComment(job: Job, intake: string, mention?: string): strin
     `- Spec updated: ${job.specUpdated ?? 'none'}`,
     `- PR: ${job.pr === null ? 'none' : `#${job.pr}`}`,
     `- Round: ${job.round}`,
+    `- Reviewed: ${job.reviewed ?? 'none'}`,
     '', '## Route',
   )
   const r = renderRoute(job.route)
@@ -277,6 +280,7 @@ export async function verifyJob(ctx: Ctx, t: Tracker, ticket: Ticket, job: Job):
   if ((fieldOf(part, 'Base') ?? 'none') !== job.base) throw differs('Base')
   if (parsePr(fieldOf(part, 'PR')) !== job.pr) throw differs('PR')
   if (fieldOf(part, 'Round') !== String(job.round)) throw differs('Round')
+  if ((parseReviewed(fieldOf(part, 'Reviewed')) ?? null) !== job.reviewed) throw differs('Reviewed')
   if (renderRoute(parseRoute(text) ?? {}) !== renderRoute(job.route)) throw differs('Route')
 }
 
@@ -348,7 +352,8 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
 
 const done = (job: Job, state: State, extra: Partial<AdvanceResult> = {}): AdvanceResult => ({ job, state, round: job.round, roundDir: roundOf(job), ...extra })
 
-async function startRound(ctx: Ctx, t: Tracker, job: Job): Promise<AdvanceResult> {
+async function startRound(ctx: Ctx, t: Tracker, next: Job): Promise<AdvanceResult> {
+  const job: Job = { ...next, reviewed: null } // the new round has no reviewed commit yet
   const intake = await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')
   // The comment first: job.md must not be ahead of the ticket when the upsert fails.
   await t.upsertComment(job.issue, 'intake', intakeComment(job, intake))
@@ -430,10 +435,12 @@ async function advanceReview(ctx: Ctx, t: Tracker, old: Job): Promise<AdvanceRes
       pr = (await t.openPr(old.branch, old.baseBranch, title, `Closes #${n}\n\n## Summary\n\n${summary}\n`, labels)).number
     }
     job = { ...old, pr }
-    await writeJob(ctx, job)
   }
+  job = { ...job, reviewed: sha }
   // Always: a spec change during build updates Spec updated, and approved compares it with this comment.
+  // The comment first: job.md must not be ahead of the ticket when the upsert fails.
   await t.upsertComment(n, 'intake', intakeComment(job, await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')))
+  await writeJob(ctx, job)
   await t.setState(n, 'review')
   return done(job, 'review', { reviewers: Object.keys(job.route) as Reviewer[] })
 }
@@ -449,6 +456,12 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
     throw new FactoryError('decision-mismatch', `decision ${decision.decision} and the review verdicts do not fit ${to}`, 'Approve only when every review passes and the decision is APPROVE.')
   }
   if (job.pr === null) throw new FactoryError('no-pr', 'job.md has no PR', 'Advance to review first.')
+  if (to === 'approved') {
+    const head = await must(ctx, ['git', '-C', job.worktree, 'rev-parse', 'HEAD'])
+    if (head !== job.reviewed) {
+      throw new FactoryError('head-moved', `HEAD ${head} is not the reviewed commit ${job.reviewed ?? 'none'}`, 'Commits came after the reviews. Call job_advance with to: needs-human and this error as reason.')
+    }
+  }
   await t.upsertComment(n, `round-${job.round}`, await roundSummary(ctx, job, roundDir))
   await t.upsertComment(n, 'decision', `Round: ${job.round}\n\n${await ctx.fs.read(`${job.jobDir}/decision.md`)}`)
   if ((await t.prState(job.pr)).headRefName !== job.branch) throw new FactoryError('bad-pr', `PR #${job.pr} is not on ${job.branch}`, 'Run job_sync.')
