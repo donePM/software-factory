@@ -416,8 +416,9 @@ async function advanceReview(ctx: Ctx, t: Tracker, old: Job): Promise<AdvanceRes
     }
     job = { ...old, pr }
     await writeJob(ctx, job)
-    await t.upsertComment(n, 'intake', intakeComment(job, await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')))
   }
+  // Always: a spec change during build updates Spec updated, and approved compares it with this comment.
+  await t.upsertComment(n, 'intake', intakeComment(job, await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')))
   await t.setState(n, 'review')
   return done(job, 'review', { reviewers: Object.keys(job.route) as Reviewer[] })
 }

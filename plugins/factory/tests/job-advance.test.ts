@@ -217,6 +217,14 @@ test('review pushes and opens one draft PR', async () => {
   expect(count(again.ctx, 'git', '-C', WT, 'push')).toBe(1)
 })
 
+test('review in a later round writes the new spec date into the intake comment', async () => {
+  const later = '2026-03-01T00:00:00Z'
+  const { ctx, t } = setup('build', { round: 2, pr: 12 }, { [`${DIR}/spec.md`]: SPEC, [`${DIR}/round-2/build.md`]: BUILD }, { tamper: { specUpdated: later } })
+  await jobAdvance(ctx, t, { issue: 7, to: 'review' })
+  expect(t.prs).toHaveLength(0)
+  expect(t.comments.find(c => c.name === 'intake')!.body).toContain(`- Spec updated: ${later}\n`)
+})
+
 const attempts = (ctx: Run['ctx']): number =>
   (ctx.files[`${DIR}/round-1/checks.log`] ?? '').split('\n').filter(l => l.startsWith('## Attempt ')).length
 
