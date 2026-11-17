@@ -1,5 +1,6 @@
 import type { Register } from 'claude-code'
 import { FactoryError } from '../lib/exec.ts'
+import { issueCreate, issueSearch } from '../lib/add.ts'
 import { cleanupJob, sweep } from '../lib/cleanup.ts'
 import { loadConfig, migrate } from '../lib/config.ts'
 import { doctor } from '../lib/doctor.ts'
@@ -112,6 +113,42 @@ export const TOOLS: ToolDef[] = [
       const cfg = await loadConfig(ctx)
       return statusFor(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
     },
+  },
+  {
+    name: 'issue_search',
+    description: 'Search the issues of this repo in all states. Returns number, title and labels. Use it to find duplicates.',
+    inputSchema: { type: 'object', properties: { query: { type: 'string', minLength: 1 } }, required: ['query'], additionalProperties: false },
+    handler: async (ctx, input) => issueSearch(githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url)), input.query),
+  },
+  {
+    name: 'issue_create',
+    description:
+      'Create GitHub issues in order, each with the label factory (none when park is true). dependsOnRefs names the ref of an earlier item and becomes a Depends on line. Returns ref, number and url for each issue. Creates nothing when the input is bad.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', minLength: 1 },
+              body: { type: 'string' },
+              dependsOn: { type: 'array', items: { type: 'integer', minimum: 1 } },
+              ref: { type: 'string', minLength: 1 },
+              dependsOnRefs: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['title', 'body'],
+            additionalProperties: false,
+          },
+        },
+        park: { type: 'boolean' },
+      },
+      required: ['items'],
+      additionalProperties: false,
+    },
+    handler: async (ctx, input) => issueCreate(githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url)), input),
   },
   issueTool('job_create', 'Start a job: set the intake label, create the worktree from origin/<base>, write job.md and issue.md.', async (ctx, t, n) => {
     const job = await jobCreate(ctx, t, n)
