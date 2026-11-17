@@ -244,6 +244,21 @@ test('a run with zero steps is a FAIL', async () => {
   expect(r.verdict).toBe('FAIL')
 })
 
+test('a job gate fails when the config lists no stacks', async () => {
+  const ctx = make({ stacks: [], replies: baseReplies() })
+  const r = await runGate(ctx, { worktree: WT, round: 'round-1', base: BASE, jobDir: '/repo/.factory/jobs/7' })
+  expect(r.steps.length).toBeGreaterThan(0)
+  expect(r.verdict).toBe('FAIL')
+  expect(r.report).toContain('## No stacks')
+})
+
+test('a setup gate with no configured stacks runs the detected stacks', async () => {
+  const ctx = make({ stacks: [] })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup' })
+  expect(r.steps.length).toBeGreaterThan(0)
+  expect(r.report).not.toContain('## No stacks')
+})
+
 test('runGate rejects a round that is not a round name', async () => {
   const ctx = make()
   for (const round of ['../../..', 'round-0', 'round-1\nx', 'other']) {

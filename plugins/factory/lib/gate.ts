@@ -172,7 +172,9 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   const changedScripts = [...new Set([...(await scriptsChanged(ctx, wt, ds, read)), ...runnerFiles])]
 
   const red = steps.filter(s => s.exitCode !== 0)
-  const verdict = red.length + commits.length + prot.length + dirty.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null ? 'FAIL' : 'PASS'
+  // A job gate needs the configured stacks: with none, a branch could drop a stack and its checks.
+  const noStacks = input.jobDir !== undefined && refs.length === 0
+  const verdict = red.length + commits.length + prot.length + dirty.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null || noStacks ? 'FAIL' : 'PASS'
 
   const lines: string[] = [`VERDICT: ${verdict}`, '', '## Summary', '']
   lines.push(`${steps.length - red.length} of ${steps.length} steps passed. Round: ${input.round}.`, '')
@@ -188,6 +190,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   if (dirty.length > 0) lines.push('', '## Working tree', ...dirty.map(d => `- ${d}`))
   if (missingStacks.length > 0) lines.push('', '## Stacks not detected', ...missingStacks.map(m => `- ${m}`))
   if (steps.length === 0) lines.push('', '## No steps', '- No step ran.')
+  if (noStacks) lines.push('', '## No stacks', '- .factory/config.json lists no stacks. Run /factory:setup to write them.')
   if (changedScripts.length > 0) lines.push('', '## Scripts changed', ...changedScripts.map(p => `- ${p}`))
   const report = `${lines.join('\n')}\n`
 
