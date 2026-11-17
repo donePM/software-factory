@@ -1,6 +1,8 @@
 import type { Register } from 'claude-code'
 import { FactoryError } from '../lib/exec.ts'
 import { migrate } from '../lib/config.ts'
+import { doctor } from '../lib/doctor.ts'
+import { setup } from '../lib/setup.ts'
 import type { Ctx } from '../lib/types.ts'
 
 export type ToolDef = {
@@ -17,6 +19,27 @@ export const TOOLS: ToolDef[] = [
     description: 'Upgrade .factory/config.json to the current version. Backs up the old file first.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     handler: ctx => migrate(ctx),
+  },
+  {
+    name: 'doctor',
+    description: 'Check that git, gh, the GitHub login and the origin remote are ready. Returns checks with fixes.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: ctx => doctor(ctx, []),
+  },
+  {
+    name: 'setup',
+    description: 'Set up the factory in this repo: config, labels, repo standard. With apply false it only previews.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        apply: { type: 'boolean' },
+        baseBranch: { type: 'string' },
+        concurrency: { type: 'integer', minimum: 1 },
+      },
+      required: ['apply'],
+      additionalProperties: false,
+    },
+    handler: (ctx, input) => setup(ctx, { apply: input.apply, baseBranch: input.baseBranch, concurrency: input.concurrency }),
   },
 ]
 

@@ -144,14 +144,19 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
       const read = async (): Promise<StandardCheck[]> => {
         const raw = await json<Record<string, unknown>>(['api', `repos/${repo}`])
         return Object.entries(STANDARD).map(([key, want]) => ({
-          key, actual: String(raw[key]), expected: String(want), ok: raw[key] === want,
+          key, actual: raw[key] === undefined ? '(missing)' : String(raw[key]), expected: String(want), ok: raw[key] === want,
           fix: `Set ${key} to ${String(want)} in the repository settings.`,
         }))
       }
       const checks = await read()
       const drift = checks.filter(c => !c.ok)
       if (!apply || drift.length === 0) return checks
-      const patch = Object.fromEntries(drift.map(c => [c.key, STANDARD[c.key]]))
+      // The API rejects one merge commit field without the other.
+      const keys = new Set(drift.map(c => c.key))
+      if (keys.has('merge_commit_title') || keys.has('merge_commit_message')) {
+        keys.add('merge_commit_title').add('merge_commit_message')
+      }
+      const patch = Object.fromEntries([...keys].map(k => [k, STANDARD[k]]))
       await gh(['api', '-X', 'PATCH', `repos/${repo}`, '--input', '-'], JSON.stringify(patch))
       return read()
     },

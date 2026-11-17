@@ -229,3 +229,21 @@ test('prState maps the author', async () => {
   expect(await githubTracker(ctx, 'a/b').prState(9)).toEqual({ ...pr, author: 'op' })
   expect(ctx.calls[0]).toEqual(['gh', 'pr', 'view', '9', '-R', 'a/b', '--json', 'number,state,isDraft,title,body,author,headRefName,headRefOid,reviewDecision'])
 })
+
+test('applyStandard sends both merge commit fields when one drifts', async () => {
+  const ctx = spyCtx([
+    ...writes,
+    { argv: ['gh', 'api', 'repos/a/b'], result: { stdout: repoJson({ merge_commit_message: 'BLANK' }) } },
+  ])
+  await githubTracker(ctx, 'a/b').applyStandard(true)
+  const patch = ctx.stdins.find(s => s.argv.includes('PATCH'))!
+  expect(JSON.parse(patch.stdin!)).toEqual({ merge_commit_title: 'PR_TITLE', merge_commit_message: 'PR_BODY' })
+})
+
+test('applyStandard shows a missing field as (missing)', async () => {
+  const raw = JSON.parse(repoJson())
+  delete raw.has_issues
+  const ctx = spyCtx([{ argv: ['gh', 'api', 'repos/a/b'], result: { stdout: JSON.stringify(raw) } }])
+  const checks = await githubTracker(ctx, 'a/b').applyStandard(false)
+  expect(checks.find(c => c.key === 'has_issues')).toMatchObject({ ok: false, actual: '(missing)' })
+})
