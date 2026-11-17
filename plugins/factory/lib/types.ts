@@ -1,3 +1,6 @@
+import type { StepName } from './stacks/types.ts'
+
+export type { StepName }
 export type State =
   | 'intake' | 'needs-info' | 'fastlane' | 'spec' | 'needs-design' | 'build'
   | 'review' | 'needs-human' | 'approved' | 'docs' | 'done' | 'rejected'
@@ -40,5 +43,3 @@ export type PrState = {
   headRefOid: string
   reviewDecision: string
 }
-
-export type StepName = 'install' | 'format' | 'lint' | 'typecheck' | 'build' | 'test' | 'audit' | 'start'

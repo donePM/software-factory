@@ -1,5 +1,6 @@
 import { type Check, doctor } from './doctor.ts'
 import { type Config, configPath, defaultConfig, loadConfig, migrate, planMigration, writeConfig } from './config.ts'
+import { detectAll } from './stacks/index.ts'
 import { githubTracker, repoFromUrl } from './github.ts'
 import { labelSet } from './labels.ts'
 import type { Migration } from './migrations/index.ts'
@@ -32,7 +33,7 @@ async function defaultBranch(ctx: Ctx): Promise<string> {
 }
 
 export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
-  const stacks: Config['stacks'] = [] // Task 7 adds stack detection.
+  const stacks: Config['stacks'] = (await detectAll(ctx, ctx.root).catch(() => [])).map(d => ({ id: d.stack, path: d.path }))
   const checks = await doctor(ctx, stacks)
   const empty = { created: false, migrated: [], standard: [], labels: 0, gitignore: false }
   if (checks.some(c => !c.ok)) {

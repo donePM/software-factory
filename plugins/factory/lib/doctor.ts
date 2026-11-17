@@ -1,5 +1,7 @@
 import { repoFromUrl } from './github.ts'
 import type { StackRef } from './config.ts'
+import { detectAll, STACKS } from './stacks/index.ts'
+import type { ToolReq } from './stacks/types.ts'
 import type { Ctx } from './types.ts'
 
 export type Check = { check: string; ok: boolean; detail: string; fix?: string }
@@ -12,6 +14,35 @@ async function tool(ctx: Ctx, name: string): Promise<Check> {
   const r = await ctx.run([name, '--version'])
   if (r.exitCode === 0) return { check: name, ok: true, detail: first(r.stdout) }
   return { check: name, ok: false, detail: `${name} is not installed`, fix: `brew install ${name}` }
+}
+
+async function req(ctx: Ctx, r: ToolReq): Promise<Check> {
+  const res = await ctx.run([r.cmd, ...r.versionArgs])
+  const check = r.cmd === 'sh' ? 'engine types' : r.cmd
+  if (res.exitCode === 0) return { check, ok: true, detail: first(res.stdout) || 'ok' }
+  return { check, ok: false, detail: `${check} is not available`, fix: r.fix }
+}
+
+async function stackChecks(ctx: Ctx, stacks: StackRef[]): Promise<Check[]> {
+  let found
+  try {
+    found = await detectAll(ctx, ctx.root)
+  } catch {
+    return [] // No file list: the stack checks wait until git works.
+  }
+  const out: Check[] = []
+  const seen = new Set<string>()
+  for (const d of found) {
+    if (stacks.length > 0 && !stacks.some(s => s.id === d.stack && s.path === d.path)) continue
+    const stack = STACKS.find(s => s.id === d.stack)
+    for (const r of stack?.requires(d) ?? []) {
+      const key = JSON.stringify([r.cmd, r.versionArgs])
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(await req(ctx, r))
+    }
+  }
+  return out
 }
 
 async function auth(ctx: Ctx): Promise<Check> {
@@ -40,13 +71,13 @@ async function origin(ctx: Ctx): Promise<Check> {
   }
 }
 
-// Stack tool checks arrive with the stack detectors (Task 7).
-export async function doctor(ctx: Ctx, _stacks: StackRef[]): Promise<Check[]> {
+export async function doctor(ctx: Ctx, stacks: StackRef[]): Promise<Check[]> {
   const git = await tool(ctx, 'git')
   if (!git.ok) return [git]
   const gh = await tool(ctx, 'gh')
   const checks = [git, gh]
   if (gh.ok) checks.push(await auth(ctx))
   checks.push(await origin(ctx))
+  checks.push(...(await stackChecks(ctx, stacks)))
   return checks
 }
