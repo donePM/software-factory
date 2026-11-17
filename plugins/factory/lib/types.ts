@@ -40,3 +40,5 @@ export type PrState = {
   headRefOid: string
   reviewDecision: string
 }
+
+export type StepName = 'install' | 'format' | 'lint' | 'typecheck' | 'build' | 'test' | 'audit' | 'start'

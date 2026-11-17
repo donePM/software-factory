@@ -1,7 +1,7 @@
 import type { Register } from 'claude-code'
 import { FactoryError } from '../lib/exec.ts'
+import { migrate } from '../lib/config.ts'
 import type { Ctx } from '../lib/types.ts'
-
 
 export type ToolDef = {
   name: string
@@ -11,7 +11,14 @@ export type ToolDef = {
   handler: (ctx: Ctx, input: any) => Promise<unknown>
 }
 
-export const TOOLS: ToolDef[] = []
+export const TOOLS: ToolDef[] = [
+  {
+    name: 'migrate',
+    description: 'Upgrade .factory/config.json to the current version. Backs up the old file first.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: ctx => migrate(ctx),
+  },
+]
 
 const DEFAULT_TIMEOUT_MS = 120000
 const MAX_TIMEOUT_MS = 600000
@@ -44,16 +51,18 @@ export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<To
     return { result: JSON.stringify(await def.handler(ctx, input), null, 2) }
   } catch (err) {
     if (err instanceof FactoryError) {
-      return { isError: true, result: undefined, text: `${err.code}: ${err.message}\nFix: ${err.fix}` }
+      return { isError: true, result: undefined, text: `${err.code}: ${err.message}${err.fix === undefined ? '' : `\nFix: ${err.fix}`}` }
     }
     throw err
   }
 }
 
 // biome-ignore lint: hook arguments are typed by the on() call sites
-const serve = async ($: any, e: any, next: any): Promise<any> => {
+export const serve = async ($: any, e: any, next: any): Promise<any> => {
   const def = TOOLS.find(d => `mcp__factory__${d.name}` === e.tool)
-  return def ? invoke(def, await makeCtx($), e) : next(e)
+  if (!def) return next(e)
+  const { tool: _tool, ...input } = e
+  return invoke(def, await makeCtx($), input)
 }
 
 export const register: Register = on => {
