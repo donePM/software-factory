@@ -21,7 +21,8 @@ export interface Tracker {
   prReady(pr: number): Promise<void>
   prComment(pr: number, body: string): Promise<void>
   approvePr(pr: number, body: string): Promise<void>
-  merge(pr: number, subject: string): Promise<void>
+  // sha: GitHub refuses the merge when the PR head is not this commit.
+  merge(pr: number, subject: string, sha: string): Promise<void>
   ensureLabels(labels: Label[]): Promise<void>
   applyStandard(apply: boolean): Promise<StandardCheck[]>
 }

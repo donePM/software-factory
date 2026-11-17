@@ -1,0 +1,22 @@
+---
+name: merge
+description: Merge the PR of an approved factory job. This call is your approval for the merge.
+argument-hint: <issue-or-pr-number>
+disable-model-invocation: true
+---
+Plugin root: `${CLAUDE_PLUGIN_ROOT}`
+Number: $ARGUMENTS
+
+Use plain words. The user may not be a developer.
+
+1. Say in one sentence: "This call is your approval: the factory will sync the branch, run the gate and merge the PR."
+2. Never call the tool `mcp__factory__merge` in this session. The gate can run a long time.
+   - Spawn the agent `factory:merger` with `run_in_background: true`.
+   - Give it only the job path and the number: `<root>/.factory/jobs/<issue>` and `<number>`. Use the repo root as `<root>`. If the number is a PR, ask the user for the issue number, or use the issue named by the PR.
+3. Stay available while it runs. Answer questions from the user.
+4. When the notification comes, report the result in simple words:
+   - Success: the PR is merged, the issue is done, and the cleanup report lists what was removed and what was kept.
+   - Error: give the error text and its `Fix` line.
+     - `sync-conflict`: the branch conflicts with the base branch. The job is now `needs-human`. Resolve the conflict, then run `/factory:merge` again.
+     - `gate-failed`: the gate is red after the sync. Nothing was merged. Fix the failures first.
+     - `head-mismatch`, `gate-not-green`: the branch changed during the merge. Run `/factory:merge` again.

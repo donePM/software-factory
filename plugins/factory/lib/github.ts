@@ -111,7 +111,9 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
     },
     async findPr(branch) {
       const rows = await json<RawPr[]>(['pr', 'list', '-R', repo, '--head', branch, '--state', 'all', '--json', PR_FIELDS])
-      return rows[0] ? toPr(rows[0]) : null
+      // A reused branch can have old closed PRs: take the open one, else the newest.
+      const row = rows.find(r => r.state === 'OPEN') ?? rows[0]
+      return row ? toPr(row) : null
     },
     async openPr(branch, base, title, body, labels) {
       const url = await gh([
@@ -132,8 +134,8 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
     async approvePr(pr, body) {
       await gh(['pr', 'review', String(pr), '-R', repo, '--approve', '--body-file', '-'], body)
     },
-    async merge(pr, subject) {
-      await gh(['pr', 'merge', String(pr), '-R', repo, '--merge', '--subject', subject])
+    async merge(pr, subject, sha) {
+      await gh(['pr', 'merge', String(pr), '-R', repo, '--merge', '--subject', subject, '--match-head-commit', sha])
     },
     async ensureLabels(labels: Label[]) {
       for (const l of labels) {

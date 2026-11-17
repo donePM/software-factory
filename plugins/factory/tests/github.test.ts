@@ -166,8 +166,17 @@ test('findPr returns the first match or null', async () => {
 
 test('merge passes the subject', async () => {
   const ctx = spyCtx(writes)
-  await githubTracker(ctx, 'a/b').merge(9, 'feat: x (#9)')
-  expect(ctx.calls[0]).toEqual(['gh', 'pr', 'merge', '9', '-R', 'a/b', '--merge', '--subject', 'feat: x (#9)'])
+  await githubTracker(ctx, 'a/b').merge(9, 'feat: x (#9)', 'f'.repeat(40))
+  expect(ctx.calls[0]).toEqual(['gh', 'pr', 'merge', '9', '-R', 'a/b', '--merge', '--subject', 'feat: x (#9)', '--match-head-commit', 'f'.repeat(40)])
+})
+
+test('findPr prefers an open PR over a newer closed one', async () => {
+  const mk = (number: number, state: string) => ({ number, state, isDraft: false, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: '' })
+  const rows = [mk(11, 'CLOSED'), mk(9, 'OPEN'), mk(8, 'MERGED')]
+  const ctx = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: JSON.stringify(rows) } }])
+  expect((await githubTracker(ctx, 'a/b').findPr('factory/5'))?.number).toBe(9)
+  const none = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: JSON.stringify([mk(11, 'CLOSED'), mk(8, 'MERGED')]) } }])
+  expect((await githubTracker(none, 'a/b').findPr('factory/5'))?.number).toBe(11)
 })
 
 test('ensureLabels forces each label', async () => {

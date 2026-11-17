@@ -255,7 +255,7 @@ function checkSpec(spec: string): string {
 }
 
 // The ticket is the authority; job.md is a cache an agent can edit. Refuse when it differs.
-async function verifyJob(ctx: Ctx, t: Tracker, ticket: Ticket, job: Job): Promise<void> {
+export async function verifyJob(ctx: Ctx, t: Tracker, ticket: Ticket, job: Job): Promise<void> {
   const differs = (key: string): FactoryError => new FactoryError('bad-job', `job.md differs from the ticket: ${key}`, 'Run job_sync after you remove job.md, or restore the file.')
   if (job.baseBranch !== (await loadConfig(ctx)).baseBranch) throw differs('Base branch')
   const comment = findMarked(ticket.comments, 'intake', await t.login())

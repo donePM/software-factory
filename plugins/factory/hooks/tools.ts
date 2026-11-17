@@ -8,6 +8,7 @@ import { gateJob } from '../lib/gatejob.ts'
 import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
 import { STATUS, stateOf } from '../lib/labels.ts'
 import { githubTracker, repoFromUrl } from '../lib/github.ts'
+import { approve, merge } from '../lib/merge.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
 import type { Tracker } from '../lib/tracker.ts'
@@ -28,6 +29,20 @@ function issueOf(input: { issue?: unknown }): number {
   }
   return n
 }
+
+const numberTool = (name: string, description: string, run: (ctx: Ctx, t: Tracker, n: number) => Promise<unknown>): ToolDef => ({
+  name,
+  description,
+  inputSchema: { type: 'object', properties: { number: { type: 'integer', minimum: 1 } }, required: ['number'], additionalProperties: false },
+  handler: async (ctx, input) => {
+    const n = input.number
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1) {
+      throw new FactoryError('bad-input', `number must be a positive integer, got ${JSON.stringify(n)}`)
+    }
+    const t = githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url))
+    return run(ctx, t, n)
+  },
+})
 
 const issueTool = (name: string, description: string, run: (ctx: Ctx, t: Tracker, n: number) => Promise<unknown>): ToolDef => ({
   name,
@@ -96,6 +111,12 @@ export const TOOLS: ToolDef[] = [
     const r = await jobSync(ctx, t, n)
     return { ...r, jobDir: r.job.jobDir, worktree: r.job.worktree }
   }),
+  numberTool('approve', 'Record the human approval of a job. Takes the issue or the PR number. Changes no label.', approve),
+  numberTool(
+    'merge',
+    'Merge the PR of an approved job: sync with the base branch, run the gate, approve, merge, set done, clean up. Runs up to 600 s per gate step: only factory:merger calls it.',
+    merge,
+  ),
   {
     name: 'cleanup',
     description:
