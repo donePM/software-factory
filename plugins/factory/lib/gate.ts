@@ -23,6 +23,21 @@ const STEP_TIMEOUT_MS = 600000
 const ROUND = /^(round-[1-9][0-9]*|merge|setup)$/
 const RUNNER_FILE = /(^|\/)(Makefile|GNUmakefile|makefile|\.npmrc)$|\.mk$/
 
+// Ignored files that can change what the steps run, and ignored protected paths.
+const isRunnerFile = (path: string, protectedPaths: string[]): boolean => RUNNER_FILE.test(path) || protectedPaths.includes(path)
+
+// Lists dirty entries and ignored runner files. Needs a clean committed tree: pushed content must be what the gate ran.
+async function dirtyTree(ctx: Ctx, wt: string, protectedPaths: string[]): Promise<string[]> {
+  const entries = (out: string): string[] => out.split('\0').filter(e => e !== '')
+  const dirty = entries(await git(ctx, wt, ['status', '--porcelain', '-z', '--untracked-files=all'])).map(e => e.slice(3))
+  const ignored = entries(await git(ctx, wt, ['status', '--porcelain', '-z', '--ignored', '--untracked-files=all']))
+    .filter(e => e.startsWith('!! '))
+    .map(e => e.slice(3))
+    .filter(f => isRunnerFile(f, protectedPaths))
+    .map(f => `${f} (ignored)`)
+  return [...dirty, ...ignored]
+}
+
 const rank = (n: StepName): number => {
   const i = ORDER.indexOf(n)
   return i < 0 ? ORDER.length : i
@@ -133,8 +148,10 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
 
   const commits: GateResult['commits'] = []
   let prot: string[] = []
+  let dirty: string[] = []
   let runnerFiles: string[] = []
   if (base !== undefined) {
+    dirty = await dirtyTree(ctx, wt, cfg.protectedPaths)
     const log = await git(ctx, wt, ['log', '--first-parent', '--no-merges', '--format=%H%x00%B%x1e', `${base}..HEAD`])
     for (const rec of log.split('\x1e')) {
       const [sha, msg = ''] = rec.replace(/^\n/, '').split('\0')
@@ -150,7 +167,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   const changedScripts = [...new Set([...(await scriptsChanged(ctx, wt, ds, read)), ...runnerFiles])]
 
   const red = steps.filter(s => s.exitCode !== 0)
-  const verdict = red.length + commits.length + prot.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null ? 'FAIL' : 'PASS'
+  const verdict = red.length + commits.length + prot.length + dirty.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null ? 'FAIL' : 'PASS'
 
   const lines: string[] = [`VERDICT: ${verdict}`, '', '## Summary', '']
   lines.push(`${steps.length - red.length} of ${steps.length} steps passed. Round: ${input.round}.`, '')
@@ -163,6 +180,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   }
   if (titleProblem !== null) lines.push('', '## PR title', `- ${titleProblem}`)
   if (prot.length > 0) lines.push('', '## Protected paths', ...prot.map(p => `- ${p}`))
+  if (dirty.length > 0) lines.push('', '## Working tree', ...dirty.map(d => `- ${d}`))
   if (missingStacks.length > 0) lines.push('', '## Stacks not detected', ...missingStacks.map(m => `- ${m}`))
   if (steps.length === 0) lines.push('', '## No steps', '- No step ran.')
   if (changedScripts.length > 0) lines.push('', '## Scripts changed', ...changedScripts.map(p => `- ${p}`))

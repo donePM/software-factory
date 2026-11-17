@@ -250,3 +250,38 @@ test('runGate rejects a round that is not a round name', async () => {
     await expect(runGate(ctx, { worktree: WT, round })).rejects.toMatchObject({ code: 'bad-round' })
   }
 })
+
+const STATUS = git('status', '--porcelain', '-z', '--untracked-files=all')
+const STATUS_IGNORED = git('status', '--porcelain', '-z', '--ignored', '--untracked-files=all')
+
+test('gate fails on an uncommitted change in the worktree', async () => {
+  const ctx = make({ replies: [{ argv: STATUS, result: { stdout: ' M src/a.ts\0' } }, ...baseReplies()] })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
+  expect(r.verdict).toBe('FAIL')
+  expect(r.report).toContain('## Working tree')
+  expect(r.report).toContain('src/a.ts')
+})
+
+test('gate fails on an untracked file in the worktree', async () => {
+  const ctx = make({ replies: [{ argv: STATUS, result: { stdout: '?? new.ts\0' } }, ...baseReplies()] })
+  expect((await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })).verdict).toBe('FAIL')
+})
+
+for (const f of ['.npmrc', 'sub/.npmrc', 'Makefile', 'GNUmakefile', 'makefile', 'rules.mk', '.factory/config.json']) {
+  test(`gate fails on an ignored ${f}`, async () => {
+    const ctx = make({ replies: [{ argv: STATUS_IGNORED, result: { stdout: `!! ${f}\0` } }, ...baseReplies()] })
+    const r = await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
+    expect(r.verdict).toBe('FAIL')
+    expect(r.report).toContain(f)
+  })
+}
+
+test('gate passes with an ignored node_modules file', async () => {
+  const ctx = make({ replies: [{ argv: STATUS_IGNORED, result: { stdout: '!! node_modules/a/index.js\0!! dist/x.js\0' } }, ...baseReplies()] })
+  expect((await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })).verdict).toBe('PASS')
+})
+
+test('the clean-tree check needs a base: a setup run in the main checkout skips it', async () => {
+  const ctx = make({ replies: [{ argv: STATUS, result: { stdout: ' M x\0' } }] })
+  expect((await runGate(ctx, { worktree: WT, round: 'setup' })).verdict).toBe('PASS')
+})

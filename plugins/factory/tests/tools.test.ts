@@ -62,6 +62,7 @@ function jobCtx(files: Record<string, string>, replies: Reply[] = []): ReturnTyp
       { argv: ['git', '-C', WT7, 'ls-files'] },
       { argv: ['git', '-C', WT7, 'log'] },
       { argv: ['git', '-C', WT7, 'diff'] },
+      { argv: ['git', '-C', WT7, 'status'] },
     ],
   })
 }
