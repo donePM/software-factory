@@ -100,6 +100,7 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   const recorded = pr.reviewDecision === 'APPROVED' || findMarked((await t.get(issue)).comments, 'approval', login) !== undefined
   if (!recorded) await record(t, issue, pr)
 
+  if (pr.isDraft) await t.prReady(pr.number) // GitHub does not merge a draft
   await t.merge(pr.number, `${pr.title} (#${pr.number})`, sha)
   if ((await t.prState(pr.number)).state !== 'MERGED') {
     throw new FactoryError('merge-failed', `PR #${pr.number} is not merged`, 'Check the PR on GitHub, then merge again.')

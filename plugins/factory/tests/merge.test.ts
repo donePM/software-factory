@@ -69,7 +69,9 @@ function tracker(o: Opts = {}) {
     },
     prState: async () => pr(),
     approvePr: async (_pr: number, body: string) => { reviews.push(body) },
+    prReady: async (p: number) => { log.push(`ready ${p}`) },
     merge: async (p: number, subject: string, sha: string) => {
+      log.push(`merge ${p}`)
       merges.push({ pr: p, subject, sha })
       if (!o.noMerge) merged = true
     },
@@ -285,6 +287,19 @@ test('merge does not close an issue that GitHub already closed', async () => {
   const { ctx, t } = setup({ closed: true })
   await merge(ctx, t, 7)
   expect(t.log).not.toContain('close done')
+})
+
+test('merge readies a draft PR before the merge', async () => {
+  const { ctx, t } = setup({ labels: ['factory:needs-human'], pr: { isDraft: true } })
+  await merge(ctx, t, 7)
+  expect(t.log.indexOf('ready 9')).toBeGreaterThan(-1)
+  expect(t.log.indexOf('ready 9')).toBeLessThan(t.log.indexOf('merge 9'))
+})
+
+test('merge does not ready a PR that is not a draft', async () => {
+  const { ctx, t } = setup()
+  await merge(ctx, t, 7)
+  expect(t.log).not.toContain('ready 9')
 })
 
 test('merge from needs-human is allowed', async () => {

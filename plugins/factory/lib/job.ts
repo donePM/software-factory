@@ -338,8 +338,9 @@ const done = (job: Job, state: State, extra: Partial<AdvanceResult> = {}): Advan
 
 async function startRound(ctx: Ctx, t: Tracker, job: Job): Promise<AdvanceResult> {
   const intake = await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')
-  await writeJob(ctx, job)
+  // The comment first: job.md must not be ahead of the ticket when the upsert fails.
   await t.upsertComment(job.issue, 'intake', intakeComment(job, intake))
+  await writeJob(ctx, job)
   await rmrf(ctx, `${job.jobDir}/decision.md`) // a new round needs a new decision
   await mkdirp(ctx, roundOf(job))
   await t.setState(job.issue, 'build')
@@ -439,8 +440,9 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   await t.upsertComment(n, `round-${job.round}`, await roundSummary(ctx, job, roundDir))
   await t.upsertComment(n, 'decision', await ctx.fs.read(`${job.jobDir}/decision.md`))
   if ((await t.prState(job.pr)).headRefName !== job.branch) throw new FactoryError('bad-pr', `PR #${job.pr} is not on ${job.branch}`, 'Run job_sync.')
-  if (to === 'approved') await t.prReady(job.pr)
-  else await t.prComment(job.pr, decision.question ?? '')
+  // Both ways the PR leaves draft: GitHub does not merge a draft, and a human may merge an escalated job.
+  await t.prReady(job.pr)
+  if (to === 'needs-human') await t.prComment(job.pr, decision.question ?? '')
   await t.setState(n, to)
   return done(job, to)
 }

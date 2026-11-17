@@ -323,6 +323,7 @@ test('escalate sets needs-human and asks on the PR', async () => {
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'needs-human' })
   expect(r.state).toBe('needs-human')
   expect(t.prComments).toEqual(['Public API?'])
+  expect(t.log).toContain('ready 12') // a draft PR cannot merge, and the human may merge an escalated job
   expect(t.comments.map(c => c.name)).toEqual(['round-1', 'decision'])
   expect(t.states).toEqual(['needs-human'])
 })
