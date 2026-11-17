@@ -6,6 +6,7 @@ const good: Reply[] = [
   { argv: ['git', '--version'], result: { stdout: 'git version 2.50.0' } },
   { argv: ['gh', '--version'], result: { stdout: 'gh version 2.80.0' } },
   { argv: ['gh', 'auth', 'status'], result: { stdout: 'Logged in to github.com account octo\n- Token scopes: \'gist\', \'read:org\', \'repo\'' } },
+  { argv: ['git', '-C', '/repo', 'ls-files'], result: { stdout: 'README.md' } },
   { argv: ['git', 'remote', 'get-url', 'origin'], result: { stdout: 'https://github.com/a/b.git' } },
 ]
 

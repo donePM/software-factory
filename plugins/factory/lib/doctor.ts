@@ -27,8 +27,8 @@ async function stackChecks(ctx: Ctx, stacks: StackRef[]): Promise<Check[]> {
   let found
   try {
     found = await detectAll(ctx, ctx.root)
-  } catch {
-    return [] // No file list: the stack checks wait until git works.
+  } catch (e) {
+    return [{ check: 'stacks', ok: false, detail: `stack detection failed: ${(e as Error).message}`, fix: 'Run the factory inside a git repository.' }]
   }
   const out: Check[] = []
   const seen = new Set<string>()

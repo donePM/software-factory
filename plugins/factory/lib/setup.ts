@@ -33,7 +33,8 @@ async function defaultBranch(ctx: Ctx): Promise<string> {
 }
 
 export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
-  const stacks: Config['stacks'] = (await detectAll(ctx, ctx.root).catch(() => [])).map(d => ({ id: d.stack, path: d.path }))
+  const stacks: Config['stacks'] = (await detectAll(ctx, ctx.root).catch(() => [])) // doctor reports a failed detection
+    .map(d => ({ id: d.stack, path: d.path }))
   const checks = await doctor(ctx, stacks)
   const empty = { created: false, migrated: [], standard: [], labels: 0, gitignore: false }
   if (checks.some(c => !c.ok)) {

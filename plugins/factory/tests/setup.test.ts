@@ -14,6 +14,7 @@ const replies = (head = 'refs/remotes/origin/main'): Reply[] => [
   { argv: ['gh', '--version'], result: { stdout: 'gh version 2' } },
   { argv: ['gh', 'auth', 'status'], result: { stdout: "Logged in to github.com account octo\n- Token scopes: 'repo'" } },
   { argv: ['git', 'remote', 'get-url', 'origin'], result: { stdout: 'https://github.com/a/b.git' } },
+  { argv: ['git', '-C', '/repo', 'ls-files'], result: { stdout: 'README.md' } },
   { argv: ['git', 'symbolic-ref', 'refs/remotes/origin/HEAD'], result: { stdout: head } },
   { argv: ['gh', 'api', 'repos/a/b'], result: { stdout: repoJson } },
   { argv: ['gh', 'label', 'create'] },

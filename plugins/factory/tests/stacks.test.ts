@@ -166,3 +166,34 @@ test('setup writes the detected stacks into a new config', async () => {
     { id: 'claude-plugin', path: '.' },
   ])
 })
+
+test('default steps run in the given repo, not in ctx.root', async () => {
+  const ctx = fakeCtx({ root: '/repo' })
+  const steps = await resolveSteps(ctx, '/other', none, [], [det(P)])
+  expect(steps.map(s => s.cwd)).toEqual(['/other', '/other', '/other'])
+})
+
+test('equal commands from different stacks at one path run once in another repo', async () => {
+  const read = async (rel: string) => (rel === 'Makefile' ? 'lint:\n' : null)
+  const steps = await resolveSteps(fakeCtx(), '/other', read, [], [det('.', 'marketplace', ['claude']), det('.', 'plugin', ['claude'])])
+  expect(steps.filter(s => s.name === 'lint').map(s => [s.argv, s.cwd])).toEqual([[['make', 'lint'], '/other']])
+  const plain = await resolveSteps(fakeCtx(), '/other', none, [], [det('.', 'marketplace', ['claude']), det('.', 'plugin', ['claude'])])
+  expect(plain.filter(s => s.name === 'lint')).toHaveLength(1)
+})
+
+const noLs = base.filter(r => r.argv[1] !== '-C')
+
+test('doctor reports a failed stack detection', async () => {
+  const checks = await doctor(fakeCtx({ replies: noLs }), [])
+  const c = checks.find(x => x.check === 'stacks')!
+  expect(c.ok).toBe(false)
+  expect(c.fix).toContain('git repository')
+})
+
+test('setup stops when stack detection fails', async () => {
+  const ctx = fakeCtx({ replies: noLs })
+  const r = await setup(ctx, { apply: true })
+  expect(r.checks.find(c => c.check === 'stacks')!.ok).toBe(false)
+  expect(r.created).toBe(false)
+  expect(Object.keys(ctx.files)).toEqual([])
+})

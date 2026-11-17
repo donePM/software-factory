@@ -42,7 +42,8 @@ export async function resolveSteps(
     const stack = STACKS.find(s => s.id === d.stack)
     if (!stack) continue
     const ref = refs.find(r => r.id === d.stack && r.path === d.path)
-    const own = await stack.steps(ctx, read, d)
+    // Default steps carry paths in argv, so they run at the repo root like every source's cwd base.
+    const own = (await stack.steps(ctx, read, d)).map(s => ({ ...s, cwd: repo }))
     const names = own.map(s => s.name)
     for (const n of STEP_ORDER) if (ref?.steps?.[n] !== undefined && !names.includes(n)) names.push(n)
     const make = await read(at(d.path, 'Makefile'))
