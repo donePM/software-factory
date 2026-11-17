@@ -10,7 +10,8 @@ export type StepResult = Step & { exitCode: number; ms: number; skipped?: string
 export type GateResult = {
   verdict: 'PASS' | 'FAIL'
   steps: StepResult[]
-  commits: { sha: string; problem: string }[]
+  // Only the commits that break Conventional Commits. Empty means all commits pass.
+  badCommits: { sha: string; problem: string }[]
   title?: string
   protected: string[]
   scriptsChanged: string[]
@@ -151,7 +152,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
     outputs.push(`### ${s.name} (${s.stack}): ${s.argv.join(' ')}\nexit ${r.exitCode}\n${r.stdout}${r.stderr}`)
   }
 
-  const commits: GateResult['commits'] = []
+  const commits: GateResult['badCommits'] = []
   let prot: string[] = []
   let dirty: string[] = []
   let runnerFiles: string[] = []
@@ -201,7 +202,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   await ctx.fs.write(`${dir}/checks.md`, report)
   await ctx.fs.write(logPath, `${old ?? ''}## Attempt ${k}\n\n${outputs.join('\n\n')}\n\n`)
 
-  const result: GateResult = { verdict, steps, commits, protected: prot, scriptsChanged: changedScripts, missingStacks, report }
+  const result: GateResult = { verdict, steps, badCommits: commits, protected: prot, scriptsChanged: changedScripts, missingStacks, report }
   if (titleProblem !== null) result.title = titleProblem
   return result
 }

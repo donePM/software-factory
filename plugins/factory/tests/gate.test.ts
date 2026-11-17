@@ -99,8 +99,16 @@ test('gate fails on a bad commit message', async () => {
   const ctx = make({ replies: [{ argv: git('log'), result: { stdout: 'abc\0bad message\n\x1e' } }, ...baseReplies()] })
   const r = await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
   expect(r.verdict).toBe('FAIL')
-  expect(r.commits[0]?.sha).toBe('abc')
-  expect(r.commits[0]?.problem).toContain('type')
+  expect(r.badCommits[0]?.sha).toBe('abc')
+  expect(r.badCommits[0]?.problem).toContain('type')
+})
+
+// Seen in the E2E: gate-runner read an empty `commits` list as "no commits to check".
+test('gate names its commit list after the bad commits only', async () => {
+  const ctx = make({ replies: baseReplies() })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
+  expect('commits' in r).toBe(false)
+  expect(r.badCommits).toEqual([])
 })
 
 test('gate fails on a bad PR title', async () => {
@@ -160,7 +168,7 @@ test('gate ignores commits synced from base', async () => {
   const ctx = make({ replies: baseReplies() })
   const r = await runGate(ctx, { worktree: WT, round: 'setup', base: BASE })
   expect(ctx.calls).toContainEqual(git('log', '--first-parent', '--no-merges', '--format=%H%x00%B%x1e', `${BASE}..HEAD`))
-  expect(r.commits).toEqual([])
+  expect(r.badCommits).toEqual([])
 })
 
 test('gate takes scripts from the base, not the branch', async () => {
