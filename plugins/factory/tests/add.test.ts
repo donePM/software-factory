@@ -8,11 +8,12 @@ import { fakeCtx } from './support/host.ts'
 
 type Made = { title: string; body: string; labels: string[] }
 
-function fakeTracker(start = 10): { t: Tracker; made: Made[] } {
+function fakeTracker(start = 10, failAt = 0): { t: Tracker; made: Made[] } {
   const made: Made[] = []
   const t = {
     repo: 'a/b',
     createIssue: async (title: string, body: string, labels: string[]) => {
+      if (made.length + 1 === failAt) throw new Error('gh issue: HTTP 502')
       made.push({ title, body, labels })
       return start + made.length - 1
     },
@@ -58,6 +59,20 @@ test('issue_create validates everything before creating anything', async () => {
   await bad(issueCreate(t, { items: [{ title: 'a', body: '' }, { title: 'b', body: '', dependsOn: [0] }] }))
   await bad(issueCreate(t, { items: [{ title: 'a', body: '', dependsOn: [1.5] }] }))
   expect(made).toEqual([])
+})
+
+test('issue_create names the created issues when a later item fails', async () => {
+  const { t } = fakeTracker(10, 3)
+  const items = [{ title: 'One', body: 'a' }, { title: 'Two', body: 'b' }, { title: 'Three', body: 'c' }, { title: 'Four', body: 'd' }]
+  let err: unknown
+  try { await issueCreate(t, { items }) } catch (e) { err = e }
+  expect(err).toMatchObject({ code: 'partial-create' })
+  const msg = (err as Error).message
+  expect(msg).toContain('#10 https://github.com/a/b/issues/10')
+  expect(msg).toContain('#11 https://github.com/a/b/issues/11')
+  expect(msg).toContain('item 3 "Three"')
+  expect(msg).toContain('HTTP 502')
+  expect((err as { fix?: string }).fix).toContain('item 3')
 })
 
 test('issue_search passes the query to gh', async () => {

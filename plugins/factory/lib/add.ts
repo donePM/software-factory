@@ -39,11 +39,20 @@ export async function issueCreate(t: Tracker, input: AddInput): Promise<Created[
   const labels = input.park === true ? [] : ['factory']
   const numbers = new Map<string, number>()
   const out: Created[] = []
-  for (const it of input.items) {
+  for (const [i, it] of input.items.entries()) {
     const deps = [...(it.dependsOn ?? []), ...(it.dependsOnRefs ?? []).map(r => numbers.get(r)!)]
     const lines = deps.map(n => `Depends on #${n}`)
     const body = lines.length === 0 ? it.body : `${it.body}\n\n${lines.join('\n')}`
-    const number = await t.createIssue(it.title.trim(), body, labels)
+    let number: number
+    try {
+      number = await t.createIssue(it.title.trim(), body, labels)
+    } catch (e) {
+      // Name what exists, so a retry does not create the same issues again.
+      const made = out.length === 0 ? 'none' : out.map(c => `#${c.number} ${c.url}`).join(', ')
+      const why = e instanceof Error ? e.message : String(e)
+      throw new FactoryError('partial-create', `item ${i + 1} "${it.title.trim()}" failed: ${why}. Created before it: ${made}.`,
+        `Do not create the created issues again. Retry from item ${i + 1} only.`)
+    }
     if (it.ref !== undefined) numbers.set(it.ref, number)
     out.push({ ref: it.ref ?? '', number, url: `https://github.com/${t.repo}/issues/${number}` })
   }
