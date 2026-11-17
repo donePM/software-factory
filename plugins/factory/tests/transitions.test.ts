@@ -23,11 +23,30 @@ test('review can loop back to build', () => {
   expect(canTransition('review', 'build')).toBe(true)
 })
 
-test('approved goes only to docs, done or needs-human', () => {
+test('approved goes only to done or needs-human', () => {
   expect(canTransition('approved', 'build')).toBe(false)
   expect(canTransition('approved', 'needs-human')).toBe(true)
   expect(canTransition('approved', 'done')).toBe(true)
-  expect(TRANSITIONS.approved).toEqual(['docs', 'done', 'needs-human'])
+  expect(TRANSITIONS.approved).toEqual(['done', 'needs-human'])
+})
+
+test('transitions without a forward path are rejected', () => {
+  expect(canTransition('fastlane', 'spec')).toBe(false)
+  expect(canTransition('approved', 'docs')).toBe(false)
+  expect(canTransition('needs-design', 'spec')).toBe(false)
+  expect(TRANSITIONS['needs-design']).toEqual([])
+  expect(TRANSITIONS.fastlane).toEqual(['needs-human'])
+  expect(TRANSITIONS.docs).toEqual(['needs-human'])
+})
+
+test('the table matches the bootstrap plan', () => {
+  expect(TRANSITIONS.backlog).toEqual(['intake'])
+  expect(TRANSITIONS.intake).toEqual(['spec', 'needs-info', 'rejected', 'needs-human'])
+  expect(TRANSITIONS['needs-info']).toEqual(['intake'])
+  expect(TRANSITIONS.spec).toEqual(['build', 'needs-human'])
+  expect(TRANSITIONS.build).toEqual(['review', 'needs-human'])
+  expect(TRANSITIONS.review).toEqual(['build', 'approved', 'needs-human'])
+  expect(TRANSITIONS['needs-human']).toEqual(['build', 'done', 'needs-human'])
 })
 
 test('needs-human may stay needs-human', () => {
