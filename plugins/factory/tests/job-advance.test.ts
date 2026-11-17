@@ -146,14 +146,16 @@ for (const [author, mention] of [['dependabot[bot]', true], ['a-b1', true], ['x 
   })
 }
 
-test('rejected closes the issue as not planned and removes the job folder', async () => {
+test('rejected closes the issue as not planned and cleans up worktree, branch and job folder', async () => {
   const text = 'DECISION: REJECT\nRISK: low\nSURFACES: none\nLANE: regular\n\n## Reason\nOut of scope.\n'
   const { ctx, t } = setup('intake', {}, { [`${DIR}/intake.md`]: text })
   await jobAdvance(ctx, t, { issue: 7, to: 'rejected' })
   expect(t.comments.find(c => c.name === 'intake')!.body).toContain('## Reason')
   expect(t.log).toContain('close rejected')
   expect(ctx.calls).toContainEqual(['rm', '-rf', DIR])
-  expect(ctx.calls.filter(c => c.includes('worktree'))).toEqual([])
+  expect(ctx.calls).toContainEqual(['git', 'worktree', 'remove', WT])
+  expect(ctx.calls).toContainEqual(['git', 'branch', '-d', 'factory/7'])
+  expect(ctx.calls.some(c => c[0] === 'gh' || c.includes('-D'))).toBe(false)
   expect(ctx.calls.filter(c => c[0] === 'rm')).toHaveLength(1)
 })
 

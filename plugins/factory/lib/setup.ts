@@ -1,3 +1,4 @@
+import { type CleanupReport, sweep } from './cleanup.ts'
 import { type Check, doctor } from './doctor.ts'
 import { type Config, configPath, defaultConfig, loadConfig, migrate, planMigration, writeConfig } from './config.ts'
 import { detectAll } from './stacks/index.ts'
@@ -16,6 +17,7 @@ export type SetupReport = {
   standard: StandardCheck[]
   labels: number
   gitignore: boolean
+  sweep: CleanupReport
   next: string[]
 }
 
@@ -36,7 +38,7 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   const stacks: Config['stacks'] = (await detectAll(ctx, ctx.root).catch(() => [])) // doctor reports a failed detection
     .map(d => ({ id: d.stack, path: d.path }))
   const checks = await doctor(ctx, stacks)
-  const empty = { created: false, migrated: [], standard: [], labels: 0, gitignore: false }
+  const empty = { created: false, migrated: [], standard: [], labels: 0, gitignore: false, sweep: { removed: [], kept: [] } }
   if (checks.some(c => !c.ok)) {
     const fixes = checks.filter(c => !c.ok).map(c => c.fix ?? c.detail)
     return { checks, config: defaultConfig('', 'main', stacks), ...empty, next: fixes }
@@ -72,6 +74,7 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   const labels = labelSet(cfg)
   await tracker.ensureLabels(labels)
   const standard = await tracker.applyStandard(true)
+  const swept = await sweep(ctx, tracker)
   const next = ['Commit .factory/config.json (chore(factory): add factory config).', 'Run the gate once on the base branch.']
-  return { checks, config: cfg, created, migrated, standard, labels: labels.length, gitignore: true, next }
+  return { checks, config: cfg, created, migrated, standard, labels: labels.length, gitignore: true, sweep: swept, next }
 }

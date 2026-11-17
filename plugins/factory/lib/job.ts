@@ -1,5 +1,6 @@
 import { loadConfig } from './config.ts'
 import { checkMessage, typeOf } from './conventional.ts'
+import { cleanupJob } from './cleanup.ts'
 import { FactoryError, must, mkdirp, rmrf } from './exec.ts'
 import { gateJob } from './gatejob.ts'
 import { parseIntake } from './intake.ts'
@@ -319,7 +320,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
     await upsertIntake()(text)
     await t.setState(n, 'rejected')
     await t.close(n, 'rejected')
-    await rmrf(ctx, dir) // the worktree stays for cleanupJob
+    await cleanupJob(ctx, t, n, 'rejected')
     return result('rejected')
   }
 

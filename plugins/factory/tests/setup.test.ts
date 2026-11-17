@@ -18,6 +18,7 @@ const replies = (head = 'refs/remotes/origin/main'): Reply[] => [
   { argv: ['git', 'symbolic-ref', 'refs/remotes/origin/HEAD'], result: { stdout: head } },
   { argv: ['gh', 'api', 'repos/a/b'], result: { stdout: repoJson } },
   { argv: ['gh', 'label', 'create'] },
+  { argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } },
   { argv: ['gh', 'api', '-X', 'PATCH'] },
 ]
 const labelCreates = (calls: string[][]) => calls.filter(c => c[1] === 'label' && c[2] === 'create').length
@@ -109,4 +110,18 @@ test('preview migrates in memory only and lists the planned migrations', async (
   expect(r.migrated).toEqual(['zero-to-one'])
   expect(r.config.version).toBe(1)
   expect(ctx.files).toEqual(before)
+})
+
+test('apply sweeps finished jobs and reports it', async () => {
+  const ctx = fakeCtx({ replies: replies(), files: { '/repo/.factory/jobs/setup/checks.md': 'x' } })
+  const r = await setup(ctx, { apply: true })
+  expect(r.sweep).toEqual({ removed: [], kept: [] })
+  expect(ctx.calls).toContainEqual(['git', 'worktree', 'prune'])
+})
+
+test('preview does not sweep', async () => {
+  const ctx = fakeCtx({ replies: replies() })
+  const r = await setup(ctx, { apply: false })
+  expect(r.sweep).toEqual({ removed: [], kept: [] })
+  expect(ctx.calls.some(c => c.includes('prune'))).toBe(false)
 })

@@ -1,11 +1,12 @@
 import type { Register } from 'claude-code'
 import { FactoryError } from '../lib/exec.ts'
+import { cleanupJob, sweep } from '../lib/cleanup.ts'
 import { loadConfig, migrate } from '../lib/config.ts'
 import { doctor } from '../lib/doctor.ts'
 import { runGate } from '../lib/gate.ts'
 import { gateJob } from '../lib/gatejob.ts'
 import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
-import { STATUS } from '../lib/labels.ts'
+import { STATUS, stateOf } from '../lib/labels.ts'
 import { githubTracker, repoFromUrl } from '../lib/github.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
@@ -95,6 +96,23 @@ export const TOOLS: ToolDef[] = [
     const r = await jobSync(ctx, t, n)
     return { ...r, jobDir: r.job.jobDir, worktree: r.job.worktree }
   }),
+  {
+    name: 'cleanup',
+    description:
+      'Remove the worktree, the merged branch and the job folder of a finished ticket. Keeps unsaved work and reports it. Without issue it sweeps every finished ticket.',
+    inputSchema: { type: 'object', properties: { issue: { type: 'integer', minimum: 1 } }, additionalProperties: false },
+    handler: async (ctx, input) => {
+      const t = githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url))
+      if (input.issue === undefined) return sweep(ctx, t)
+      const n = issueOf(input)
+      const ticket = await t.get(n)
+      const state = stateOf(ticket.labels)
+      if (ticket.state !== 'closed' && state !== 'done' && state !== 'rejected') {
+        throw new FactoryError('not-finished', `#${n} is not finished`, 'Clean up a ticket only after it is done or rejected.')
+      }
+      return cleanupJob(ctx, t, n, state === 'rejected' ? 'rejected' : 'done')
+    },
+  },
   {
     name: 'job_advance',
     description:
