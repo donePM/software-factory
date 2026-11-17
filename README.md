@@ -38,15 +38,45 @@ You can use it in two ways:
 
 ## Install
 
-```bash
-# in Claude Code
-/plugin marketplace add donePM/software-factory
-/plugin install factory@software-factory
-/plugin marketplace update software-factory   # later, to get new versions
+The factory is one Claude Code plugin. It brings the skills, the agents, the
+scripts, and the Factory pane. You do not copy files into your project. Only
+`.factory/` goes into your repo (its config is versioned; jobs and worktrees
+are ignored).
 
-# or test without installing
-claude --plugin-dir /path/to/software-factory/plugins/factory
+**Claude Code in the terminal**
+
+```bash
+/plugin install factory --marketplace donePM/software-factory
 ```
+
+Or from a shell: `claude plugin install factory --marketplace donePM/software-factory`.
+
+**Claude Desktop (Code tab)**
+
+1. Click **+** next to the prompt box, then **Plugins**.
+2. Click **Add marketplace** and enter `donePM/software-factory`.
+3. Click **Add plugin** for `factory`.
+
+The Factory pane also shows in the desktop app.
+
+**Set up your project**
+
+Open your project in Claude Code and run:
+
+```
+/factory:setup
+```
+
+It checks what you need (git, Node, the GitHub CLI, the tools of your stack),
+helps you install what is missing, connects GitHub, and writes `.factory/`.
+You can run it again at any time: it repairs what is missing and migrates an
+old config.
+
+**Updates** come through the marketplace:
+`/plugin marketplace update software-factory`.
+
+**Develop the plugin** without installing it:
+`claude --plugin-dir /path/to/software-factory/plugins/factory`.
 
 ## Guide 1: Feature factory
 
