@@ -67,6 +67,22 @@ test('serve answers an unexpected error with an error text', async () => {
   expect(r).toEqual({ isError: true, result: undefined, text: `internal: probe_error: gone\n${FIX}` })
 })
 
+test('a failed log write does not change the tool result', async () => {
+  const ctx = fakeCtx({ replies: [{ argv: ['git'], result: { stdout: 'x' } }] })
+  const write = ctx.fs.write
+  let failed = 0
+  ctx.fs.write = async (p, text) => {
+    if (!p.startsWith('/repo/.factory/logs/')) return write(p, text)
+    failed++
+    throw new Error('disk full')
+  }
+  const r = await invoke(def(async c => (await c.run(['git'])).stdout), ctx, {})
+  expect(r).toEqual({ result: 'x' })
+  const e = await invoke(def(async () => { throw new FactoryError('nope', 'it broke') }), ctx, {})
+  expect(e).toEqual({ isError: true, result: undefined, text: 'nope: it broke' })
+  expect(failed).toBeGreaterThan(0)
+})
+
 const SHA = 'a'.repeat(40)
 const HEAD = 'b'.repeat(40)
 const DIR = '/repo/.factory/jobs/7'

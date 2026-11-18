@@ -1,5 +1,6 @@
 import type { Register } from 'claude-code'
 import { FactoryError } from '../lib/exec.ts'
+import { openLog } from '../lib/calllog.ts'
 import { issueCreate, issueSearch } from '../lib/add.ts'
 import { cleanupJob, sweep } from '../lib/cleanup.ts'
 import { loadConfig, migrate } from '../lib/config.ts'
@@ -246,16 +247,21 @@ export async function makeCtx($: any): Promise<Ctx> {
 export type ToolOutcome = { result: string } | { isError: true; result: undefined; text: string }
 
 export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<ToolOutcome> {
+  const log = await openLog(ctx, def.name)
   try {
-    const out = await def.handler(ctx, input)
+    const out = await def.handler(log.ctx, input)
     // Text results (status) go out as they are, not as a quoted JSON string.
-    return { result: typeof out === 'string' ? out : JSON.stringify(out, null, 2) }
+    const result = typeof out === 'string' ? out : JSON.stringify(out, null, 2)
+    await log.end('ok')
+    return { result }
   } catch (err) {
     if (err instanceof FactoryError) {
+      await log.end(`error ${err.code}`)
       return { isError: true, result: undefined, text: `${err.code}: ${err.message}${err.fix === undefined ? '' : `\nFix: ${err.fix}`}` }
     }
     // A rethrown error skips the hook, so the engine returns an empty result.
     const message = err instanceof Error ? err.message : String(err)
+    await log.end(`exception ${message}`)
     return { isError: true, result: undefined, text: `internal: ${def.name}: ${message}\nFix: Read the error, fix the cause, then call the tool again.` }
   }
 }
