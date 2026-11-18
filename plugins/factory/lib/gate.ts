@@ -95,6 +95,8 @@ function scriptsOf(text: string | null): string | null {
   }
 }
 
+export const countAttempts = (log: string | null): number => log?.split('\n').filter(l => l.startsWith('## Attempt ')).length ?? 0
+
 async function readIfExists(ctx: Ctx, p: string): Promise<string | null> {
   return (await ctx.fs.exists(p)) ? ctx.fs.read(p) : null
 }
@@ -198,7 +200,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   const dir = input.jobDir === undefined ? `${ctx.root}/.factory/gate/setup` : `${input.jobDir}/${input.round}`
   const logPath = `${dir}/checks.log`
   const old = await readIfExists(ctx, logPath)
-  const k = 1 + (old?.split('\n').filter(l => l.startsWith('## Attempt ')).length ?? 0)
+  const k = 1 + countAttempts(old)
   await ctx.fs.write(`${dir}/checks.md`, report)
   await ctx.fs.write(logPath, `${old ?? ''}## Attempt ${k}\n\n${outputs.join('\n\n')}\n\n`)
 

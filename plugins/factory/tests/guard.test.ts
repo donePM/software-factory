@@ -59,3 +59,35 @@ test('other Bash calls pass', async ($, on) => {
   await $.tool.call({ tool: 'Bash', command: 'gh pr list', agentId: 'o1' })
   expect(ran).toEqual(['git status', 'gh pr list', 'gh pr list'])
 })
+
+// A fake core for command.run, so that the mod hook can call next(e).
+function runHost(on: On): string[] {
+  on('command.run', async () => ({ text: 'ran' }) as never)
+  return host(on)
+}
+
+test('the main session cannot run Bash after /factory:run', async ($, on) => {
+  const ran = runHost(on)
+  await $.command.run({ command: 'factory:run' } as never)
+  const r = await $.tool.call({ tool: 'Bash', command: 'ls' })
+  expect((r as { deny?: string }).deny).toContain('main session')
+  expect(ran).toEqual([])
+})
+
+test('the main session runs Bash when no factory run started', async ($, on) => {
+  const ran = runHost(on)
+  await $.tool.call({ tool: 'Bash', command: 'ls' })
+  await $.command.run({ command: 'factory:status' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'git status' })
+  expect(ran).toEqual(['ls', 'git status'])
+})
+
+test('subagents keep Bash during a factory run', async ($, on) => {
+  const ran = runHost(on)
+  await $.command.run({ command: 'factory:run' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'git status', agentId: 'f1' })
+  await $.tool.call({ tool: 'Bash', command: 'ls', agentId: 'o1' })
+  const r = await $.tool.call({ tool: 'Bash', command: 'gh pr list', agentId: 'f1' })
+  expect((r as { deny?: string }).deny).toContain('no GitHub access')
+  expect(ran).toEqual(['git status', 'ls'])
+})

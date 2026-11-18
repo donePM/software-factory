@@ -2,6 +2,7 @@ import { loadConfig } from './config.ts'
 import { checkMessage, typeOf } from './conventional.ts'
 import { type CleanupReport, cleanupJob } from './cleanup.ts'
 import { FactoryError, must, mkdirp, rmrf } from './exec.ts'
+import { countAttempts } from './gate.ts'
 import { gateJob, passedAt } from './gatejob.ts'
 import { parseIntake } from './intake.ts'
 import { parseDecision, parseReview } from './review.ts'
@@ -94,7 +95,7 @@ export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
   return job
 }
 
-export type SyncResult = { job: Job; state: State | null; rebuilt: string[]; specChanged: boolean }
+export type SyncResult = { job: Job; state: State | null; rebuilt: string[]; specChanged: boolean; attempts: number }
 
 // intake.md is the text before the first "## Job" or "## Route" heading.
 function beforeSections(text: string): string {
@@ -184,7 +185,8 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
     await writeJob(ctx, job)
     specChanged = true
   }
-  return { job, state, rebuilt, specChanged }
+  const attempts = countAttempts(await readIfExists(ctx, `${roundOf(job)}/checks.log`))
+  return { job, state, rebuilt, specChanged, attempts }
 }
 
 export type AdvanceInput = { issue: number; to: State; reason?: string; from?: State }

@@ -272,3 +272,26 @@ test('decision example ESCALATE parses with a question', () => {
   expect(d.summary).not.toBe('')
   expect(d.question ?? '').not.toBe('')
 })
+
+// The test kit cannot read files. These lines stand word for word in pipeline.md: the rule, the gate-runner start, and "gate-runner finished".
+const PIPELINE_GATE = [
+  '- Never run Bash. Never read code. Never write or change job files. Read job',
+  '  files only to make a decision: first lines and the `## Summary` of a',
+  '  blocked `build.md`.',
+  '- Before each start of `factory:gate-runner`, remember `attempts` from the',
+  '  last `job_sync` result. It is the number of gate attempts in the round.',
+  '### gate-runner finished',
+  'Take `attempts` from the `job_sync` of this event. It did not grow over the',
+  'remembered count, or the agent reports a tool error: the gate did not run. Call',
+  '`job_advance` with `to: needs-human` and the reason',
+  '`gate did not run in round <N>: <error text>`. Else read the first line of',
+  '`<roundDir>/checks.md`.',
+  '- `VERDICT: FAIL`: look at `attempts`.',
+].join('\n')
+
+test('pipeline takes the attempt count from job_sync', () => {
+  const gate = PIPELINE_GATE.slice(PIPELINE_GATE.indexOf('### gate-runner finished'))
+  expect(gate).toContain('`attempts`')
+  expect(gate).toContain('`job_sync`')
+  expect(PIPELINE_GATE).not.toMatch(/## Attempt/)
+})

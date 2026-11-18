@@ -371,3 +371,11 @@ test('a third-party round marker does not raise Round, and a trailing suffix doe
   const r = await jobSync(ctx, tracker(T(['factory:review'], cs)), 7)
   expect(r.job.round).toBe(0)
 })
+
+test('jobSync returns the gate attempt count of the current round', async () => {
+  const log = '## Attempt 1\n\nout\n\n## Attempt 2\n\nout\n\n'
+  const two = fakeCtx({ files: { ...restoreFiles(), [WT]: '', [`${DIR}/round-2/checks.log`]: log, [`${DIR}/round-1/checks.log`]: '## Attempt 1\n' } })
+  expect((await jobSync(two, tracker(T(['factory:build'])), 7)).attempts).toBe(2)
+  const none = fakeCtx({ files: { ...restoreFiles(), [WT]: '' } })
+  expect((await jobSync(none, tracker(T(['factory:build'])), 7)).attempts).toBe(0)
+})

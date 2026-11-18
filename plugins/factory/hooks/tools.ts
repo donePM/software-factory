@@ -10,7 +10,7 @@ import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
 import { STATUS, stateOf } from '../lib/labels.ts'
 import { githubTracker, repoFromUrl } from '../lib/github.ts'
 import { approve, merge } from '../lib/merge.ts'
-import { guardBash } from '../lib/guard.ts'
+import { guardBash, guardMain } from '../lib/guard.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
 import { statusFor } from '../lib/status.ts'
@@ -267,6 +267,12 @@ export const serve = async ($: any, e: any, next: any): Promise<any> => {
 }
 
 export const register: Register = on => {
+  // shortcut: the flag stays until the session ends, upgrade when an end event of the run exists.
+  let running = false
+  on('command.run', { command: 'factory:run' }, async (_$, e, next) => {
+    running = true
+    return next(e)
+  })
   on('session.start', async ($, e, next) => {
     for (const t of TOOLS) {
       await $.tool.register({ name: t.name, description: t.description, inputSchema: t.inputSchema, isDeferred: false })
@@ -276,7 +282,7 @@ export const register: Register = on => {
   // Serve only at tool.run: it fires after the permission check, so tools like merge stay gated.
   on('tool.run', serve)
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    const deny = await guardBash(e.agentId, e.command, () => $.agent.list())
+    const deny = guardMain(e.agentId, running) ?? (await guardBash(e.agentId, e.command, () => $.agent.list()))
     return deny === null ? next(e) : { deny }
   })
 }
