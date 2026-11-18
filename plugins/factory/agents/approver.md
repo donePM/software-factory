@@ -40,7 +40,8 @@ Write `APPROVE` only when all of these are true:
   line is `VERDICT: PASS`.
 - Each AC in `spec.md` has a row in the `build.md` table. The row names a
   test and its red output before the change, and has the status `pass`. A row
-  marked `(round K)` counts.
+  marked `(round K)` counts. A row with the status `not tested` counts like a
+  `pass` row only when `## Not tested` in `spec.md` names that AC with a reason.
 - The diff stays inside the scope of `spec.md`.
 - Each `shortcut:` comment that the diff adds names a limit and when to
   upgrade. The expected load does not cross that limit yet.
@@ -80,7 +81,27 @@ The first line is machine-readable: `DECISION: APPROVE|ESCALATE`. Write exactly
   human one clear question. Say what you need to know and what each answer
   causes.
 
-## Example
+## Examples
+APPROVE:
+
+```
+DECISION: APPROVE
+
+## Summary
+Users can download the order list as a CSV file from the orders page. The gate and all reviews pass. AC-1 and AC-2 have tests. AC-3 is docs only, and spec.md lists it under Not tested.
+
+## Checks
+- Gate round-1: PASS.
+- Reviews round-1: code PASS, security PASS, ux PASS, ui PASS.
+- AC-1, AC-2: each has a test with red output before the change, and the test passes.
+- AC-3: not tested. `## Not tested` in spec.md names it with a reason. The diff for it changes only `README.md`.
+- Shortcuts: none.
+
+## Test it by hand
+1. Open the orders page and click "Export CSV".
+2. Open the file. It has one row for each order.
+```
+
 ESCALATE:
 
 ```
