@@ -48,6 +48,33 @@ test('queue orders by priority then age', async () => {
   expect(nums(q.next)).toEqual([4, 3])
 })
 
+test('queue puts bugs before other tickets, also before a higher priority', async () => {
+  const q = await queue(ctx, tracker([T(1, ['priority:critical']), T(3, ['type:fix', 'priority:low'])]), cfg)
+  expect(nums(q.ready)).toEqual([3, 1])
+})
+
+test('queue treats the bug label as a bug', async () => {
+  const q = await queue(ctx, tracker([T(1), T(2, ['bug'])]), cfg)
+  expect(nums(q.ready)).toEqual([2, 1])
+})
+
+test('queue keeps priority and age order in each group', async () => {
+  const q = await queue(ctx, tracker([
+    T(1, ['bug', 'priority:low']), T(2, ['type:fix', 'priority:high']), T(3, ['bug', 'priority:high'], { createdAt: '2025-12-01T00:00:00Z' }),
+    T(4, ['priority:critical']), T(5, ['priority:low']), T(6),
+  ]), cfg)
+  expect(nums(q.ready)).toEqual([3, 2, 1, 4, 6, 5])
+})
+
+test('queue gives slots to bugs first and keeps blocked bugs blocked', async () => {
+  const q = await queue(ctx, tracker([
+    T(1, ['priority:critical']), T(2, ['bug']), T(3, ['type:fix'], { body: 'Depends on #9' }), T(4, ['bug', 'priority:low']),
+  ]), cfg)
+  expect(nums(q.next)).toEqual([2, 4])
+  expect(nums(q.ready)).toEqual([2, 4, 1])
+  expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[3, [9]]])
+})
+
 test('queue counts a ticket without priority as medium', async () => {
   const q = await queue(ctx, tracker([T(1, ['priority:low']), T(2), T(3, ['priority:high'])]), cfg)
   expect(nums(q.ready)).toEqual([3, 2, 1])
