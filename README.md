@@ -6,7 +6,7 @@ git worktree, a gate, up to four parallel reviewers, and an approver. Then it
 waits for you: the factory opens the PR, and you approve and merge it.
 
 ```mermaid
-flowchart LR
+flowchart TD
   I(["GitHub issue<br/>label factory"]) --> IN["intake"]
   IN -- "NEEDS-INFO" --> Q(["author answers"])
   Q --> IN
@@ -73,6 +73,8 @@ it again at any time: it repairs what is missing and migrates an old config.
 
 **Develop the plugin** without installing it:
 `claude --plugin-dir /path/to/software-factory/plugins/factory`.
+Use `--plugin-dir` only in a throwaway repo, never on this repo while the factory runs.
+See [Developing the factory with the factory](#developing-the-factory-with-the-factory).
 
 ## Commands
 
@@ -145,7 +147,7 @@ The running factory loads a frozen copy at `~/.factory-host/software-factory`, n
 
 ```bash
 # One-time setup: freeze a tagged copy and install from it
-git clone --branch v0.9.0 <path-to-this-repo> ~/.factory-host/software-factory
+git clone --branch v<x> <path-to-this-repo> ~/.factory-host/software-factory
 claude plugin marketplace remove software-factory
 claude plugin marketplace add ~/.factory-host/software-factory
 claude plugin install factory@software-factory
@@ -157,7 +159,7 @@ claude plugin marketplace update software-factory
 claude plugin update factory@software-factory
 ```
 
-The gate tests the branch in its worktree with `claude plugin test <wt>/plugins/factory`.
+The gate tests the branch in its worktree with `claude plugin test <wt>/plugins/factory`, where `<wt>` is the job worktree `.factory/worktrees/<n>`.
 This loads the branch code in that process only.
 
 ## Plugin layout
