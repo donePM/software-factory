@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "tracker": {
+    "type": "github",
+    "url": "git@github.com:donePM/software-factory"
+  },
+  "concurrency": 1,
+  "maxRounds": 3,
+  "baseBranch": "main",
+  "merge": {
+    "method": "merge"
+  },
+  "repo": {
+    "standard": 1
+  },
+  "stacks": [
+    {
+      "id": "claude-plugin",
+      "path": "plugins/factory"
+    },
+    {
+      "id": "claude-plugin",
+      "path": "."
+    }
+  ],
+  "routing": {
+    "low": {
+      "code": "haiku"
+    },
+    "medium": {
+      "code": "sonnet"
+    },
+    "high": {
+      "code": "sonnet",
+      "security": "opus"
+    }
+  },
+  "surfaces": {
+    "ui": {
+      "ux": "sonnet",
+      "ui": "haiku"
+    },
+    "ui-new": {
+      "ux": "sonnet",
+      "ui": "sonnet"
+    },
+    "security": {
+      "security": "opus"
+    },
+    "api": {
+      "security": "opus"
+    }
+  },
+  "priorities": {
+    "critical": "priority:critical",
+    "high": "priority:high",
+    "medium": "priority:medium",
+    "low": "priority:low"
+  },
+  "protectedPaths": [".factory/config.json", ".factory/checks.local.ts"]
+}
