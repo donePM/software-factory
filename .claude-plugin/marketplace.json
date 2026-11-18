@@ -8,7 +8,7 @@
     {
       "name": "factory",
       "source": "./plugins/factory",
-      "description": "Visual software factory: spec → build → 4 reviews → approve → merge."
+      "description": "Software factory: issue to spec, build, 4 reviews, human approval, merge."
     }
   ]
 }

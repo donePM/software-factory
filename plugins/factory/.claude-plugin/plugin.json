@@ -1,8 +1,8 @@
 {
   "name": "factory",
   "displayName": "Software Factory",
-  "version": "0.5.0",
-  "description": "A small, visual software factory: spec-writer, builder, four parallel reviewers, and an approver, orchestrated through markdown files. Each job builds in an isolated git worktree from origin/main.",
+  "version": "0.9.0",
+  "description": "Tool-based software factory: GitHub issues become specs, builds, four parallel reviews, and human-approved merges.",
   "author": {
     "name": "Robert Kummer"
   },
@@ -10,7 +10,7 @@
     "workflow",
     "agents",
     "review",
-    "worktree"
-  ],
-  "types": "./types/index.d.ts"
+    "worktree",
+    "github"
+  ]
 }

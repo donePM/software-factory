@@ -1,304 +1,164 @@
 # Software Factory
 
-A small, visual software factory for Claude Code. It is a plugin. Each feature
-goes through a spec writer, a builder, four parallel reviewers, and an approver.
-All coordination happens through markdown files, and the builder works in its own
-git worktree. The worktree starts from local `main` when it contains `origin/main`
-(so it sees earlier, unpushed factory merges), else from `origin/main`.
+A software factory for Claude Code. It is a plugin. Your GitHub issues are the
+work queue. Each issue goes through intake, a spec writer, a builder in its own
+git worktree, a gate, up to four parallel reviewers, and an approver. Then it
+waits for you: the factory opens the PR, and you approve and merge it.
 
 ```mermaid
 flowchart LR
-  F(["Feature or ticket"]) --> S["spec-writer<br/><i>opus</i>"]
-  S --> B["builder<br/><i>opus · own worktree</i>"]
-  B --> SEC & UX & UI & CODE
-  subgraph R ["4 reviewers in parallel · wait for all"]
-    SEC["security<br/><i>opus</i>"]
-    UX["ux<br/><i>sonnet</i>"]
-    UI["ui<br/><i>sonnet</i>"]
-    CODE["code<br/><i>sonnet</i>"]
-  end
-  SEC & UX & UI & CODE --> G{"all PASS?"}
-  G -- "CHANGES<br/>max 2 fix rounds" --> B
-  G -- "PASS" --> A["approver<br/><i>opus</i>"]
-  A -- "APPROVE" --> M(["merge into main<br/>local, never pushed"])
+  I(["GitHub issue<br/>label factory"]) --> IN["intake"]
+  IN -- "NEEDS-INFO" --> Q(["author answers"])
+  Q --> IN
+  IN -- "ACCEPT" --> S["spec-writer"]
+  S --> B["builder<br/><i>own worktree</i>"]
+  B --> G{"gate"}
+  G -- "FAIL" --> B
+  G -- "PASS<br/>push, open PR" --> R["routed reviewers<br/>code · security · ux · ui<br/><i>wait for all</i>"]
+  R -- "CHANGES<br/>max 3 rounds" --> B
+  R -- "PASS" --> A["approver"]
+  A -- "APPROVE" --> AP(["approved"])
   A -- "ESCALATE" --> H(["needs human"])
-  H -- "Approve" --> M
-  H -- "Rework + note" --> B
+  AP --> M(["/factory:merge<br/>you approve"])
 
   classDef human fill:#fff4e0,stroke:#b45309,color:#1c1c1a
   classDef done fill:#e3f4ea,stroke:#1f8a4c,color:#1c1c1a
-  class H human
+  class H,Q human
   class M done
 ```
 
-You can use it in two ways:
-1. **Feature factory**: you give one feature or ticket at a time.
-2. **Product loop**: you give one idea. A planner cuts it into slices, and the
-   factory builds slice after slice.
+The state of each job is one `factory:<state>` label on its issue. Everything
+the factory needs to continue is in the issue (marker comments) and the PR. The
+local job files are only a working copy.
+
+The session that runs the factory stays free: every agent runs in the
+background, and you can ask questions at any time. Up to `concurrency` jobs
+(default 4) run at the same time.
 
 ## Install
 
-```bash
-# in Claude Code
-/plugin marketplace add donePM/software-factory
-/plugin install factory@software-factory
-/plugin marketplace update software-factory   # later, to get new versions
+The factory is one Claude Code plugin. It brings the skills, the agents, and
+the tools. You do not copy files into your project. Only `.factory/` goes into
+your repo (its config is versioned; jobs and worktrees are ignored).
 
-# or test without installing
-claude --plugin-dir /path/to/software-factory/plugins/factory
+**Claude Code in the terminal**
+
+```bash
+/plugin install factory --marketplace donePM/software-factory
 ```
 
-## Guide 1: Feature factory
+Or from a shell: `claude plugin install factory --marketplace donePM/software-factory`.
 
-Use this in an existing git repo. You decide each feature.
+**Claude Desktop (Code tab)**
 
-1. **Set up once.** Run `/factory:init`. It adds a `.gitignore` block, creates
-   `factory/`, and fills `factory/project.md` with the stack, the test command,
-   and the ticket sources. Check that file and fix it if needed.
-2. **Build one feature.** Run `/factory:run <feature>`, for example
-   `/factory:run add a --json flag to the export command`. The job goes through
-   the loop above. At the end you get the job id, its stage, and a short summary:
-   what was done, and how to test it by hand.
-3. **Or queue work.** Write items into `factory/backlog.md` as `- [ ] <feature>`.
-   `/factory:next` runs the first open item.
-4. **Use tickets.** `/factory:run #42`, `/factory:run PROJ-123`, or an issue URL
-   fetches the ticket into the job. `/factory:import github <query>` or
-   `/factory:import jira <jql>` adds open tickets to the backlog.
-5. **Answer the factory.** A job with `ESCALATE` stops at `needs-human`. Read its
-   `decision.md`, then run `/factory:approve <job-id>` to merge it, or
-   `/factory:rework <job-id> <note>` to send it back to the builder. Or use the
-   **Approve** and **Rework** buttons on the dashboard (see below).
-6. **Check the whole repo.** `/factory:audit [part]` writes `factory/audit.md`
-   with Must / Should / Nice findings. You pick the numbers to queue.
-7. **Review a pull request.** `/factory:review <pr>` runs the 4 reviewers on a
-   GitHub PR and writes a comment you can post (see below).
-8. **Watch and steer it.** `/factory:dashboard` starts the server in the
-   background and opens http://localhost:8000/dashboard.html (see Dashboard).
-9. **Push.** Merges stay local in `main`. The factory never pushes. Review the
-   merges, then push them yourself.
+1. Click **+** next to the prompt box, then **Plugins**.
+2. Click **Add marketplace** and enter `donePM/software-factory`.
+3. Click **Add plugin** for `factory`.
+
+**Set up your project**
+
+Open your project in Claude Code and run:
+
+```
+/factory:setup
+```
+
+It checks what you need (git, the GitHub CLI and its login, the `origin`
+remote, the tools of your stack), helps you install what is missing, creates
+the labels and `.factory/config.json`, and runs a first gate check. You can run
+it again at any time: it repairs what is missing and migrates an old config.
+
+**Updates** come through the marketplace:
+`/plugin marketplace update software-factory`.
+
+**Develop the plugin** without installing it:
+`claude --plugin-dir /path/to/software-factory/plugins/factory`.
+
+## Commands
 
 | Command | |
 |---|---|
-| `/factory:init` | Adds the `.gitignore` block, creates `factory/`, and detects the stack and test command |
-| `/factory:run <feature>` | Runs one feature through the loop |
-| `/factory:next` | Runs the first unchecked item in `factory/backlog.md` |
-| `/factory:approve <job-id>` | Merges a `needs-human` job |
-| `/factory:rework <job-id> <note>` | Sends a job back to the builder with your feedback |
-| `/factory:audit [part]` | Audits the repo into `factory/audit.md`, then queues the findings you pick |
-| `/factory:import <github\|jira> <query>` | Adds open GitHub issues or Jira tickets to the backlog |
-| `/factory:review <pr>` | Reviews a GitHub pull request with the 4 reviewers, read-only |
-| `/factory:product <idea>` | Plans a product, asks you to confirm, then runs the loop (Guide 2) |
-| `/factory:loop [max]` | Runs the backlog until it is empty, up to 4 jobs at a time (Guide 2) |
-| `/factory:stop` | Stops the running loop after its running jobs: no new jobs start |
-| `/factory:dashboard [stop]` | Starts the dashboard server in the background with the inbox runner, or stops it |
-| `/factory:inbox` | Handles the requests from the dashboard buttons |
+| `/factory:setup` | Checks the tools, writes the config and the labels, runs a first gate check |
+| `/factory:add <todos> [--park]` | Turns free text into issues, one per piece of work, after you confirm. `--park` leaves off the `factory` label |
+| `/factory:run [n]` | Starts the ready issues (or only issue `n`) and drives them to `approved` or `needs-human` |
+| `/factory:status` | Shows free slots and the ready, running, and waiting jobs, with the next command for each |
+| `/factory:approve <n>` | Records your approval on the PR (or as a comment when it is your own PR). Merges nothing |
+| `/factory:merge <n>` | Syncs the branch with the base branch, runs the gate, and merges the PR. This call is your approval |
 
-### Dashboard
+`<n>` is the issue number. `approve` and `merge` also take the PR number.
 
-`/factory:dashboard` is the easy way: it checks the runner permissions (see
-below), then runs `factory/dashboard --bg --run -- --permission-mode acceptEdits --add-dir <plugin root>`.
-`/factory:init` and `/factory:loop` start it too. `/factory:dashboard stop`
-stops it.
+## How a job runs
 
-`factory/dashboard [--bg | --stop] [--port 8000]` serves `factory/` on 127.0.0.1
-only and opens the dashboard in the browser. It runs `python3 factory/serve.py --open`,
-so both take the same arguments. `--bg` runs the server detached (pid in
-`factory/inbox/server.info`, output in `factory/inbox/serve.log`), or opens the
-one that runs. `--stop` stops it.
-The dashboard shows:
-- a **Backlog** column with the open items of `factory/backlog.md`. **Start**
-  sends an item to the spec writer.
-- one column per step, and a **Needs human** lane on top. A card there shows the
-  screenshots of the UI reviewer (click to enlarge), and **Approve** (merge) and
-  **Rework…** (send a note to the builder) buttons.
-- a drawer with every job file, when you click a card.
-- a **Stop loop** button in the header while a factory runner is live. It works
-  like `/factory:stop`: no new job starts, and the running jobs finish.
-- an **Agents** column with the subagents of every Claude session in the repo:
-  type, task, model, effort, run time, context fill (tokens of the last
-  response against the model's window), and the last tool call of a running
-  agent. A headless runner (`claude -p /factory:inbox`) shows as a `headless`
-  row too, so its own work between agents (merges, board updates) is visible. A running agent whose session stopped
-  writing for 2 minutes shows as lost (`?`). Ended and lost agents hide after
-  5 minutes.
+1. **Add work.** `/factory:add add a --json flag to the export command` creates
+   an issue with the `factory` label. Or add the label to an existing issue.
+   `Depends on #12` in the issue body holds it back until #12 is closed.
+2. **Run.** `/factory:run` takes the ready issues by priority and age. The
+   intake agent accepts the issue, asks the author questions (`needs-info`),
+   or rejects it. The spec writer writes testable acceptance criteria. The
+   builder works test-first in `.factory/worktrees/<n>` on branch `factory/<n>`.
+3. **Gate.** The gate runs the stack steps (format, lint, types, tests), the
+   Conventional Commits check, and the protected-path check. It always uses
+   the config and plugin of your main checkout, never the branch. On a green
+   gate the factory pushes the branch and opens the PR.
+4. **Review.** The reviewers that fit the change (code, security, ux, ui) run
+   in parallel. A `CHANGES` verdict starts a new build round, up to
+   `maxRounds` (default 3).
+5. **Decide.** The approver recommends `APPROVE` (the PR becomes ready) or
+   `ESCALATE` (`needs-human`, with a question on the PR). It never merges.
+6. **Merge.** Review the PR, then run `/factory:merge <n>`. After the merge the
+   factory sets the issue to `done` and removes the worktree, the merged
+   branch, and the job folder. Work that is not saved stays and is reported.
 
-The buttons don't run anything themselves. They write one request per click
-into `factory/inbox/`. A running `/factory:loop` picks them up after each step,
-and also waits for them when only `needs-human` jobs are left. Or let the server
-start a headless session for new requests:
+A `needs-human` job without a PR continues when you answer in the issue and run
+`/factory:run <n>`. A merge conflict also sets `needs-human`: resolve it, then
+run `/factory:merge <n>` again.
 
-```bash
-factory/dashboard --run -- --permission-mode acceptEdits --add-dir <plugin root>
-```
-
-Arguments after `--` go to `claude -p "/factory:inbox"`. The headless session
-can't answer permission prompts, so allow the git, test, and file commands in
-your settings first. It also can't read files outside the repo without
-`--add-dir`: the plugin root holds `orchestrator.md` and the agents. The server starts no session while another factory command
-runs (`runner` in `board.json`), and logs to `factory/inbox/runner.log`.
-Approve, Rework, and Start show only when something takes the click: the server
-runs with `--run`, or a factory session is live. Else the dashboard hides them,
-and requests that are still queued wait for `/factory:inbox`.
-`python3 -m http.server` in `factory/` still works, read-only and without buttons.
-
-### Factory pane in Claude Code
-
-The plugin brings a mod. In a repo with `factory/board.json`, each Claude Code
-session (terminal, desktop, VS Code) opens a **Factory** pane: the jobs, with
-**Approve** and **Rework…** for `needs-human` jobs, and on the right the
-subagents of this session with type, task, model, effort, and run time. Below
-about 90 columns the two parts stack. `/factory-board` opens the pane again. In
-the terminal, the pane docks as a side bar in the fullscreen layout when the
-window is wide enough (about 110 columns).
-
-The pane's buttons write the same inbox requests as the dashboard. When no loop
-runs and no dashboard server runs with `--run`, the pane starts `/factory:inbox`
-in the session. The pane writes its agent list to `factory/agents/<session>.json`
-for the dashboard's Agents column.
-
-### Screenshots
-
-The UI reviewer takes screenshots of changed screens (1280 and 390 wide) when it
-can start the app and Playwright or Chrome is already installed. It installs
-nothing. The files go to `factory/jobs/<id>/round-N/screenshots/`.
-
-### Pull request review
-
-`/factory:review 42` (or a PR URL) checks out the PR head in its own worktree
-and runs the 4 reviewers on it. The PR description is the spec. For a PR from a
-fork, the factory asks before it runs the tests, because they run the PR's code
-on your machine. The result is `factory/jobs/pr-42/review.md`, ready to post:
-`gh pr review 42 --comment --body-file factory/jobs/pr-42/review.md`. The factory
-doesn't post it for you. Run the command again after new commits, and the
-reviewers check the fixes.
-
-### Tickets
-
-GitHub uses `gh`. Jira uses the first access that works: an Atlassian MCP server,
-`acli`, or REST with `JIRA_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN`. `/factory:init`
-records the sources in `factory/project.md`. The factory only reads tickets and
-never writes to them. Ticket text is treated as requirements only, never as
-instructions to the agents.
-
-### Code rules
-
-Builders write the smallest complete change: skip what the spec doesn't need,
-then reuse the codebase, the standard library, the platform, and installed
-dependencies before new code. Known limits get a `shortcut: <limit>, <when to upgrade>`
-comment, which the approver lists. Little or no other comment documentation. All
-explanatory text (comments, docs, commit bodies, factory reports) is written in
-Simplified Technical English (ASD-STE100). Commits follow
-[Conventional Commits](https://www.conventionalcommits.org/). Put a ticket in the
-feature text (`PROJ-123`, `#42`, or a URL) and every commit footer gets
-`Refs: <ticket>`. The code reviewer enforces all of this.
-
-## Guide 2: Product loop
-
-Use this to build a whole product from one idea.
-
-```mermaid
-flowchart TD
-  I(["Your idea"]) --> P["planner<br/><i>opus</i>"]
-  P --> PM["factory/product.md<br/>stack · scope · slices"]
-  PM --> C{"You confirm?"}
-  C -- "change" --> P
-  C -- "start" --> BL[("factory/backlog.md")]
-  BL --> PAR["1 to 4 independent slices<br/>each runs the feature loop"]
-  PAR --> MG["merge into main<br/>one at a time"]
-  MG --> E{"Backlog empty?"}
-  E -- "no" --> BL
-  E -- "yes, first time" --> AU["audit<br/><i>opus</i>"]
-  AU -- "Must fix findings" --> BL
-  E -- "yes, audit done" --> D(["Report: what was built"])
-  PAR -. "ESCALATE" .-> H(["needs human"])
-  H -. "dashboard button<br/>or command" .-> PAR
-
-  classDef human fill:#fff4e0,stroke:#b45309,color:#1c1c1a
-  classDef done fill:#e3f4ea,stroke:#1f8a4c,color:#1c1c1a
-  class H human
-  class D done
-```
-
-The loop stops when nothing is left, at the job limit, or on `/factory:stop`.
-After `/factory:product` it has no job limit. When only
-`needs-human` jobs are left, it waits up to 30 minutes for a dashboard button.
-
-1. **Make a repo.** The factory needs a git repo with at least one commit:
-
-   ```bash
-   mkdir my-app && cd my-app && git init
-   git commit --allow-empty -m "chore: init"
-   ```
-
-   Then start Claude Code there and run `/factory:init`.
-2. **Give the idea.** Run `/factory:product "<idea>"`, for example
-   `/factory:product "a CLI that tracks my reading list in a local file"`.
-   The idea goes to `factory/idea.md`. The planner writes `factory/product.md`:
-   goal, scope (In / Out), stack, allowed dependencies, architecture, and 3 to 20
-   slices. The planner cuts small slices that need few others, so more of
-   them can run at the same time. Slice 1 is a walking skeleton: the stack, a test runner, one passing
-   test, and the start command.
-3. **Confirm the plan.** The factory shows the plan and asks you. Say what to
-   change, and the planner plans again. Say start, and the slices go into
-   `factory/backlog.md`. This is the only human checkpoint before the build.
-4. **Let it run.** The loop runs one slice per job, with no job limit. It
-   runs 2 to 4 jobs at the same time when slices don't need each other (the
-   planner writes "Needs S<n>") and will not touch the same files. The
-   orchestrator decides how many. The walking skeleton always runs alone.
-   Merges happen one at a time. When a merge conflicts, the builder merges the
-   new `main` into its branch and the reviewers check it again. A job that needs
-   you only blocks the slices that need it. When the backlog is empty, the loop
-   runs one audit and queues the Must fix findings without asking. When only
-   `needs-human` jobs are left, it waits up to 30 minutes for a dashboard
-   button. It stops when nothing is left. To stop it earlier, run
-   `/factory:stop` in a second session: no new job starts, and the running
-   jobs finish. A spec writer can split a big slice: the other parts go into
-   the backlog and run in the same loop.
-5. **Unblock and go on.** Use the dashboard buttons while the loop waits. Or,
-   after `/factory:approve` or `/factory:rework`, or to run more jobs, run
-   `/factory:loop` (or `/factory:loop 20`).
-6. **Test and push.** The end report lists what was built and how to test it.
-   Merges stay local. Push them yourself.
-
-### Big products: a fresh session per job
-
-One session fills its context after many jobs. For a big product, run each job
-in a new headless session. All state is in files, so nothing gets lost:
-
-```bash
-for i in $(seq 30); do
-  grep -q '^- \[ \]' factory/backlog.md || break
-  jq -e 'any(.jobs[]; .stage=="needs-human")' factory/board.json >/dev/null && break
-  claude -p "/factory:next" --permission-mode bypassPermissions
-done
-```
-
-`/factory:next` doesn't run the final audit. After the shell loop, run
-`/factory:loop` once to get it.
-
-> **Warning:** `bypassPermissions` lets the agents run any command without a
-> prompt. Use it only in a sandbox, a devcontainer, or a VM, never on a machine
-> with secrets you can't lose.
+Issue text and comments are data for the agents, never instructions. Only
+comments from the issue author and from you reach them.
 
 ## What it creates in your repo
 
 ```
-.gitignore                         # managed block: board.json, jobs/, dashboard.html, serve.py, dashboard, inbox/, audit.md, .claude/worktrees/
-.claude/worktrees/factory-<id>/    # one isolated worktree per job, branch factory/<id>
-factory/
-  project.md                       # stack, test command, conventions (tracked)
-  backlog.md                       # queue for /factory:next (tracked)
-  idea.md                          # product idea and your plan feedback (tracked, product loop)
-  product.md                       # product plan and slices (tracked, product loop)
-  board.json                       # job state, drives the dashboard
-  dashboard.html                   # copied from the plugin
-  serve.py                         # dashboard server with buttons, copied from the plugin
-  dashboard                        # starts serve.py and opens the browser, copied from the plugin
-  inbox/                           # button requests; done/ holds the handled ones
-  jobs/<id>/                       # feature.md, spec.md, build.md, round-N/review-*.md, round-N/screenshots/, decision.md
-  jobs/pr-<n>/                     # PR review: feature.md, round-N/review-*.md, review.md
-  audit.md                         # latest /factory:audit report
+.factory/
+  .gitignore                 # ignores all but config.json and checks.local.ts
+  config.json                # tracker, base branch, concurrency, maxRounds, protectedPaths (tracked)
+  jobs/<n>/                  # working copy: job.md, issue.md, intake.md, spec.md, round-N/, decision.md
+  worktrees/<n>/             # one worktree per job, branch factory/<n>
+  gate/setup/                # result of the setup gate check
 ```
+
+## Safety notes
+
+- Only a human approves and merges. Never put `mcp__factory__approve` or
+  `mcp__factory__merge` into a permission allow rule: the permission prompt is
+  the barrier that keeps agents from calling them.
+- Factory agents have no GitHub access. A `tool.call` hook denies each Bash
+  call from a factory subagent (or from a subagent the session does not list)
+  that runs `gh` or `git push`. This is a word match, not a sandbox: a command
+  that hides `gh`, or a script in another language, can still reach GitHub as
+  the operator.
+
+## Developing the factory with the factory
+
+**Never work on this repo with `--plugin-dir plugins/factory` while the factory runs.**
+The running factory loads a frozen copy at `~/.factory-host/software-factory`, never the checkout it changes.
+
+```bash
+# One-time setup: freeze a tagged copy and install from it
+git clone --branch v0.9.0 <path-to-this-repo> ~/.factory-host/software-factory
+claude plugin marketplace remove software-factory
+claude plugin marketplace add ~/.factory-host/software-factory
+claude plugin install factory@software-factory
+
+# Update the running factory: only through a new tag
+git -C ~/.factory-host/software-factory fetch --tags
+git -C ~/.factory-host/software-factory checkout v<x>
+claude plugin marketplace update software-factory
+claude plugin update factory@software-factory
+```
+
+The gate tests the branch in its worktree with `claude plugin test <wt>/plugins/factory`.
+This loads the branch code in that process only.
 
 ## Plugin layout
 
@@ -306,11 +166,14 @@ factory/
 .claude-plugin/marketplace.json
 plugins/factory/
   .claude-plugin/plugin.json
-  orchestrator.md                  # the whole loop: edit this to change the factory
-  skills/{init,run,next,approve,rework,audit,import,review,product,loop,inbox,stop}/SKILL.md   # thin entry points into orchestrator.md
-  agents/*.md                      # one subagent per box (planner, spec-writer, builder, 4 reviewers, approver, auditor)
-  assets/                          # dashboard.html, serve.py, dashboard, backlog.md and project.md templates
+  pipeline.md                # the main session's event loop, read by /factory:run
+  skills/{setup,add,run,status,approve,merge}/SKILL.md
+  agents/*.md                # intake, spec-writer, builder, 4 reviewers, approver, gate-runner, merger
+  hooks/tools.ts             # registers the mcp__factory__* tools
+  lib/                       # tool logic, stacks, config migrations
+  tests/                     # claude plugin test plugins/factory
 ```
 
-`INITIAL_PROMPT.md` is the prompt this factory was built from. The lean rules
-(planner, builder, reviewers, auditor) are adapted from [ponytail](https://github.com/DietrichGebert/ponytail) (MIT).
+`INITIAL_PROMPT.md` is the prompt the first factory was built from. The lean
+rules (builder, spec-writer, reviewers, approver) are adapted from
+[ponytail](https://github.com/DietrichGebert/ponytail) (MIT).
