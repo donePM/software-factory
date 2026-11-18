@@ -1,9 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 import { checkMessage } from '../lib/conventional.ts'
 import { parseIntake } from '../lib/intake.ts'
+import { lastSection } from '../lib/jobfile.ts'
 import { parseDecision, parseReview } from '../lib/review.ts'
 
-// These examples also stand word for word in agents/intake.md, spec-writer.md and builder.md.
+// These examples also stand word for word in agents/intake.md, spec-writer.md and builder.md (the commit and the build.md example).
 const INTAKE_ACCEPT = [
   'DECISION: ACCEPT',
   'RISK: medium',
@@ -63,13 +64,14 @@ const SPEC_HEAD = [
   '## Acceptance criteria',
   'AC-1 `GET /orders.csv` returns status 200, type `text/csv`, and one row per order. Test: `tests/orders-export.test.ts` "returns one row per order".',
   'AC-2 The orders page shows an "Export CSV" button that links to `/orders.csv`. Test: `tests/orders-page.test.ts` "links to the CSV export".',
+  'AC-3 `README.md` has one line about the CSV export. Test: none, see Not tested.',
   '',
   '## Tests',
   '- `tests/orders-export.test.ts`: the status, the content type, and the rows.',
   '- `tests/orders-page.test.ts`: the button and its link.',
   '',
   '## Not tested',
-  '- `README.md`: one line about the export. This is docs only.',
+  '- AC-3 `README.md`: one line about the export. This is docs only.',
   '',
   '## Out of scope',
   '- Other formats (Excel, PDF), because the issue asks only for CSV.',
@@ -80,13 +82,39 @@ const SPEC_HEAD = [
   '- UI: one new button on an existing page. No new page.',
 ].join('\n')
 
+const BUILD_TABLE = [
+  'STATUS: DONE',
+  '',
+  '## Summary',
+  'Added the CSV export endpoint, the export button on the orders page, and one README line.',
+  '',
+  '| AC | Test | Red output before the change | Status |',
+  '|----|------|------------------------------|--------|',
+  '| AC-1 | `tests/orders-export.test.ts` "returns one row per order" | expected 200, got 404 | pass |',
+  '| AC-2 | `tests/orders-page.test.ts` "links to the CSV export" | no element with text "Export CSV" | pass |',
+  '| AC-3 | none (Not tested in spec.md) | none | not tested |',
+  '',
+  '## Commands',
+  '- `npm test`: 42 passed, 0 failed',
+  '',
+  '## Changes',
+  '- src/orders/export.ts: the CSV endpoint',
+  '- README.md: one line about the CSV export',
+  '',
+  '## Skipped',
+  '- nothing',
+  '',
+  '## Risks',
+  '- The export loads all orders into memory.',
+].join('\n')
+
 const BUILDER_COMMIT = [
   'feat(orders): add the CSV export endpoint',
   '',
   'Refs: #42',
 ].join('\n')
 
-// These examples also stand word for word in agents/code-reviewer.md and approver.md.
+// These examples also stand word for word in agents/code-reviewer.md and approver.md (APPROVE and ESCALATE).
 const REVIEW_CHANGES = [
   'VERDICT: CHANGES',
   '',
@@ -108,7 +136,7 @@ const REVIEW_PASS = [
   'VERDICT: PASS',
   '',
   '## Summary',
-  'The round-1 blocker and should are fixed. Each AC has a test that fails without the change.',
+  'The round-1 blocker and should are fixed. Each tested AC has a test that fails without the change.',
   '',
   '## Findings',
   '1. [nit] src/orders/export.ts:8: the name `tmp` does not say what it holds. Fix: rename it to `rows`.',
@@ -116,8 +144,27 @@ const REVIEW_PASS = [
   '## Checked',
   '- Round-1 finding 1: fixed. The test now asserts one row for each order.',
   '- Round-1 finding 2: fixed. One query loads the orders and the customers.',
+  '- AC-3: not tested. `## Not tested` in spec.md names it. The diff for it changes only docs (`README.md`).',
   '- Gate round-2: PASS.',
   '- Commits: 3 commits. All follow Conventional Commits and have `Refs: #42`.',
+].join('\n')
+
+const DECISION_APPROVE = [
+  'DECISION: APPROVE',
+  '',
+  '## Summary',
+  'Users can download the order list as a CSV file from the orders page. The gate and all reviews pass. AC-1 and AC-2 have tests. AC-3 is docs only, and spec.md lists it under Not tested.',
+  '',
+  '## Checks',
+  '- Gate round-1: PASS.',
+  '- Reviews round-1: code PASS, security PASS, ux PASS, ui PASS.',
+  '- AC-1, AC-2: each has a test with red output before the change, and the test passes.',
+  '- AC-3: not tested. `## Not tested` in spec.md names it with a reason. The diff for it changes only `README.md`.',
+  '- Shortcuts: none.',
+  '',
+  '## Test it by hand',
+  '1. Open the orders page and click "Export CSV".',
+  '2. Open the file. It has one row for each order.',
 ].join('\n')
 
 const DECISION_ESCALATE = [
@@ -160,6 +207,32 @@ test('spec example title is conventional', () => {
   expect(checkMessage(title)).toBeNull()
 })
 
+const NOT_TESTED = 'Test: none, see Not tested.'
+const acLines = (spec: string): string[] => spec.match(/^AC-\d+ .+$/gm) ?? []
+const acId = (line: string): string => /^AC-\d+/.exec(line)?.[0] ?? ''
+
+test('spec example lists each not-tested AC under Not tested', () => {
+  const notTested = (lastSection(SPEC_HEAD, 'Not tested') ?? '').split('\n')
+  const untested = acLines(SPEC_HEAD).filter(l => l.endsWith(NOT_TESTED))
+  expect(untested.map(acId)).toEqual(['AC-3'])
+  for (const l of untested) {
+    expect(notTested.some(n => new RegExp(`^- ${acId(l)} \`[^\`]+\`: .+\\. .+\\.$`).test(n))).toBe(true)
+  }
+  for (const l of acLines(SPEC_HEAD).filter(l => !l.endsWith(NOT_TESTED))) {
+    expect(l).toMatch(/ Test: `[^`]+` "[^"]+"\.$/)
+  }
+})
+
+test('builder example marks the not-tested AC', () => {
+  const rows = [...BUILD_TABLE.matchAll(/^\| (AC-\d+) \| (.+) \| (.+) \| (.+) \|$/gm)]
+  expect(rows.map(r => r[4])).toContain('not tested')
+  expect(rows.map(r => r[1])).toEqual(acLines(SPEC_HEAD).map(acId))
+  for (const r of rows) {
+    if (r[1] === 'AC-3') expect(r[0]).toBe('| AC-3 | none (Not tested in spec.md) | none | not tested |')
+    else expect(r[4]).toBe('pass')
+  }
+})
+
 test('builder example commit is conventional', () => {
   expect(checkMessage(BUILDER_COMMIT)).toBeNull()
   expect(BUILDER_COMMIT).toMatch(/\nRefs: #\d+$/)
@@ -179,6 +252,18 @@ test('review example PASS parses', () => {
   expect(r.verdict).toBe('PASS')
   expect(r.findings.some(f => f.severity !== 'nit')).toBe(false)
   for (const f of r.findings) expect(f.text).toMatch(FINDING)
+})
+
+test('review example PASS checks the not-tested AC', () => {
+  expect(parseReview(REVIEW_PASS).verdict).toBe('PASS')
+  const ac3 = (lastSection(REVIEW_PASS, 'Checked') ?? '').split('\n').find(l => l.startsWith('- AC-3: not tested'))
+  expect(ac3 ?? '').toContain('changes only docs')
+})
+
+test('decision example APPROVE accepts a not-tested AC', () => {
+  expect(parseDecision(DECISION_APPROVE).decision).toBe('APPROVE')
+  const ac3 = (lastSection(DECISION_APPROVE, 'Checks') ?? '').split('\n').find(l => l.startsWith('- AC-3: not tested'))
+  expect(ac3 ?? '').toContain('`## Not tested`')
 })
 
 test('decision example ESCALATE parses with a question', () => {
