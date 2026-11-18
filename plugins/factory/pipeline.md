@@ -165,7 +165,12 @@ Then call `status` and show its text. Tell the human to review the PR and run
 `/factory:merge <n>`. Do not merge.
 
 ### Errors
-- An agent finished without its output file: call `job_advance` with
+- An agent from the table, other than `factory:gate-runner`, finished
+  without its output file for the first time in this round: start the same
+  agent one more time, with the same spawn prompt. Remember the retry for
+  this job and step.
+  <!-- shortcut: the retry count is lost on a restart, upgrade when restarts cause loops -->
+- It finished without its output file again: call `job_advance` with
   `to: needs-human`. Use the reason `<agent> wrote no <file>`.
 - `job_advance` returns `state-moved`: ignore the notification. End your turn.
 - `job_advance` with `to: approved` returns `spec-changed`: call `job_advance`

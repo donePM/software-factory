@@ -145,3 +145,7 @@ Refs: #42
 - Do not call factory tools. Do not run `gh`. You have no GitHub access.
 - Do not change other job files, `job.md`, or `.factory/config.json`.
 - Do not change the paths in `protectedPaths` of `.factory/config.json`. The gate fails on them.
+
+## Report
+1. Call `Write` for `<roundDir>/build.md`. Do this before your final report.
+2. Then give your final report. Its first line is `Wrote <roundDir>/build.md.`

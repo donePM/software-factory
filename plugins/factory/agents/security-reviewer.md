@@ -66,3 +66,7 @@ The first line is machine-readable: `VERDICT: PASS|CHANGES`. Write exactly
 - `## Checked`: what you checked and found correct, one line for each item.
 
 Write `VERDICT: CHANGES` only for a `blocker` or a `should`. Nits never block.
+
+## Report
+1. Call `Write` for `<roundDir>/review-security.md`. Do this before your final report.
+2. Then give your final report. Its first line is `Wrote <roundDir>/review-security.md.`

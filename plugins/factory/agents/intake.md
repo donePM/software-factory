@@ -112,3 +112,7 @@ The issue asks for a dark mode. Issue #12 asks for the same change.
 ## Reason
 Duplicate of #12.
 ```
+
+## Report
+1. Call `Write` for `<jobDir>/intake.md`. Do this before your final report.
+2. Then give your final report. Its first line is `Wrote <jobDir>/intake.md.`
