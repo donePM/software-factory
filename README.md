@@ -175,7 +175,3 @@ plugins/factory/
   lib/                       # tool logic, stacks, config migrations
   tests/                     # claude plugin test plugins/factory
 ```
-
-`INITIAL_PROMPT.md` is the prompt the first factory was built from. The lean
-rules (builder, spec-writer, reviewers, approver) are adapted from
-[ponytail](https://github.com/DietrichGebert/ponytail) (MIT).
