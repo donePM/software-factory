@@ -26,6 +26,11 @@ claude --plugin-dir plugins/factory               # load the plugin without inst
 (gitignored; an interactive session writes them, or copy the bundled
 `plugin-authoring/types/claude-code.d.ts` there).
 
+CI (`.github/workflows/checks.yml`) runs the four check commands on each PR and
+each push to `main`. It reads the types from `.github/types/claude-code.d.ts`.
+To update, copy the bundled file of a new CLI version to that path. In the same
+commit, set that CLI version in the `npm install -g` step of the workflow.
+
 To test end to end, use a throwaway GitHub repo, run
 `claude --plugin-dir <abs>/plugins/factory` there, then `/factory:setup`,
 `/factory:add <tiny feature>`, and `/factory:run`.
