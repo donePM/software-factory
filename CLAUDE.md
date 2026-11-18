@@ -65,7 +65,7 @@ This loads the branch code in that process only.
 - Tools: `plugins/factory/lib/*.ts` hold the logic and get a `Ctx` (run, fs,
   root, now). `hooks/tools.ts` is the only file that knows `$`: it registers each
   tool as `mcp__factory__<name>` (`isDeferred: false`) and maps a `FactoryError`
-  to `{ isError: true, text }` with a `Fix:` line.
+  to `{ isError: true, result }` with a `Fix:` line.
 - `plugins/factory/pipeline.md` is the main session's event loop. `/factory:run`
   reads it. The main session starts agents in the background, reacts to their
   notifications, and calls only short tools (`cleanup`, `queue`, `job_create`,

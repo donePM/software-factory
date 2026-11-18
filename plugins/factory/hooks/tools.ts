@@ -244,7 +244,7 @@ export async function makeCtx($: any): Promise<Ctx> {
   }
 }
 
-export type ToolOutcome = { result: string } | { isError: true; result: undefined; text: string }
+export type ToolOutcome = { result: string } | { isError: true; result: string }
 
 export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<ToolOutcome> {
   const log = await openLog(ctx, def.name)
@@ -257,12 +257,12 @@ export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<To
   } catch (err) {
     if (err instanceof FactoryError) {
       await log.end(`error ${err.code}`)
-      return { isError: true, result: undefined, text: `${err.code}: ${err.message}${err.fix === undefined ? '' : `\nFix: ${err.fix}`}` }
+      return { isError: true, result: `${err.code}: ${err.message}${err.fix === undefined ? '' : `\nFix: ${err.fix}`}` }
     }
     // A rethrown error skips the hook, so the engine returns an empty result.
     const message = err instanceof Error ? err.message : String(err)
     await log.end(`exception ${message}`)
-    return { isError: true, result: undefined, text: `internal: ${def.name}: ${message}\nFix: Read the error, fix the cause, then call the tool again.` }
+    return { isError: true, result: `internal: ${def.name}: ${message}\nFix: Read the error, fix the cause, then call the tool again.` }
   }
 }
 

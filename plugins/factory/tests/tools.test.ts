@@ -23,12 +23,12 @@ test('a tool success returns pretty JSON', async () => {
 
 test('a FactoryError maps to isError with the fix', async () => {
   const r = await invoke(def(async () => { throw new FactoryError('nope', 'it broke', 'do x') }), fakeCtx(), {})
-  expect(r).toEqual({ isError: true, result: undefined, text: 'nope: it broke\nFix: do x' })
+  expect(r).toEqual({ isError: true, result: 'nope: it broke\nFix: do x' })
 })
 
 test('a FactoryError without fix prints no Fix line', async () => {
   const r = await invoke(def(async () => { throw new FactoryError('nope', 'it broke') }), fakeCtx(), {})
-  expect(r).toEqual({ isError: true, result: undefined, text: 'nope: it broke' })
+  expect(r).toEqual({ isError: true, result: 'nope: it broke' })
 })
 
 test('serve passes only the tool arguments, without tool', async () => {
@@ -47,12 +47,12 @@ const FIX = 'Fix: Read the error, fix the cause, then call the tool again.'
 
 test('an unexpected error maps to isError with a Fix line', async () => {
   const r = await invoke(def(async () => { throw new Error('spawn timeout') }), fakeCtx(), {})
-  expect(r).toEqual({ isError: true, result: undefined, text: `internal: t: spawn timeout\n${FIX}` })
+  expect(r).toEqual({ isError: true, result: `internal: t: spawn timeout\n${FIX}` })
 })
 
 test('a thrown non-Error value maps to isError with a Fix line', async () => {
   const r = await invoke(def(async () => { throw 'boom' }), fakeCtx(), {})
-  expect(r).toEqual({ isError: true, result: undefined, text: `internal: t: boom\n${FIX}` })
+  expect(r).toEqual({ isError: true, result: `internal: t: boom\n${FIX}` })
 })
 
 test('serve answers an unexpected error with an error text', async () => {
@@ -64,7 +64,7 @@ test('serve answers an unexpected error with an error text', async () => {
   } finally {
     TOOLS.pop()
   }
-  expect(r).toEqual({ isError: true, result: undefined, text: `internal: probe_error: gone\n${FIX}` })
+  expect(r).toEqual({ isError: true, result: `internal: probe_error: gone\n${FIX}` })
 })
 
 test('a failed log write does not change the tool result', async () => {
@@ -79,7 +79,7 @@ test('a failed log write does not change the tool result', async () => {
   const r = await invoke(def(async c => (await c.run(['git'])).stdout), ctx, {})
   expect(r).toEqual({ result: 'x' })
   const e = await invoke(def(async () => { throw new FactoryError('nope', 'it broke') }), ctx, {})
-  expect(e).toEqual({ isError: true, result: undefined, text: 'nope: it broke' })
+  expect(e).toEqual({ isError: true, result: 'nope: it broke' })
   expect(failed).toBeGreaterThan(0)
 })
 
