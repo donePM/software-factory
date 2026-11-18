@@ -100,8 +100,10 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
    builder works test-first in `.factory/worktrees/<n>` on branch `factory/<n>`.
 3. **Gate.** The gate runs the stack steps (format, lint, types, tests), the
    Conventional Commits check, and the protected-path check. It always uses
-   the config and plugin of your main checkout, never the branch. On a green
-   gate the factory pushes the branch and opens the PR.
+   the config and plugin of your main checkout, never the branch. For node,
+   the audit fails on prod advisories at `moderate` and up, and on all
+   advisories at `high` and up. On a green gate the factory pushes the branch
+   and opens the PR.
 4. **Review.** The reviewers that fit the change (code, security, ux, ui) run
    in parallel. A `CHANGES` verdict starts a new build round, up to
    `maxRounds` (default 3).

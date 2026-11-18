@@ -18,6 +18,18 @@ const INSTALL: Record<string, string[]> = {
   bun: ['bun', 'install', '--frozen-lockfile'],
 }
 
+// Two tiers: prod dependencies fail at moderate, all dependencies fail at high.
+// shortcut: yarn means yarn berry; yarn classic (v1) has no `yarn npm audit`. Add a v1 case when a user needs it.
+const AUDIT: Record<string, string[][]> = {
+  npm: [['npm', 'audit', '--omit=dev', '--audit-level=moderate'], ['npm', 'audit', '--audit-level=high']],
+  pnpm: [['pnpm', 'audit', '--prod', '--audit-level', 'moderate'], ['pnpm', 'audit', '--audit-level', 'high']],
+  yarn: [
+    ['yarn', 'npm', 'audit', '--all', '--recursive', '--environment', 'production', '--severity', 'moderate'],
+    ['yarn', 'npm', 'audit', '--all', '--recursive', '--severity', 'high'],
+  ],
+  bun: [['bun', 'audit', '--prod', '--audit-level=moderate'], ['bun', 'audit', '--audit-level=high']],
+}
+
 const VP_FIX = 'Install Vite+ (vp) as described at https://viteplus.dev.'
 
 // The package manager from the lockfile at the package path, else from the nearest parent folder.
@@ -111,7 +123,7 @@ export const node: Stack = {
       ...pick('typecheck', ['vp', 'check'], ...(d.tools.includes('tsc') ? [['tsc', '--noEmit']] : [])),
       ...pick('build'),
       ...pick('test', ['vp', 'test']),
-      ...pick('audit', [pm, 'audit']),
+      ...pick('audit', ...(AUDIT[pm] ?? AUDIT.npm!)),
     ]
   },
 }
