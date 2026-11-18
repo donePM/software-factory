@@ -31,13 +31,13 @@ test('picks pnpm from pnpm-lock.yaml', async () => {
 test('falls back to npm ci', async () => {
   const steps = await stepsOf({ 'package.json': '{}' })
   expect(argvOf(steps, 'install')).toEqual([['npm', 'ci']])
-  expect(argvOf(steps, 'audit')).toEqual([['npm', 'audit']])
+  expect(argvOf(steps, 'audit')).toEqual([['npm', 'audit', '--omit=dev', '--audit-level=moderate'], ['npm', 'audit', '--audit-level=high']])
 })
 
 test('maps yarn and bun lockfiles', async () => {
   expect(argvOf(await stepsOf({ 'package.json': '{}', 'yarn.lock': '' }), 'install')).toEqual([['yarn', 'install', '--immutable']])
   expect(argvOf(await stepsOf({ 'package.json': '{}', 'bun.lockb': '' }), 'install')).toEqual([['bun', 'install', '--frozen-lockfile']])
-  expect(argvOf(await stepsOf({ 'package.json': '{}', 'bun.lock': '' }), 'audit')).toEqual([['bun', 'audit']])
+  expect(argvOf(await stepsOf({ 'package.json': '{}', 'bun.lock': '' }), 'audit')).toEqual([['bun', 'audit', '--prod', '--audit-level=moderate'], ['bun', 'audit', '--audit-level=high']])
 })
 
 test('uses vp for format, lint, check and test', async () => {
@@ -115,4 +115,41 @@ test('monorepo steps run in their package folder and are not merged', async () =
   expect(steps.filter(s => s.name === 'lint').map(s => s.cwd)).toEqual(['/repo/web', '/repo/api'])
   expect(web.filter(s => s.name === 'test')).toMatchObject([{ argv: ['pnpm', 'run', 'test'], source: 'script' }])
   expect(api.filter(s => s.name === 'test')).toMatchObject([{ argv: ['vp', 'test'], source: 'default' }])
+})
+
+test('npm audits prod at moderate, then all at high', async () => {
+  const steps = await stepsOf({ 'package.json': '{}' })
+  expect(argvOf(steps, 'audit')).toEqual([
+    ['npm', 'audit', '--omit=dev', '--audit-level=moderate'],
+    ['npm', 'audit', '--audit-level=high'],
+  ])
+  expect(steps.slice(-2).map(s => s.name)).toEqual(['audit', 'audit'])
+})
+
+test('pnpm audits prod at moderate, then all at high', async () => {
+  const steps = await stepsOf({ 'package.json': '{}', 'pnpm-lock.yaml': '' })
+  expect(argvOf(steps, 'audit')).toEqual([
+    ['pnpm', 'audit', '--prod', '--audit-level', 'moderate'],
+    ['pnpm', 'audit', '--audit-level', 'high'],
+  ])
+})
+
+test('yarn and bun audit prod at moderate, then all at high', async () => {
+  expect(argvOf(await stepsOf({ 'package.json': '{}', 'yarn.lock': '' }), 'audit')).toEqual([
+    ['yarn', 'npm', 'audit', '--all', '--recursive', '--environment', 'production', '--severity', 'moderate'],
+    ['yarn', 'npm', 'audit', '--all', '--recursive', '--severity', 'high'],
+  ])
+  const bun = [['bun', 'audit', '--prod', '--audit-level=moderate'], ['bun', 'audit', '--audit-level=high']]
+  expect(argvOf(await stepsOf({ 'package.json': '{}', 'bun.lock': '' }), 'audit')).toEqual(bun)
+  expect(argvOf(await stepsOf({ 'package.json': '{}', 'bun.lockb': '' }), 'audit')).toEqual(bun)
+})
+
+test('an audit script or a config override replaces both audit steps', async () => {
+  const scripted = { 'package.json': '{"scripts":{"audit":"audit-ci"}}' }
+  const s1 = await stepsOf(scripted)
+  expect(s1.filter(s => s.name === 'audit')).toMatchObject([{ argv: ['npm', 'run', 'audit'], source: 'script' }])
+  const files = { 'package.json': '{}' }
+  const ds = await detect(files)
+  const s2 = await resolveSteps(fakeCtx(), '/repo', reader(files), [{ id: 'node', path: '.', steps: { audit: 'my-audit' } }], ds)
+  expect(s2.filter(s => s.name === 'audit')).toMatchObject([{ argv: ['sh', '-c', 'my-audit'], source: 'config' }])
 })
