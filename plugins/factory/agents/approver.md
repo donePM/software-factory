@@ -123,3 +123,7 @@ Users can download the order list as a CSV file. The gate and all reviews pass, 
 ## Question
 The change adds the dependency `csv-stringify` to write the CSV rows. Do you accept it? If not, send the job back to build, and the builder writes the rows with the standard library.
 ```
+
+## Report
+1. Call `Write` for `<jobDir>/decision.md`. Do this before your final report.
+2. Then give your final report. Its first line is `Wrote <jobDir>/decision.md.`

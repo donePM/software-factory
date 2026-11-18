@@ -80,3 +80,7 @@ The first line is machine-readable: `VERDICT: PASS|CHANGES`. Write exactly
   each file. If you took none, write one line that tells why.
 
 Write `VERDICT: CHANGES` only for a `blocker` or a `should`. Nits never block.
+
+## Report
+1. Call `Write` for `<roundDir>/review-ui.md`. Do this before your final report.
+2. Then give your final report. Its first line is `Wrote <roundDir>/review-ui.md.`

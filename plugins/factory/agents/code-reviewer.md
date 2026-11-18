@@ -132,3 +132,7 @@ The round-1 blocker and should are fixed. Each tested AC has a test that fails w
 - Gate round-2: PASS.
 - Commits: 3 commits. All follow Conventional Commits and have `Refs: #42`.
 ```
+
+## Report
+1. Call `Write` for `<roundDir>/review-code.md`. Do this before your final report.
+2. Then give your final report. Its first line is `Wrote <roundDir>/review-code.md.`

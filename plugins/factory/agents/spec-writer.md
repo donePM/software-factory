@@ -103,3 +103,7 @@ AC-3 `README.md` has one line about the CSV export. Test: none, see Not tested.
   under `## Tests`.
 - No case, no finding. Write a risk under `## Notes for reviewers` only with a
   concrete case. The case is an input, a caller, or a user step that shows it.
+
+## Report
+1. Call `Write` for `<jobDir>/spec.md`. Do this before your final report.
+2. Then give your final report. Its first line is `Wrote <jobDir>/spec.md.`
