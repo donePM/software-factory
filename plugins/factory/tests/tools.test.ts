@@ -43,6 +43,30 @@ test('serve passes only the tool arguments, without tool', async () => {
   expect(seen).toEqual({ n: 1 })
 })
 
+const FIX = 'Fix: Read the error, fix the cause, then call the tool again.'
+
+test('an unexpected error maps to isError with a Fix line', async () => {
+  const r = await invoke(def(async () => { throw new Error('spawn timeout') }), fakeCtx(), {})
+  expect(r).toEqual({ isError: true, result: undefined, text: `internal: t: spawn timeout\n${FIX}` })
+})
+
+test('a thrown non-Error value maps to isError with a Fix line', async () => {
+  const r = await invoke(def(async () => { throw 'boom' }), fakeCtx(), {})
+  expect(r).toEqual({ isError: true, result: undefined, text: `internal: t: boom\n${FIX}` })
+})
+
+test('serve answers an unexpected error with an error text', async () => {
+  TOOLS.push({ name: 'probe_error', description: 'd', inputSchema: {}, handler: async () => { throw new Error('gone') } })
+  let r: unknown
+  try {
+    const $ = { session: { root: async () => '/repo' } }
+    r = await serve($, { tool: 'mcp__factory__probe_error' }, async () => 'next')
+  } finally {
+    TOOLS.pop()
+  }
+  expect(r).toEqual({ isError: true, result: undefined, text: `internal: probe_error: gone\n${FIX}` })
+})
+
 const SHA = 'a'.repeat(40)
 const HEAD = 'b'.repeat(40)
 const DIR = '/repo/.factory/jobs/7'
