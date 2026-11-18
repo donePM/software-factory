@@ -85,6 +85,16 @@ test('gate fails on a red step and keeps running the rest', async () => {
   expect(r.steps.find(s => s.name === 'lint')?.exitCode).toBe(1)
 })
 
+test('gate fails when one of the two audit steps fails and lists both', async () => {
+  const ctx = make({ replies: [{ argv: ['npm', 'audit', '--audit-level=high'], result: { exitCode: 1, stderr: 'high' } }] })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('FAIL')
+  const rows = ctx.files['/repo/.factory/gate/setup/checks.md']!.split('\n').filter(l => l.startsWith('| audit |'))
+  expect(rows).toHaveLength(2)
+  expect(rows[0]).toContain('`npm audit --omit=dev --audit-level=moderate` | 0 |')
+  expect(rows[1]).toContain('`npm audit --audit-level=high` | 1 |')
+})
+
 test('every step runs with a 600000 ms timeout in its cwd', async () => {
   const ctx = make()
   const seen: unknown[] = []
