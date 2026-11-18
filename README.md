@@ -94,7 +94,7 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 1. **Add work.** `/factory:add add a --json flag to the export command` creates
    an issue with the `factory` label. Or add the label to an existing issue.
    `Depends on #12` in the issue body holds it back until #12 is closed.
-2. **Run.** `/factory:run` takes the ready issues by priority and age. The
+2. **Run.** `/factory:run` takes the ready issues bugs first, then by priority and age. The
    intake agent accepts the issue, asks the author questions (`needs-info`),
    or rejects it. The spec writer writes testable acceptance criteria. The
    builder works test-first in `.factory/worktrees/<n>` on branch `factory/<n>`.

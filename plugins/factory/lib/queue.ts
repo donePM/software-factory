@@ -37,6 +37,7 @@ export function dependsOn(body: string): number[] {
 
 const WAITING: State[] = ['needs-info', 'needs-human', 'approved', 'needs-design']
 const ORDER = ['critical', 'high', 'medium', 'low'] as const
+const BUG_LABELS = ['type:fix', 'bug']
 
 function priorityOf(t: Ticket, cfg: Config): (typeof ORDER)[number] {
   return ORDER.find(p => t.labels.includes(cfg.priorities[p])) ?? 'medium'
@@ -96,7 +97,8 @@ export async function queue(_ctx: Ctx, tr: Tracker, cfg: Config): Promise<Queue>
     const blockers: number[] = []
     for (const d of dependsOn(t.body)) if (await isOpen(d, t.number)) blockers.push(d)
     if (blockers.length > 0) item.blockedBy = blockers
-    candidates.push({ item, rank: ORDER.indexOf(item.priority as (typeof ORDER)[number]) })
+    const bug = t.labels.some(l => BUG_LABELS.includes(l))
+    candidates.push({ item, rank: (bug ? 0 : ORDER.length) + ORDER.indexOf(item.priority as (typeof ORDER)[number]) })
   }
   candidates.sort((a, b) => a.rank - b.rank || time(a.item.createdAt) - time(b.item.createdAt))
   for (const { item } of candidates) (item.blockedBy ? q.blocked : q.ready).push(item)
