@@ -42,7 +42,9 @@ expected load in the repo (one user with a script, or many users at once).
    fail without the change. Read the test and the base code to prove it. The
    red output in `build.md` must fit the test and the base code. A missing
    test, a test that passes on the base code, or red output that does not fit
-   is a `blocker`.
+   is a `blocker`. An AC that `## Not tested` in `spec.md` names with a reason
+   needs no test. Its `build.md` row has the status `not tested`. It is a
+   `blocker` only when the diff for that AC is not pure docs or pure configuration.
 2. **Bug:** wrong result, crash, missed edge case (empty, zero, last item,
    rounding, time zones), a caller that the change breaks, a fix in one caller
    while the shared function stays broken.
@@ -89,7 +91,7 @@ The first line is machine-readable: `VERDICT: PASS|CHANGES`. Write exactly
 
 Write `VERDICT: CHANGES` only for a `blocker` or a `should`. Nits never block.
 A test failure in `checks.md`, an AC without a test that fails without the
-change, or a bad commit is always CHANGES. Write each one as a `blocker`
+change (except an AC under `## Not tested`), or a bad commit is always CHANGES. Write each one as a `blocker`
 finding. A CHANGES review without a `blocker` or a `should` is not valid.
 
 ## Examples
@@ -118,7 +120,7 @@ PASS:
 VERDICT: PASS
 
 ## Summary
-The round-1 blocker and should are fixed. Each AC has a test that fails without the change.
+The round-1 blocker and should are fixed. Each tested AC has a test that fails without the change.
 
 ## Findings
 1. [nit] src/orders/export.ts:8: the name `tmp` does not say what it holds. Fix: rename it to `rows`.
@@ -126,6 +128,7 @@ The round-1 blocker and should are fixed. Each AC has a test that fails without 
 ## Checked
 - Round-1 finding 1: fixed. The test now asserts one row for each order.
 - Round-1 finding 2: fixed. One query loads the orders and the customers.
+- AC-3: not tested. `## Not tested` in spec.md names it. The diff for it changes only docs (`README.md`).
 - Gate round-2: PASS.
 - Commits: 3 commits. All follow Conventional Commits and have `Refs: #42`.
 ```

@@ -35,7 +35,7 @@ files stay in the main checkout, under `<jobDir>`.
 2. Find the install, format, lint, type check, and test commands of the repo
    (for example `package.json`, `composer.json`, `Makefile`). Run the install
    command if the repo has one.
-3. For each AC that has no passing test yet, in order:
+3. For each AC that has no passing test yet and is not under `## Not tested`, in order:
    1. Write the test that the spec names. Write nothing else yet.
    2. Run the test. It must fail. Keep the first assertion or error line of the
       output, for example `expected 200, got 404`. Do not keep a runner banner.
@@ -50,7 +50,8 @@ files stay in the main checkout, under `<jobDir>`.
 6. Write `<roundDir>/build.md`.
 
 Parts under `## Not tested` in the spec (pure docs, pure configuration) need no
-test. Name them in `build.md`.
+test. Name them in `build.md`. An AC that `## Not tested` names gets the row
+`| AC-<n> | none (Not tested in spec.md) | none | not tested |`.
 
 ## build.md
 The first line is `STATUS: DONE` or `STATUS: BLOCKED`. Write `BLOCKED` only
@@ -60,18 +61,20 @@ when you cannot finish, and say why under `## Summary`. Then write:
 STATUS: DONE
 
 ## Summary
-Added the CSV export endpoint and the export button on the orders page.
+Added the CSV export endpoint, the export button on the orders page, and one README line.
 
 | AC | Test | Red output before the change | Status |
 |----|------|------------------------------|--------|
 | AC-1 | `tests/orders-export.test.ts` "returns one row per order" | expected 200, got 404 | pass |
 | AC-2 | `tests/orders-page.test.ts` "links to the CSV export" | no element with text "Export CSV" | pass |
+| AC-3 | none (Not tested in spec.md) | none | not tested |
 
 ## Commands
 - `npm test`: 42 passed, 0 failed
 
 ## Changes
 - src/orders/export.ts: the CSV endpoint
+- README.md: one line about the CSV export
 
 ## Skipped
 - nothing
