@@ -1,0 +1,25 @@
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # shortcut: types and CLI version are pinned by hand, upgrade when the types API changes or a newer CLI is needed
+      - run: npm install -g @anthropic-ai/claude-code@2.1.327 typescript@7.0.2
+      - run: mkdir -p plugins/factory/.claude-plugin/types/claude-code && cp .github/types/claude-code.d.ts plugins/factory/.claude-plugin/types/claude-code/index.d.ts
+      - run: claude plugin validate .
+      - run: claude plugin validate plugins/factory
+      - run: tsc -p plugins/factory
+      - run: claude plugin test plugins/factory
