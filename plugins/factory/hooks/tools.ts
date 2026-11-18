@@ -254,7 +254,9 @@ export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<To
     if (err instanceof FactoryError) {
       return { isError: true, result: undefined, text: `${err.code}: ${err.message}${err.fix === undefined ? '' : `\nFix: ${err.fix}`}` }
     }
-    throw err
+    // A rethrown error skips the hook, so the engine returns an empty result.
+    const message = err instanceof Error ? err.message : String(err)
+    return { isError: true, result: undefined, text: `internal: ${def.name}: ${message}\nFix: Read the error, fix the cause, then call the tool again.` }
   }
 }
 

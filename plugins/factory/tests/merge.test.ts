@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { defaultConfig } from '../lib/config.ts'
 import { intakeComment } from '../lib/job.ts'
+import { invoke, type ToolDef } from '../hooks/tools.ts'
 import { approve, merge, resolvePair } from '../lib/merge.ts'
 import { readJob, renderJob, type Job } from '../lib/jobfile.ts'
 import { stateOf } from '../lib/labels.ts'
@@ -268,6 +269,21 @@ test('merge stops when HEAD moved during the gate', async () => {
   await rejects(merge(ctx, t, 7), 'gate-not-green')
   expect(count(ctx.calls, 'git', '-C', WT, 'push')).toBe(0)
   expect(t.merges).toEqual([])
+})
+
+test('a rejected push after the gate returns an error text with a Fix line', async () => {
+  const { ctx, t } = setup()
+  const inner = ctx.run
+  ctx.run = (async (argv, opts) => {
+    if (argv[0] === 'git' && argv[2] === WT && argv[3] === 'push') throw new Error('timed out after 120000 ms')
+    return inner(argv, opts)
+  }) as typeof inner
+  const def: ToolDef = { name: 'merge', description: 'd', inputSchema: {}, handler: () => merge(ctx, t, 7) }
+  const r = await invoke(def, ctx, {})
+  expect(r).toEqual({ isError: true, result: undefined, text: 'internal: merge: timed out after 120000 ms\nFix: Read the error, fix the cause, then call the tool again.' })
+  expect(count(ctx.calls, 'vp')).toBeGreaterThan(0)
+  expect(t.merges).toEqual([])
+  expect(t.states).toEqual([])
 })
 
 test('merge stops when the PR head differs from the pushed sha', async () => {
