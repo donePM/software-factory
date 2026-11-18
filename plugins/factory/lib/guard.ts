@@ -18,3 +18,9 @@ export async function guardBash(agentId: string | undefined, command: unknown, l
   const agent = (await list()).find(a => a.id === agentId)
   return agent === undefined || agent.type.startsWith('factory:') ? DENY_GITHUB : null
 }
+
+export const DENY_MAIN = 'The factory main session never runs Bash. Use a factory tool or a subagent, or start a new session for Bash.'
+
+// The main session has no agentId. After /factory:run it gets no Bash.
+export const guardMain = (agentId: string | undefined, running: boolean): string | null =>
+  agentId === undefined && running ? DENY_MAIN : null
