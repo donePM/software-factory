@@ -280,7 +280,7 @@ test('a rejected push after the gate returns an error text with a Fix line', asy
   }) as typeof inner
   const def: ToolDef = { name: 'merge', description: 'd', inputSchema: {}, handler: () => merge(ctx, t, 7) }
   const r = await invoke(def, ctx, {})
-  expect(r).toEqual({ isError: true, result: undefined, text: 'internal: merge: timed out after 120000 ms\nFix: Read the error, fix the cause, then call the tool again.' })
+  expect(r).toEqual({ isError: true, result: 'internal: merge: timed out after 120000 ms\nFix: Read the error, fix the cause, then call the tool again.' })
   expect(count(ctx.calls, 'vp')).toBeGreaterThan(0)
   expect(t.merges).toEqual([])
   expect(t.states).toEqual([])

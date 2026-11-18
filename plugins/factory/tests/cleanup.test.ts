@@ -190,7 +190,7 @@ test('tool cleanup refuses an open ticket in a running state and removes nothing
   ])
   const out = await invoke(def, ctx, { issue: 7 })
   expect(out).toMatchObject({ isError: true })
-  expect('text' in out && out.text).toContain('not-finished')
+  expect(out.result).toContain('not-finished')
   expect(has(ctx.calls, 'rm')).toBe(false)
   expect(has(ctx.calls, 'git')).toBe(false)
 })
