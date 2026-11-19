@@ -8,6 +8,14 @@ test('defaultConfig is valid', () => {
   expect(validateConfig(defaultConfig(url, 'main', []))).toEqual([])
 })
 
+test('validateConfig accepts an old priorities key', () => {
+  const c = defaultConfig(url, 'main', [])
+  expect(c).not.toHaveProperty('priorities')
+  const priorities = { critical: 'priority:critical', high: 'priority:high', medium: 'priority:medium', low: 'priority:low' }
+  expect(validateConfig({ ...c, priorities })).toEqual([])
+  expect(validateConfig({ ...c, priorities: 'old' })).toEqual([])
+})
+
 test('validateConfig names a bad concurrency', () => {
   const errs = validateConfig({ ...defaultConfig(url, 'main', []), concurrency: 0 })
   expect(errs.some(e => e.includes('concurrency'))).toBe(true)

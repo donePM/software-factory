@@ -19,6 +19,7 @@ const replies = (head = 'refs/remotes/origin/main'): Reply[] => [
   { argv: ['gh', 'api', 'repos/a/b'], result: { stdout: repoJson } },
   { argv: ['gh', 'label', 'create'] },
   { argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } },
+  { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
   { argv: ['gh', 'api', '-X', 'PATCH'] },
 ]
 const labelCreates = (calls: string[][]) => calls.filter(c => c[1] === 'label' && c[2] === 'create').length
@@ -42,8 +43,8 @@ test('setup creates config, gitignore and labels', async () => {
   expect(validateConfig(JSON.parse(ctx.files[CFG]!))).toEqual([])
   expect(JSON.parse(ctx.files[CFG]!).concurrency).toBe(2)
   expect(ctx.files['/repo/.factory/.gitignore']).toBe('*\n!.gitignore\n!config.json\n!checks.local.ts\n')
-  expect(labelCreates(ctx.calls)).toBe(labelSet(r.config).length)
-  expect(r.labels).toBe(labelSet(r.config).length)
+  expect(labelCreates(ctx.calls)).toBe(labelSet().length)
+  expect(r.labels).toBe(labelSet().length)
   expect(r.gitignore).toBe(true)
   expect(r.next.length).toBeGreaterThan(0)
 })
@@ -98,7 +99,7 @@ test('preview shows standard drift and the planned label count', async () => {
   const ctx = fakeCtx({ replies: rs })
   const r = await setup(ctx, { apply: false })
   expect(r.standard.filter(c => !c.ok).map(c => c.key)).toEqual(['allow_squash_merge'])
-  expect(r.labels).toBe(labelSet(r.config).length)
+  expect(r.labels).toBe(labelSet().length)
   expect(ctx.calls.some(c => c.includes('PATCH') || c[2] === 'create')).toBe(false)
 })
 

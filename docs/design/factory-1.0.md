@@ -188,9 +188,10 @@ installiert werden muss; `k6`/`autocannon` nur, wenn vorhanden.
   Wartende Jobs belegen keinen.
 - Ein Issue mit `factory`, aber ohne Status-Label, ist bereit im Backlog.
 - Reihenfolge im Backlog: zuerst nach Priorität, dann älteste zuerst.
-  Prioritäts-Labels `priority:critical`, `priority:high`, `priority:medium`,
-  `priority:low` (Namen in der Config, falls das Repo schon eigene hat).
-  Ohne Prioritäts-Label zählt ein Ticket wie `medium`. `Depends on #n` geht
+  Die Priorität kommt aus dem GitHub-Issue-Feld `Priority` (Single Select),
+  nicht aus Labels: `Urgent` → `critical`, `High` → `high`, `Medium` → `medium`,
+  `Low` → `low`. Ohne Feldwert oder mit unbekannter Option zählt ein Ticket wie
+  `medium`. `Depends on #n` geht
   vor: ein Ticket startet erst, wenn seine Abhängigkeiten fertig sind.
 - `init` legt alle Labels mit Farbe und Beschreibung an (`gh label create --force`).
 
@@ -684,7 +685,7 @@ Badges aus Pipelines) mit eigenen Mitteln.
 | Actions | nur mit voller Commit-SHA (`uses: owner/action@<sha> # v4.2.1`), Repo-Richtlinie dafür an, sofern die API sie anbietet. Standardrechte des Tokens: nur lesen. „Allow GitHub Actions to create and approve pull requests“ an (für den Changelog-PR). Das Gate prüft `.github/workflows/*.yml` zusätzlich; der builder pinnt neue Actions so. |
 | Sicherheit | Secret Scanning mit Push Protection, Dependabot Alerts und Security Updates, Private Vulnerability Reporting. |
 | Features | Issues an; Wiki an, wenn `docs.target = wiki`; Projects nach Config. |
-| Factory | Labels (Status, `factory`, Prioritäten, `type:*`, `skip-changelog`), Orphan-Branch `factory-assets`. |
+| Factory | Labels (Status, `factory`, `type:*`, `skip-changelog`), Orphan-Branch `factory-assets`. |
 
 ### Commits: Conventional Commits 1.0.0
 
