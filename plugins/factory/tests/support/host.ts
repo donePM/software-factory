@@ -18,15 +18,20 @@ function listDir(files: Record<string, string>, dir: string): string[] {
   return [...names]
 }
 
-export function fakeCtx(opts: Opts = {}): Ctx & { calls: string[][]; files: Record<string, string> } {
+export function fakeCtx(opts: Opts = {}): Ctx & { calls: string[][]; files: Record<string, string>; sleeps: number[] } {
   const files = { ...opts.files }
   const calls: string[][] = []
+  const sleeps: number[] = []
   const replies = opts.replies ?? []
   return {
     calls,
     files,
+    sleeps,
     root: opts.root ?? '/repo',
     now: () => new Date('2026-01-01T00:00:00Z'),
+    sleep: async ms => {
+      sleeps.push(ms)
+    },
     run: async argv => {
       calls.push([...argv])
       return answer(replies, argv)

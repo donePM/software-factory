@@ -9,6 +9,8 @@ import { findMarked } from './markers.ts'
 import type { Tracker } from './tracker.ts'
 import type { Ctx, PrState, Ticket } from './types.ts'
 
+const HEAD_READS = 10
+const HEAD_READ_DELAY_MS = 1000
 const CLOSES = /^Closes #([1-9][0-9]*)\s*$/m
 
 const noPair = (n: number, why: string): FactoryError =>
@@ -131,7 +133,12 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   if ((await head()) !== sha) throw new FactoryError('gate-not-green', 'HEAD moved during the gate', 'Merge again.')
   await must(ctx, ['git', '-C', wt, 'push', 'origin', `${sha}:refs/heads/${job.branch}`])
 
-  const pr = await t.prState(found.number)
+  // GitHub shows the pushed head with a delay. Only the old head may cause a new read.
+  let pr = await t.prState(found.number)
+  for (let read = 1; read < HEAD_READS && pr.headRefName === job.branch && pr.headRefOid === found.headRefOid && pr.headRefOid !== sha; read++) {
+    await ctx.sleep(HEAD_READ_DELAY_MS)
+    pr = await t.prState(found.number)
+  }
   if (pr.headRefName !== job.branch || pr.headRefOid !== sha) {
     throw new FactoryError('head-mismatch', `PR #${pr.number} head is ${pr.headRefOid} on ${pr.headRefName}, not ${sha} on ${job.branch}`, 'Merge again.')
   }

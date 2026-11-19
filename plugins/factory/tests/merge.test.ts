@@ -25,7 +25,7 @@ const J: Job = {
 }
 const at = '2026-02-01T00:00:00Z'
 
-type Opts = { job?: Partial<Job>; labels?: string[]; pr?: Partial<PrState>; author?: string; approved?: boolean; closed?: boolean; noMerge?: boolean; prs?: PrState[] }
+type Opts = { job?: Partial<Job>; labels?: string[]; pr?: Partial<PrState>; author?: string; approved?: boolean; closed?: boolean; noMerge?: boolean; prs?: PrState[]; reads?: Partial<PrState>[] }
 
 function tracker(o: Opts = {}) {
   const log: string[] = []
@@ -68,7 +68,7 @@ function tracker(o: Opts = {}) {
       log.push(`findPr ${b}`)
       return o.prs !== undefined ? (o.prs[0] ?? null) : pr()
     },
-    prState: async () => pr(),
+    prState: async () => ({ ...pr(), ...o.reads?.shift() }),
     approvePr: async (_pr: number, body: string) => { reviews.push(body) },
     prReady: async (p: number) => { log.push(`ready ${p}`) },
     merge: async (p: number, subject: string, sha: string) => {
@@ -287,8 +287,46 @@ test('a rejected push after the gate returns an error text with a Fix line', asy
 })
 
 test('merge stops when the PR head differs from the pushed sha', async () => {
-  const { ctx, t } = setup({ pr: { headRefOid: MOVED } })
+  const { ctx, t } = setup({ reads: [{ headRefOid: MOVED }] })
   await rejects(merge(ctx, t, 7), 'head-mismatch')
+  expect(ctx.sleeps).toEqual([])
+  expect(t.merges).toEqual([])
+  expect(t.states).toEqual([])
+})
+
+test('merge stops at once when the PR head branch is wrong', async () => {
+  const { ctx, t } = setup({ reads: [{ headRefName: 'other' }] })
+  await rejects(merge(ctx, t, 7), 'head-mismatch')
+  expect(ctx.sleeps).toEqual([])
+  expect(t.merges).toEqual([])
+  expect(t.states).toEqual([])
+})
+
+// The sync makes the new commit SYNCED, so the PR head HEAD from findPr is the old head.
+const SYNCED = 'e'.repeat(40)
+function synced(ctx: ReturnType<typeof setup>['ctx']): void {
+  const inner = ctx.run
+  ctx.run = (async (argv, opts) => {
+    const r = await inner(argv, opts)
+    const after = ctx.calls.some(c => c[3] === 'merge' && c[4] === '--no-edit')
+    if (after && argv.join(' ') === `git -C ${WT} rev-parse HEAD`) return { exitCode: 0, stdout: `${SYNCED}\n`, stderr: '' }
+    return r
+  }) as typeof inner
+}
+
+test('merge waits while the PR still shows the old head', async () => {
+  const { ctx, t } = setup({ reads: [{ headRefOid: HEAD }, { headRefOid: HEAD }, { headRefOid: SYNCED }] })
+  synced(ctx)
+  await merge(ctx, t, 7)
+  expect(ctx.sleeps).toEqual([1000, 1000])
+  expect(t.merges).toEqual([{ pr: 9, subject: 'feat(x): y (#9)', sha: SYNCED }])
+})
+
+test('merge stops with head-mismatch after the read limit', async () => {
+  const { ctx, t } = setup({ reads: Array.from({ length: 10 }, () => ({ headRefOid: HEAD })) })
+  synced(ctx)
+  await rejects(merge(ctx, t, 7), 'head-mismatch')
+  expect(ctx.sleeps).toEqual(Array(9).fill(1000))
   expect(t.merges).toEqual([])
   expect(t.states).toEqual([])
 })
