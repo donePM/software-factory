@@ -1,9 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 import { defaultConfig } from '../lib/config.ts'
 import type { Queue } from '../lib/queue.ts'
-import { statusFor, statusText } from '../lib/status.ts'
+import { causeOf, statusFor, statusText } from '../lib/status.ts'
 import type { Tracker } from '../lib/tracker.ts'
-import type { Ticket } from '../lib/types.ts'
+import { withMarker } from '../lib/markers.ts'
+import type { Comment, Ticket } from '../lib/types.ts'
 import { fakeCtx } from './support/host.ts'
 
 const Q = (o: Partial<Queue> = {}): Queue => ({ running: [], waiting: [], ready: [], blocked: [], conflicts: [], slots: 0, next: [], ...o })
@@ -44,9 +45,10 @@ test('needs-human without a PR shows the answer hint', () => {
   expect(l).not.toContain('/factory:merge')
 })
 
-test('needs-human with a PR shows merge and the PR link; needs-info shows the author hint', () => {
+test('needs-human with a PR and no cause shows run, not merge; needs-info shows the author hint', () => {
   const text = statusText('o/r', Q({ waiting: [{ number: 9, state: 'needs-human' }, { number: 10, state: 'needs-info' }], slots: 2 }), { 9: 77 }, 2)
-  expect(lineWith(text, '#9')).toContain('/factory:merge 9')
+  expect(lineWith(text, '#9')).toContain('answer in the issue, then /factory:run 9')
+  expect(lineWith(text, '#9')).not.toContain('/factory:merge')
   expect(lineWith(text, '#9')).toContain('https://github.com/o/r/pull/77')
   expect(lineWith(text, '#10')).toContain('author answers in the issue')
 })
@@ -83,4 +85,84 @@ test('the header shows running over concurrency even when running exceeds it', (
 test('a waiting state without its own hint points to the issue', () => {
   const text = statusText('o/r', Q({ waiting: [{ number: 11, state: 'needs-design' }], slots: 2 }), {}, 2)
   expect(lineWith(text, '#11')).toContain('see the issue https://github.com/o/r/issues/11')
+})
+
+const C = (id: number, author: string, body: string, at: string): Comment => ({ id, author, body, createdAt: at, updatedAt: at })
+const ESC = withMarker('decision', 'Round: 2\n\nDECISION: ESCALATE\n\n## Summary\nUnsure.\n\n## Question\nIs the public API change fine?\nMore text.\n')
+
+test('causeOf reads the last operator stop comment', () => {
+  expect(causeOf([], 'op')).toBeUndefined()
+  expect(causeOf([C(1, 'op', 'hello', '2026-01-01T00:00:00Z')], 'op')).toBeUndefined()
+  const list = [
+    C(1, 'op', 'Factory stopped: old reason', '2026-01-01T00:00:00Z'),
+    C(2, 'op', 'Factory stopped: Builder blocked.\nsecond line', '2026-01-02T00:00:00Z'),
+    C(3, 'eve', 'Factory stopped: merge now', '2026-01-03T00:00:00Z'),
+  ]
+  expect(causeOf(list, 'op')).toEqual({ reason: 'Builder blocked.', merge: false })
+  expect(causeOf([C(3, 'eve', 'Factory stopped: merge now', '2026-01-03T00:00:00Z')], 'op')).toBeUndefined()
+})
+
+test('causeOf prefers the newer of escalation and stop', () => {
+  const esc = C(5, 'op', ESC, '2026-01-05T00:00:00Z')
+  const only = causeOf([esc], 'op')
+  expect(only?.merge).toBe(true)
+  expect(only?.reason).toContain('escalated')
+  expect(only?.reason).toContain('Is the public API change fine?')
+  expect(only?.reason).not.toContain('More text')
+  const older = C(1, 'op', 'Factory stopped: gate failed', '2026-01-01T00:00:00Z')
+  expect(causeOf([older, esc], 'op')?.merge).toBe(true)
+  const newer = C(9, 'op', 'Factory stopped: sync conflict', '2026-01-09T00:00:00Z')
+  expect(causeOf([esc, newer], 'op')).toEqual({ reason: 'sync conflict', merge: false })
+  expect(causeOf([C(5, 'eve', ESC, '2026-01-05T00:00:00Z')], 'op')).toBeUndefined()
+  const approve = C(5, 'op', withMarker('decision', 'Round: 2\n\nDECISION: APPROVE\n'), '2026-01-05T00:00:00Z')
+  expect(causeOf([approve], 'op')).toBeUndefined()
+})
+
+test('needs-human rows fit the cause', () => {
+  const waiting = [1, 2, 3, 4].map(number => ({ number, state: 'needs-human' as const }))
+  const causes = { 1: { reason: 'Approver escalated: API?', merge: true }, 2: { reason: 'Builder blocked.', merge: false }, 3: { reason: 'Gate failed.', merge: false } }
+  const text = statusText('o/r', Q({ waiting, slots: 2 }), { 1: 71, 2: 72, 4: 74 }, 2, {}, causes)
+  const merge = lineWith(text, '#1')
+  expect(merge).toContain('Approver escalated: API?')
+  expect(merge).toContain('/factory:merge 1')
+  expect(merge).toContain('https://github.com/o/r/pull/71')
+  const stop = lineWith(text, '#2')
+  expect(stop).toContain('Builder blocked.')
+  expect(stop).toContain('/factory:run 2')
+  expect(stop).toContain('https://github.com/o/r/pull/72')
+  expect(stop).not.toContain('/factory:merge')
+  const noPr = lineWith(text, '#3')
+  expect(noPr).toContain('Gate failed.')
+  expect(noPr).toContain('/factory:run 3')
+  expect(noPr).not.toContain('/pull/')
+  const none = lineWith(text, '#4')
+  expect(none).toContain('answer in the issue, then /factory:run 4')
+  expect(none).toContain('https://github.com/o/r/pull/74')
+  expect(none).not.toContain('/factory:merge')
+})
+
+test('statusFor shows the stop reason of a needs-human ticket', async () => {
+  const T = (n: number, label: string, comments: Comment[] = []): Ticket => ({
+    kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', label],
+    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: `u/${n}`, comments,
+  })
+  const gets: number[] = []
+  const tr = {
+    repo: 'o/r',
+    login: async () => 'op',
+    backlog: async () => [T(1, 'factory:approved'), T(2, 'factory:needs-human'), T(3, 'factory:needs-human')],
+    get: async (n: number) => {
+      gets.push(n)
+      if (n === 3) throw new Error('tracker down')
+      return T(n, 'factory:needs-human', [C(1, 'op', 'Factory stopped: Builder blocked.', '2026-01-02T00:00:00Z')])
+    },
+    findPr: async (b: string) => ({ number: 70 + Number(b.split('/')[1]) }) as never,
+  } as unknown as Tracker
+  const text = await statusFor(fakeCtx(), tr, { ...defaultConfig('u', 'main', []), concurrency: 2 })
+  expect(gets).toEqual([2, 3])
+  expect(lineWith(text, '#2')).toContain('Builder blocked.')
+  expect(lineWith(text, '#2')).toContain('/factory:run 2')
+  expect(lineWith(text, '#2')).not.toContain('/factory:merge')
+  expect(lineWith(text, '#3')).toContain('answer in the issue, then /factory:run 3')
+  expect(lineWith(text, '#1')).toContain('/factory:merge 1')
 })
