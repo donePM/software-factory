@@ -24,11 +24,14 @@ const T = (labels: string[], comments: Comment[] = [], o: Partial<Ticket> = {}):
   state: 'open', createdAt: '2026-01-01T00:00:00Z', url: 'u/7', comments, ...o,
 })
 
-function tracker(t: Ticket): Tracker & { states: State[] } {
+function tracker(t: Ticket): Tracker & { states: State[]; assigns: string[] } {
   const states: State[] = []
+  const assigns: string[] = []
   return {
     states,
+    assigns,
     login: async () => 'op',
+    assign: async (n: number, on: boolean) => { assigns.push(`${on ? '+' : '-'}${n}`) },
     get: async () => t,
     setState: async (_n: number, to: State) => {
       const from = stateOf(t.labels)
@@ -36,7 +39,7 @@ function tracker(t: Ticket): Tracker & { states: State[] } {
       assertTransition(from, to)
       states.push(to)
     },
-  } as unknown as Tracker & { states: State[] }
+  } as unknown as Tracker & { states: State[]; assigns: string[] }
 }
 
 const J: Job = {
@@ -99,6 +102,13 @@ test('jobCreate sets intake and writes issue.md', async () => {
   expect(ctx.files[`${DIR}/issue.md`]).toContain('# Issue #7: Add thing')
   expect(job.title).toBe('Add thing')
   expect(job.round).toBe(0)
+})
+
+test('job_create assigns the factory to the issue', async () => {
+  const ctx = fakeCtx({ files: CFG, replies: createReplies })
+  const tr = tracker(T([]))
+  await jobCreate(ctx, tr, 7)
+  expect(tr.assigns).toEqual(['+7'])
 })
 
 test('jobCreate creates the worktree from origin/base', async () => {

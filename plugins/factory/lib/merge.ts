@@ -1,3 +1,4 @@
+import { followState } from './assignee.ts'
 import { loadConfig } from './config.ts'
 import { type CleanupReport, cleanupJob } from './cleanup.ts'
 import { FactoryError, must } from './exec.ts'
@@ -116,7 +117,10 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
     await ctx.run(['git', '-C', wt, 'merge', '--abort'])
     const reason = `merging ${origin} into ${job.branch} has a conflict.`
     await t.comment(issue, `Factory stopped: ${reason} The job needs a new build: the builder merges ${origin}, then the reviews run again.`)
-    if (state === 'approved') await t.setState(issue, 'needs-human')
+    if (state === 'approved') {
+      await t.setState(issue, 'needs-human')
+      await followState(t, [issue, found.number], 'needs-human')
+    }
     throw new FactoryError('sync-conflict', reason, `The factory undid the merge, so the worktree has no conflict now. Send the job back to build: the builder merges ${origin}, then the reviews run again.`)
   }
 
@@ -153,6 +157,7 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
     throw new FactoryError('merge-failed', `PR #${pr.number} is not merged`, 'Check the PR on GitHub, then merge again.')
   }
   await t.setState(issue, 'done')
+  await followState(t, [issue, pr.number], 'done')
   if ((await t.get(issue)).state !== 'closed') await t.close(issue, 'done')
   return { issue, pr: pr.number, sha, cleanup: await cleanupJob(ctx, t, issue, 'done') }
 }

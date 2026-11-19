@@ -285,3 +285,17 @@ test('applyStandard shows a missing field as (missing)', async () => {
   const checks = await githubTracker(ctx, 'a/b').applyStandard(false)
   expect(checks.find(c => c.key === 'has_issues')).toMatchObject({ ok: false, actual: '(missing)' })
 })
+
+test('assign adds and removes only the factory login', async () => {
+  const ctx = spyCtx([
+    { argv: ['gh', 'api', 'user'], result: { stdout: 'op\n' } },
+    { argv: ['gh', 'api', '-X', 'POST'] }, { argv: ['gh', 'api', '-X', 'DELETE'] },
+  ])
+  const t = githubTracker(ctx, 'a/b')
+  await t.assign(5, true)
+  await t.assign(12, false)
+  expect(ctx.stdins.filter(s => s.argv.includes('-X'))).toEqual([
+    { argv: ['gh', 'api', '-X', 'POST', 'repos/a/b/issues/5/assignees', '--input', '-'], stdin: '{"assignees":["op"]}' },
+    { argv: ['gh', 'api', '-X', 'DELETE', 'repos/a/b/issues/12/assignees', '--input', '-'], stdin: '{"assignees":["op"]}' },
+  ])
+})

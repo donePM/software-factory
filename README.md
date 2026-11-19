@@ -116,6 +116,8 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
    factory sets the issue to `done` and removes the worktree, the merged
    branch, and the job folder. Work that is not saved stays and is reported.
 
+The factory account is assignee of the issue and the PR in `intake`, `spec`, `build`, and `review`, and not in wait or end states.
+
 A `needs-human` job without a PR continues when you answer in the issue and run
 `/factory:run <n>`. A merge conflict also sets `needs-human`: resolve it, then
 run `/factory:merge <n>` again.

@@ -10,6 +10,8 @@ export interface Tracker {
   backlog(): Promise<Ticket[]>
   get(n: number): Promise<Ticket>
   setState(n: number, to: State): Promise<void>
+  // Adds or removes only the factory login. n is an issue or a PR number.
+  assign(n: number, on: boolean): Promise<void>
   upsertComment(n: number, name: MarkerName, body: string): Promise<Comment>
   comment(n: number, body: string): Promise<void>
   close(n: number, reason: 'done' | 'rejected'): Promise<void>
