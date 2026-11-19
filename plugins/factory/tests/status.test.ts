@@ -17,11 +17,13 @@ test('shows slots and running jobs', () => {
   expect(text).toContain('#3 Add login  build')
 })
 
-test('an approved job shows the merge command with its number', () => {
+test('an approved job shows only the merge command with its number', () => {
   const text = statusText('o/r', Q({ waiting: [{ number: 42, state: 'approved' }], slots: 2 }), { 42: 50 }, 2)
   expect(text).toContain('Waiting for you')
   expect(text).toContain('/factory:merge 42')
-  expect(text).toContain('/factory:approve 42')
+  expect(text).toContain('https://github.com/o/r/pull/50')
+  expect(text).not.toContain('/factory:approve')
+  expect(text).not.toContain('not yet approved by you?')
 })
 
 test('idle shows the add hint', () => {

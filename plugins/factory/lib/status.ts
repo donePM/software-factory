@@ -21,7 +21,7 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
     const pr = prs[n]
     const link = pr === undefined ? '' : ` (https://github.com/${repo}/pull/${pr})`
     if (w.state === 'approved') {
-      rows.push(`${label(n, titles)}  approved: /factory:merge ${n}${link}`, `    not yet approved by you? /factory:approve ${n}`)
+      rows.push(`${label(n, titles)}  approved: /factory:merge ${n}${link}`)
     } else if (w.state === 'needs-human' && pr !== undefined) {
       rows.push(`${label(n, titles)}  needs you: /factory:merge ${n}${link}`)
     } else if (w.state === 'needs-human') {
