@@ -434,6 +434,15 @@ test('build from needs-human starts the next round', async () => {
   expect(t.states).toEqual(['build'])
 })
 
+test('build from needs-human with a PR starts the next round and keeps the PR', async () => {
+  const { ctx, t } = setup('needs-human', { round: 1, pr: 12 }, { [`${DIR}/spec.md`]: SPEC })
+  const r = await jobAdvance(ctx, t, { issue: 7, to: 'build' })
+  expect(r.round).toBe(2)
+  expect(t.states).toEqual(['build'])
+  expect((await readJob(ctx, 7)).pr).toBe(12)
+  expect(t.prs).toEqual([])
+})
+
 test('review abort with a reason skips decision.md', async () => {
   const { ctx, t } = inReview({})
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'needs-human', reason: 'the builder crashed' })
