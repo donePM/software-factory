@@ -65,10 +65,11 @@ const SPEC_HEAD = [
   'AC-1 `GET /orders.csv` returns status 200, type `text/csv`, and one row per order. Test: `tests/orders-export.test.ts` "returns one row per order".',
   'AC-2 The orders page shows an "Export CSV" button that links to `/orders.csv`. Test: `tests/orders-page.test.ts` "links to the CSV export".',
   'AC-3 `README.md` has one line about the CSV export. Test: none, see Not tested.',
+  'AC-4 (regression) The orders page still lists each order as before. Test: `tests/orders-page.test.ts` "still lists the orders".',
   '',
   '## Tests',
   '- `tests/orders-export.test.ts`: the status, the content type, and the rows.',
-  '- `tests/orders-page.test.ts`: the button and its link.',
+  '- `tests/orders-page.test.ts`: the button, its link, and the old order list.',
   '',
   '## Not tested',
   '- AC-3 `README.md`: one line about the export. This is docs only.',
@@ -93,6 +94,7 @@ const BUILD_TABLE = [
   '| AC-1 | `tests/orders-export.test.ts` "returns one row per order" | expected 200, got 404 | pass |',
   '| AC-2 | `tests/orders-page.test.ts` "links to the CSV export" | no element with text "Export CSV" | pass |',
   '| AC-3 | none (Not tested in spec.md) | none | not tested |',
+  '| AC-4 | `tests/orders-page.test.ts` "still lists the orders" | none (regression, green before) | pass |',
   '',
   '## Commands',
   '- `npm test`: 42 passed, 0 failed',
@@ -145,6 +147,7 @@ const REVIEW_PASS = [
   '- Round-1 finding 1: fixed. The test now asserts one row for each order.',
   '- Round-1 finding 2: fixed. One query loads the orders and the customers.',
   '- AC-3: not tested. `## Not tested` in spec.md names it. The diff for it changes only docs (`README.md`).',
+  '- AC-4: regression. spec.md marks it `(regression)`. The test passes on the base code and checks the old order list.',
   '- Gate round-2: PASS.',
   '- Commits: 3 commits. All follow Conventional Commits and have `Refs: #42`.',
 ].join('\n')
@@ -153,13 +156,14 @@ const DECISION_APPROVE = [
   'DECISION: APPROVE',
   '',
   '## Summary',
-  'Users can download the order list as a CSV file from the orders page. The gate and all reviews pass. AC-1 and AC-2 have tests. AC-3 is docs only, and spec.md lists it under Not tested.',
+  'Users can download the order list as a CSV file from the orders page. The gate and all reviews pass. AC-1 and AC-2 have tests. AC-3 is docs only, and spec.md lists it under Not tested. AC-4 keeps the old order list.',
   '',
   '## Checks',
   '- Gate round-1: PASS.',
   '- Reviews round-1: code PASS, security PASS, ux PASS, ui PASS.',
   '- AC-1, AC-2: each has a test with red output before the change, and the test passes.',
   '- AC-3: not tested. `## Not tested` in spec.md names it with a reason. The diff for it changes only `README.md`.',
+  '- AC-4: regression. spec.md marks it `(regression)`. The test passes before and after the change.',
   '- Shortcuts: none.',
   '',
   '## Test it by hand',
@@ -233,6 +237,25 @@ test('builder example marks the not-tested AC', () => {
   }
 })
 
+const REGRESSION = /^AC-\d+ \(regression\) .+ Test: `[^`]+` "[^"]+"\.$/
+
+test('spec example marks the regression AC', () => {
+  const marked = acLines(SPEC_HEAD).filter(l => l.startsWith(`${acId(l)} (regression) `))
+  expect(marked.length).toBe(1)
+  expect(marked[0] ?? '').toMatch(REGRESSION)
+  const notTested = (lastSection(SPEC_HEAD, 'Not tested') ?? '').split('\n')
+  expect(notTested.some(n => n.startsWith(`- ${acId(marked[0] ?? '')} `))).toBe(false)
+})
+
+test('builder example marks the regression AC', () => {
+  const marked = acLines(SPEC_HEAD).filter(l => REGRESSION.test(l))
+  expect(marked.length).toBeGreaterThan(0)
+  for (const l of marked) {
+    const t = /Test: (`[^`]+` "[^"]+")\.$/.exec(l)?.[1] ?? ''
+    expect(BUILD_TABLE.split('\n')).toContain(`| ${acId(l)} | ${t} | none (regression, green before) | pass |`)
+  }
+})
+
 test('builder example commit is conventional', () => {
   expect(checkMessage(BUILDER_COMMIT)).toBeNull()
   expect(BUILDER_COMMIT).toMatch(/\nRefs: #\d+$/)
@@ -264,6 +287,18 @@ test('decision example APPROVE accepts a not-tested AC', () => {
   expect(parseDecision(DECISION_APPROVE).decision).toBe('APPROVE')
   const ac3 = (lastSection(DECISION_APPROVE, 'Checks') ?? '').split('\n').find(l => l.startsWith('- AC-3: not tested'))
   expect(ac3 ?? '').toContain('`## Not tested`')
+})
+
+test('review example PASS checks the regression AC', () => {
+  expect(parseReview(REVIEW_PASS).verdict).toBe('PASS')
+  const ac4 = (lastSection(REVIEW_PASS, 'Checked') ?? '').split('\n').find(l => l.startsWith('- AC-4: regression.'))
+  expect(ac4 ?? '').toContain('passes on the base code')
+})
+
+test('decision example APPROVE accepts a regression AC', () => {
+  expect(parseDecision(DECISION_APPROVE).decision).toBe('APPROVE')
+  const ac4 = (lastSection(DECISION_APPROVE, 'Checks') ?? '').split('\n').find(l => l.startsWith('- AC-4: regression.'))
+  expect(ac4).toBeDefined()
 })
 
 test('decision example ESCALATE parses with a question', () => {
