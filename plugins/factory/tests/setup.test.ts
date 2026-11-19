@@ -116,13 +116,50 @@ test('preview migrates in memory only and lists the planned migrations', async (
 test('apply sweeps finished jobs and reports it', async () => {
   const ctx = fakeCtx({ replies: replies(), files: { '/repo/.factory/jobs/setup/checks.md': 'x' } })
   const r = await setup(ctx, { apply: true })
-  expect(r.sweep).toEqual({ removed: [], kept: [] })
+  expect(r.sweep).toEqual({ removed: [], kept: [], finished: [] })
   expect(ctx.calls).toContainEqual(['git', 'worktree', 'prune'])
 })
 
 test('preview does not sweep', async () => {
   const ctx = fakeCtx({ replies: replies() })
   const r = await setup(ctx, { apply: false })
-  expect(r.sweep).toEqual({ removed: [], kept: [] })
+  expect(r.sweep).toEqual({ removed: [], kept: [], finished: [] })
   expect(ctx.calls.some(c => c.includes('prune'))).toBe(false)
+})
+
+const stored = () => ({ ...defaultConfig('https://github.com/a/b', 'main', []), concurrency: 1, maxRounds: 5 })
+
+test('apply writes concurrency into an existing config', async () => {
+  const ctx = fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify(stored()) } })
+  const r = await setup(ctx, { apply: true, concurrency: 2 })
+  expect(JSON.parse(ctx.files[CFG]!)).toEqual({ ...stored(), concurrency: 2 })
+  expect(r.config.concurrency).toBe(2)
+})
+
+test('apply writes baseBranch into an existing config', async () => {
+  const ctx = fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify(stored()) } })
+  await setup(ctx, { apply: true, baseBranch: 'dev' })
+  expect(JSON.parse(ctx.files[CFG]!)).toEqual({ ...stored(), baseBranch: 'dev' })
+})
+
+test('apply without arguments keeps an existing config', async () => {
+  const text = JSON.stringify(stored())
+  const ctx = fakeCtx({ replies: replies(), files: { [CFG]: text } })
+  await setup(ctx, { apply: true })
+  expect(ctx.files[CFG]).toBe(text)
+})
+
+test('a new config takes concurrency and baseBranch', async () => {
+  const ctx = fakeCtx({ replies: replies() })
+  await setup(ctx, { apply: true, concurrency: 2, baseBranch: 'dev' })
+  expect(JSON.parse(ctx.files[CFG]!)).toMatchObject({ concurrency: 2, baseBranch: 'dev' })
+})
+
+test('preview shows the arguments for an existing config', async () => {
+  const ctx = fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify(stored()) } })
+  const before = { ...ctx.files }
+  const r = await setup(ctx, { apply: false, concurrency: 2, baseBranch: 'dev' })
+  expect(r.config.concurrency).toBe(2)
+  expect(r.config.baseBranch).toBe('dev')
+  expect(ctx.files).toEqual(before)
 })

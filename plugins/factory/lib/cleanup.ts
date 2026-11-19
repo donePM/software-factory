@@ -7,6 +7,7 @@ import type { Ctx, Ticket } from './types.ts'
 
 export type Kept = { path: string; reason: string; command: string }
 export type CleanupReport = { removed: string[]; kept: Kept[] }
+export type SweepReport = CleanupReport & { finished: string[] }
 
 const ISSUE = /^[1-9][0-9]*$/
 
@@ -69,13 +70,21 @@ export async function cleanupJob(ctx: Ctx, _t: Tracker, n: number, _end: 'done' 
   return report
 }
 
+// Call only after GitHub reports the PR on factory/<n> as merged.
+export async function finishMerged(ctx: Ctx, t: Tracker, ticket: Ticket): Promise<CleanupReport> {
+  const n = ticket.number
+  if (stateOf(ticket.labels) !== 'done') await t.setState(n, 'done', { prMerged: true })
+  if (ticket.state !== 'closed') await t.close(n, 'done')
+  return cleanupJob(ctx, t, n, 'done')
+}
+
 async function folders(ctx: Ctx, name: 'jobs' | 'worktrees'): Promise<number[]> {
   const names = await ctx.fs.list(`${ctx.root}/.factory/${name}`).catch(() => [])
   return names.filter(s => ISSUE.test(s)).map(Number)
 }
 
-export async function sweep(ctx: Ctx, t: Tracker): Promise<CleanupReport> {
-  const report: CleanupReport = { removed: [], kept: [] }
+export async function sweep(ctx: Ctx, t: Tracker): Promise<SweepReport> {
+  const report: SweepReport = { removed: [], kept: [], finished: [] }
   const add = (r: CleanupReport): void => {
     report.removed.push(...r.removed)
     report.kept.push(...r.kept)
@@ -96,17 +105,17 @@ export async function sweep(ctx: Ctx, t: Tracker): Promise<CleanupReport> {
   for (const [n, ticket] of tickets) {
     try {
       const state = stateOf(ticket.labels)
-      if (ticket.state === 'closed') {
-        add(await cleanupJob(ctx, t, n, state === 'rejected' ? 'rejected' : 'done'))
-      } else if (state === 'approved' || state === 'needs-human') {
+      // shortcut: one PR lookup per ticket, upgrade to one merged-PR list call when the backlog makes cleanup slow.
+      if (state !== null && state !== 'conflict' && state !== 'done' && state !== 'rejected') {
         const branch = branchName(n)
         const pr = await t.findPr(branch)
         if (pr?.state === 'MERGED' && pr.headRefName === branch) {
-          await t.setState(n, 'done')
-          await t.close(n, 'done')
-          add(await cleanupJob(ctx, t, n, 'done'))
+          add(await finishMerged(ctx, t, ticket))
+          report.finished.push(`#${n}: PR merged on GitHub, set to done`)
+          continue
         }
       }
+      if (ticket.state === 'closed') add(await cleanupJob(ctx, t, n, state === 'rejected' ? 'rejected' : 'done'))
     } catch (e) {
       failed(n, e)
     }

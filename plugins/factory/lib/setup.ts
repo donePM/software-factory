@@ -1,4 +1,4 @@
-import { type CleanupReport, sweep } from './cleanup.ts'
+import { type SweepReport, sweep } from './cleanup.ts'
 import { type Check, doctor } from './doctor.ts'
 import { type Config, configPath, defaultConfig, loadConfig, migrate, planMigration, writeConfig } from './config.ts'
 import { detectAll } from './stacks/index.ts'
@@ -17,7 +17,7 @@ export type SetupReport = {
   standard: StandardCheck[]
   labels: number
   gitignore: boolean
-  sweep: CleanupReport
+  sweep: SweepReport
   next: string[]
 }
 
@@ -38,7 +38,7 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   const stacks: Config['stacks'] = (await detectAll(ctx, ctx.root).catch(() => [])) // doctor reports a failed detection
     .map(d => ({ id: d.stack, path: d.path }))
   const checks = await doctor(ctx, stacks)
-  const empty = { created: false, migrated: [], standard: [], labels: 0, gitignore: false, sweep: { removed: [], kept: [] } }
+  const empty = { created: false, migrated: [], standard: [], labels: 0, gitignore: false, sweep: { removed: [], kept: [], finished: [] } }
   if (checks.some(c => !c.ok)) {
     const fixes = checks.filter(c => !c.ok).map(c => c.fix ?? c.detail)
     return { checks, config: defaultConfig('', 'main', stacks), ...empty, next: fixes }
@@ -50,7 +50,6 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   let cfg: Config
   if (!exists) {
     cfg = defaultConfig(await originUrl(ctx), input.baseBranch ?? (await defaultBranch(ctx)), stacks)
-    if (input.concurrency !== undefined) cfg.concurrency = input.concurrency
   } else if (input.apply) {
     migrated = (await migrate(ctx, input.migrations)).applied
     cfg = await loadConfig(ctx)
@@ -59,13 +58,16 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
     cfg = plan.config
     migrated = plan.applied
   }
+  const stored = JSON.stringify(cfg)
+  if (input.concurrency !== undefined) cfg.concurrency = input.concurrency
+  if (input.baseBranch !== undefined) cfg.baseBranch = input.baseBranch
   if (!input.apply) {
     const standard = await githubTracker(ctx, repoFromUrl(cfg.tracker.url)).applyStandard(false)
     return { checks, config: cfg, ...empty, migrated, standard, labels: labelSet().length, next: ['Run setup again with apply true.'] }
   }
 
   const created = !exists
-  if (created) await writeConfig(ctx, cfg)
+  if (created || JSON.stringify(cfg) !== stored) await writeConfig(ctx, cfg)
   const ignorePath = `${ctx.root}/.factory/.gitignore`
   if (!(await ctx.fs.exists(ignorePath)) || (await ctx.fs.read(ignorePath)) !== GITIGNORE) {
     await ctx.fs.write(ignorePath, GITIGNORE)

@@ -29,6 +29,8 @@ If the path has another form, do not call the tool. Report
      The merge commit is `mergeCommit` from the result. Never name `head` as
      the merge commit. `head` is the pushed branch head.
      If `mergeCommit` is null, say that the merge commit is unknown.
+   - Success with `alreadyMerged: true`: report "PR merged on GitHub, set to
+     done". Then give the merge commit and the cleanup report as above.
    - Error: the error code, the error text, and its `Fix` line. Do not try to
      fix the error.
 

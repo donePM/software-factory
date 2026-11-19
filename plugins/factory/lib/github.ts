@@ -86,7 +86,7 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
       const comments = parseLines<RawComment>(await gh(['api', `repos/${repo}/issues/${n}/comments`, '--paginate', '--jq', '.[]']))
       return toTicket(raw, comments.map(toComment))
     },
-    async setState(n, to) {
+    async setState(n, to, opts) {
       const ticket = await t.get(n)
       const from = stateOf(ticket.labels)
       if (from === 'conflict') {
@@ -94,7 +94,7 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
         await t.comment(n, `Factory stopped: this issue has more than one status label (${found.join(', ')}). Remove all but one, then ask the factory to continue.`)
         throw new FactoryError('label-conflict', `#${n} has several status labels: ${found.join(', ')}`, 'Remove all but one status label.')
       }
-      assertTransition(from, to)
+      assertTransition(from, to, opts)
       if (from === to) return
       const args = ['issue', 'edit', String(n), '-R', repo, '--add-label', statusLabel(to)]
       if (from !== null) args.push('--remove-label', statusLabel(from))
