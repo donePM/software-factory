@@ -4,7 +4,7 @@
     "type": "github",
     "url": "git@github.com:donePM/software-factory"
   },
-  "concurrency": 1,
+  "concurrency": 2,
   "maxRounds": 3,
   "baseBranch": "main",
   "merge": {
