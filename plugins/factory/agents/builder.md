@@ -36,9 +36,11 @@ files stay in the main checkout, under `<jobDir>`.
    (for example `package.json`, `composer.json`, `Makefile`). Run the install
    command if the repo has one.
 3. Do this step only when `decision.md` or a human comment in `issue.md` asks for
-   a sync with the base branch. Run `git merge --no-edit origin/<Base branch>`.
-   Resolve each conflict. Commit with the message `chore(factory): sync with <Base branch>`
-   and the footer `Refs: #<issue>`. Then do the next steps as usual.
+   a sync with the base branch. Run
+   `git merge --no-edit -m 'chore(factory): sync with <Base branch>' -m 'Refs: #<issue>' origin/<Base branch>`.
+   If git shows conflicts, resolve each conflict. Stage each resolved path with
+   `git add <path>`. Then run `git commit --no-edit --cleanup=strip`.
+   Then do the next steps as usual.
 4. For each AC that has no passing test yet and is not under `## Not tested`, in order:
    1. Write the test that the spec names. Write nothing else yet.
    2. Run the test. It must fail. Keep the first assertion or error line of the
