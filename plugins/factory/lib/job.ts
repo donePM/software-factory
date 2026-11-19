@@ -1,4 +1,4 @@
-import { loadConfig } from './config.ts'
+import { type Config, loadConfig } from './config.ts'
 import { checkMessage, typeOf } from './conventional.ts'
 import { type CleanupReport, cleanupJob } from './cleanup.ts'
 import { FactoryError, must, mkdirp, rmrf } from './exec.ts'
@@ -10,6 +10,7 @@ import { parseDecision, parseReview } from './review.ts'
 import { route } from './route.ts'
 import { renderIssue } from './issue-file.ts'
 import { stateOf } from './labels.ts'
+import { typesSource } from './stacks/claude-plugin.ts'
 import { findMarked, stripMarker } from './markers.ts'
 import {
   branchName, fieldOf, jobDir, lastSection, parseBase, parsePr, parseReviewed, parseRoute, parseSpecUpdated, readJob, renderRoute, worktreeDir, writeJob,
@@ -51,6 +52,14 @@ async function ensureWorktree(ctx: Ctx, wt: string, branch: string, start: strin
   }
 }
 
+// The builder type-checks with the same engine types as the gate. A failed copy shows up in the gate.
+async function copyTypes(ctx: Ctx, wt: string, cfg: Config): Promise<void> {
+  for (const s of cfg.stacks) {
+    if (s.id !== 'claude-plugin' || !(await ctx.fs.exists(s.path === '.' ? `${wt}/tsconfig.json` : `${wt}/${s.path}/tsconfig.json`))) continue
+    await ctx.run(['sh', '-c', typesSource(s.path)], { cwd: wt })
+  }
+}
+
 // A zero-width space breaks GitHub closing keywords and @mentions in agent text, so it closes and pings nothing.
 const ZWSP = '\u200b'
 export const inert = (text: string): string =>
@@ -83,6 +92,7 @@ export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
     if (old === null || base === 'none') base = await must(ctx, ['git', 'rev-parse', origin])
     await ensureWorktree(ctx, wt, branch, old !== null && old.base !== 'none' ? old.base : origin)
   }
+  await copyTypes(ctx, wt, cfg)
   const job: Job = {
     issue: n,
     title: oneLine(ticket.title),
@@ -183,6 +193,7 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
   }
 
   await ensureWorktree(ctx, job.worktree, job.branch, job.base === 'none' ? `origin/${job.baseBranch}` : job.base)
+  await copyTypes(ctx, job.worktree, cfg)
 
   let specChanged = false
   const spec = findMarked(ticket.comments, 'spec', operator)
