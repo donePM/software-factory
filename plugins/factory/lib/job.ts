@@ -3,6 +3,7 @@ import { checkMessage, typeOf } from './conventional.ts'
 import { type CleanupReport, cleanupJob } from './cleanup.ts'
 import { FactoryError, must, mkdirp, rmrf } from './exec.ts'
 import { countAttempts } from './gate.ts'
+import { followState } from './assignee.ts'
 import { gateJob, passedAt } from './gatejob.ts'
 import { parseIntake } from './intake.ts'
 import { parseDecision, parseReview } from './review.ts'
@@ -19,6 +20,11 @@ import { assertTransition } from './transitions.ts'
 import type { Ctx, Reviewer, State, Ticket } from './types.ts'
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim()
+
+async function moveJob(t: Tracker, job: Job, to: State): Promise<void> {
+  await t.setState(job.issue, to)
+  await followState(t, job.pr === null ? [job.issue] : [job.issue, job.pr], to)
+}
 
 async function ok(ctx: Ctx, argv: string[]): Promise<boolean> {
   return (await ctx.run(argv)).exitCode === 0
@@ -64,6 +70,7 @@ export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
   let old: Job | null = null
   if (resume && (await ctx.fs.exists(`${jobDir(ctx.root, n)}/job.md`))) old = await readJob(ctx, n) // bad-job stops before the label moves
   await t.setState(n, 'intake') // refuses illegal moves before any git call
+  await followState(t, [n], 'intake')
   const cfg = await loadConfig(ctx)
   const dir = jobDir(ctx.root, n)
   const wt = worktreeDir(ctx.root, n)
@@ -313,7 +320,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
 
   if (to === 'needs-human' && reason !== undefined) {
     await t.comment(n, `Factory stopped: ${reason}`)
-    await t.setState(n, 'needs-human')
+    await moveJob(t, job, 'needs-human')
     return result('needs-human')
   }
 
@@ -326,7 +333,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
     job = { ...job, route: route(intake, await loadConfig(ctx)) }
     await writeJob(ctx, job)
     await upsertIntake()(text)
-    await t.setState(n, 'spec')
+    await moveJob(t, job, 'spec')
     return result('spec')
   }
 
@@ -336,7 +343,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
     if ((lastSection(text, 'Questions') ?? '').trim() === '') throw new FactoryError('intake-no-questions', 'intake.md needs a non-empty "## Questions"')
     const mention = MENTION.test(ticket.author) ? `@${ticket.author} please answer the questions above.` : undefined
     await upsertIntake(mention)(text)
-    await t.setState(n, 'needs-info')
+    await moveJob(t, job, 'needs-info')
     return result('needs-info')
   }
 
@@ -345,7 +352,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
     if (parseIntake(text).decision !== 'REJECT') throw new FactoryError('intake-mismatch', 'intake.md must say DECISION: REJECT')
     if ((lastSection(text, 'Reason') ?? '').trim() === '') throw new FactoryError('intake-no-reason', 'intake.md needs a non-empty "## Reason"')
     await upsertIntake()(text)
-    await t.setState(n, 'rejected')
+    await moveJob(t, job, 'rejected')
     await t.close(n, 'rejected')
     return result('rejected', { cleanup: await cleanupJob(ctx, t, n, 'rejected') })
   }
@@ -369,7 +376,7 @@ async function startRound(ctx: Ctx, t: Tracker, next: Job): Promise<AdvanceResul
   await writeJob(ctx, job)
   await rmrf(ctx, `${job.jobDir}/decision.md`) // a new round needs a new decision
   await mkdirp(ctx, roundOf(job))
-  await t.setState(job.issue, 'build')
+  await moveJob(t, job, 'build')
   return done(job, 'build')
 }
 
@@ -407,7 +414,7 @@ async function advanceBuild(ctx: Ctx, t: Tracker, old: Job, from: State | null, 
   if (over(old)) {
     const note = `Round limit of ${max} reached after round ${old.round}.`
     await t.comment(n, `Factory stopped: ${note}`)
-    if (from !== 'needs-human') await t.setState(n, 'needs-human')
+    if (from !== 'needs-human') await moveJob(t, old, 'needs-human')
     return done(old, 'needs-human', { note })
   }
   return startRound(ctx, t, { ...old, round: old.round + 1 })
@@ -450,7 +457,7 @@ async function advanceReview(ctx: Ctx, t: Tracker, old: Job): Promise<AdvanceRes
   // The comment first: job.md must not be ahead of the ticket when the upsert fails.
   await t.upsertComment(n, 'intake', intakeComment(job, await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')))
   await writeJob(ctx, job)
-  await t.setState(n, 'review')
+  await moveJob(t, job, 'review')
   return done(job, 'review', { reviewers: Object.keys(job.route) as Reviewer[] })
 }
 
@@ -477,6 +484,6 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   // Both ways the PR leaves draft: GitHub does not merge a draft, and a human may merge an escalated job.
   await t.prReady(job.pr)
   if (to === 'needs-human') await t.prComment(job.pr, decision.question ?? '')
-  await t.setState(n, to)
+  await moveJob(t, job, to)
   return done(job, to)
 }

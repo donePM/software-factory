@@ -116,6 +116,8 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
    factory sets the issue to `done` and removes the worktree, the merged
    branch, and the job folder. Work that is not saved stays and is reported.
 
+The factory account is assignee of the issue and the PR in `intake`, `spec`, `build`, and `review`, and not in wait or end states.
+
 `/factory:status` shows why a `needs-human` job stopped and the next step.
 Fix the cause (for example, change the spec) or answer in the issue. Then run
 `/factory:run <n>`. The job continues in a new round, with or without a PR.

@@ -43,13 +43,15 @@ function tracker(labels: string[], author = 'alice', initial: Comment[] = [], he
   const prs: { branch: string; base: string; title: string; body: string; labels: string[] }[] = []
   const prComments: string[] = []
   const states: State[] = []
+  const assigns: string[] = []
   const ticket: Ticket = {
     kind: 'issue', number: 7, title: 'Add thing', body: 'b', author, labels: ['factory', ...labels],
     state: 'open', createdAt: '2026-01-01T00:00:00Z', url: 'u/7', comments: initial,
   }
   const t = {
-    log, comments, posts, prs, prComments, states,
+    log, comments, posts, prs, prComments, states, assigns,
     login: async () => 'op',
+    assign: async (n: number, on: boolean) => { assigns.push(`${on ? '+' : '-'}${n}`) },
     get: async () => ticket,
     setState: async (_n: number, to: State) => {
       assertTransition(stateOf(ticket.labels) as State | null, to)
@@ -328,6 +330,16 @@ test('approved needs every review PASS and decision APPROVE', async () => {
   expect(t.comments.map(c => c.name)).toEqual(['round-1', 'decision'])
   expect(t.comments[1]!.body).toBe(`Round: 1\n\n${APPROVE}`)
   expect(t.states).toEqual(['approved'])
+})
+
+test('build assigns and approved unassigns the issue and the PR', async () => {
+  const b = setup('spec', { pr: 12 }, { [`${DIR}/spec.md`]: SPEC })
+  await jobAdvance(b.ctx, b.t, { issue: 7, to: 'build' })
+  expect(b.t.assigns).toEqual(['+7', '+12'])
+  const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE }
+  const a = inReview(files)
+  await jobAdvance(a.ctx, a.t, { issue: 7, to: 'approved' })
+  expect(a.t.assigns).toEqual(['-7', '-12'])
 })
 
 test('approved is refused after a spec change during review', async () => {

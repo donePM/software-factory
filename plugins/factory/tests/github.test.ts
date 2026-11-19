@@ -186,7 +186,7 @@ test('openPr opens a draft with labels', async () => {
 })
 
 test('findPr returns the first match or null', async () => {
-  const pr = { number: 9, state: 'OPEN', isDraft: true, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: '' }
+  const pr = { number: 9, state: 'OPEN', isDraft: true, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: '', mergeCommit: null }
   const hit = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: JSON.stringify([pr]) } }])
   expect(await githubTracker(hit, 'a/b').findPr('factory/5')).toEqual({ ...pr, author: 'op' })
   const none = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: '[]' } }])
@@ -200,7 +200,7 @@ test('merge passes the subject', async () => {
 })
 
 test('findPr prefers an open PR over a newer closed one', async () => {
-  const mk = (number: number, state: string) => ({ number, state, isDraft: false, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: '' })
+  const mk = (number: number, state: string) => ({ number, state, isDraft: false, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: '', mergeCommit: null })
   const rows = [mk(11, 'CLOSED'), mk(9, 'OPEN'), mk(8, 'MERGED')]
   const ctx = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: JSON.stringify(rows) } }])
   expect((await githubTracker(ctx, 'a/b').findPr('factory/5'))?.number).toBe(9)
@@ -262,10 +262,21 @@ test('searchIssues maps labels to names', async () => {
 })
 
 test('prState maps the author', async () => {
-  const pr = { number: 9, state: 'MERGED', isDraft: false, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: 'APPROVED' }
+  const pr = { number: 9, state: 'MERGED', isDraft: false, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: 'APPROVED', mergeCommit: null }
   const ctx = spyCtx([{ argv: ['gh', 'pr', 'view'], result: { stdout: JSON.stringify(pr) } }])
   expect(await githubTracker(ctx, 'a/b').prState(9)).toEqual({ ...pr, author: 'op' })
-  expect(ctx.calls[0]).toEqual(['gh', 'pr', 'view', '9', '-R', 'a/b', '--json', 'number,state,isDraft,title,body,author,headRefName,headRefOid,reviewDecision'])
+  expect(ctx.calls[0]).toEqual(['gh', 'pr', 'view', '9', '-R', 'a/b', '--json', 'number,state,isDraft,title,body,author,headRefName,headRefOid,reviewDecision,mergeCommit'])
+})
+
+test('prState maps the merge commit oid', async () => {
+  const pr = { number: 9, state: 'MERGED', isDraft: false, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: '' }
+  const hit = spyCtx([{ argv: ['gh', 'pr', 'view'], result: { stdout: JSON.stringify({ ...pr, mergeCommit: { oid: 'm' } }) } }])
+  expect((await githubTracker(hit, 'a/b').prState(9)).mergeCommit).toBe('m')
+  expect(hit.calls[0]).toEqual(['gh', 'pr', 'view', '9', '-R', 'a/b', '--json', 'number,state,isDraft,title,body,author,headRefName,headRefOid,reviewDecision,mergeCommit'])
+  const none = spyCtx([{ argv: ['gh', 'pr', 'view'], result: { stdout: JSON.stringify({ ...pr, mergeCommit: null }) } }])
+  expect((await githubTracker(none, 'a/b').prState(9)).mergeCommit).toBe(null)
+  const list = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: JSON.stringify([{ ...pr, mergeCommit: { oid: 'm' } }]) } }])
+  expect((await githubTracker(list, 'a/b').findPr('factory/5'))?.mergeCommit).toBe('m')
 })
 
 test('applyStandard sends both merge commit fields when one drifts', async () => {
@@ -284,4 +295,18 @@ test('applyStandard shows a missing field as (missing)', async () => {
   const ctx = spyCtx([{ argv: ['gh', 'api', 'repos/a/b'], result: { stdout: JSON.stringify(raw) } }])
   const checks = await githubTracker(ctx, 'a/b').applyStandard(false)
   expect(checks.find(c => c.key === 'has_issues')).toMatchObject({ ok: false, actual: '(missing)' })
+})
+
+test('assign adds and removes only the factory login', async () => {
+  const ctx = spyCtx([
+    { argv: ['gh', 'api', 'user'], result: { stdout: 'op\n' } },
+    { argv: ['gh', 'api', '-X', 'POST'] }, { argv: ['gh', 'api', '-X', 'DELETE'] },
+  ])
+  const t = githubTracker(ctx, 'a/b')
+  await t.assign(5, true)
+  await t.assign(12, false)
+  expect(ctx.stdins.filter(s => s.argv.includes('-X'))).toEqual([
+    { argv: ['gh', 'api', '-X', 'POST', 'repos/a/b/issues/5/assignees', '--input', '-'], stdin: '{"assignees":["op"]}' },
+    { argv: ['gh', 'api', '-X', 'DELETE', 'repos/a/b/issues/12/assignees', '--input', '-'], stdin: '{"assignees":["op"]}' },
+  ])
 })

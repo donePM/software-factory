@@ -1,3 +1,4 @@
+import { followState } from './assignee.ts'
 import { loadConfig } from './config.ts'
 import { type CleanupReport, cleanupJob } from './cleanup.ts'
 import { FactoryError, must } from './exec.ts'
@@ -89,7 +90,7 @@ export async function approve(ctx: Ctx, t: Tracker, n: number): Promise<{ issue:
   return { issue, pr: pr.number, how: await record(t, issue, pr, reviewed) }
 }
 
-export type MergeResult = { issue: number; pr: number; sha: string; cleanup: CleanupReport }
+export type MergeResult = { issue: number; pr: number; head: string; mergeCommit: string | null; cleanup: CleanupReport }
 
 export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResult> {
   const { issue, pr: found } = await resolvePair(ctx, t, n)
@@ -116,7 +117,10 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
     await ctx.run(['git', '-C', wt, 'merge', '--abort'])
     const reason = `merging ${origin} into ${job.branch} has a conflict.`
     await t.comment(issue, `Factory stopped: ${reason} The job needs a new build: the builder merges ${origin}, then the reviews run again.`)
-    if (state === 'approved') await t.setState(issue, 'needs-human')
+    if (state === 'approved') {
+      await t.setState(issue, 'needs-human')
+      await followState(t, [issue, found.number], 'needs-human')
+    }
     throw new FactoryError('sync-conflict', reason, `The factory undid the merge, so the worktree has no conflict now. Send the job back to build: the builder merges ${origin}, then the reviews run again.`)
   }
 
@@ -149,10 +153,13 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
 
   if (pr.isDraft) await t.prReady(pr.number) // GitHub does not merge a draft
   await t.merge(pr.number, `${pr.title} (#${pr.number})`, sha)
-  if ((await t.prState(pr.number)).state !== 'MERGED') {
+  const after = await t.prState(pr.number)
+  if (after.state !== 'MERGED') {
     throw new FactoryError('merge-failed', `PR #${pr.number} is not merged`, 'Check the PR on GitHub, then merge again.')
   }
   await t.setState(issue, 'done')
+  await followState(t, [issue, pr.number], 'done')
   if ((await t.get(issue)).state !== 'closed') await t.close(issue, 'done')
-  return { issue, pr: pr.number, sha, cleanup: await cleanupJob(ctx, t, issue, 'done') }
+  // shortcut: no retry when GitHub gives no merge commit, upgrade when a real run shows null.
+  return { issue, pr: pr.number, head: sha, mergeCommit: after.mergeCommit, cleanup: await cleanupJob(ctx, t, issue, 'done') }
 }
