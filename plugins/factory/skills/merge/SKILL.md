@@ -21,4 +21,5 @@ Use plain words. The user may not be a developer.
      - `sync-failed`: git could not merge the base branch, but there is no conflict. Nothing changed. Fix the git problem, then run `/factory:merge` again.
      - `not-reviewed`: the branch has commits that no review saw. Nothing was merged. The job must go back to build for a new review.
      - `gate-failed`: the gate is red after the sync. Nothing was merged. Fix the failures first.
-     - `head-mismatch`, `gate-not-green`: the branch changed during the merge. Run `/factory:merge` again.
+     - `head-mismatch`: the branch changed during the merge, or GitHub did not show the pushed commit in time. Run `/factory:merge` again.
+     - `gate-not-green`: the branch changed during the merge. Run `/factory:merge` again.
