@@ -233,7 +233,13 @@ test('merge syncs with origin/<base> from the config', async () => {
   const { ctx, t } = setup()
   await merge(ctx, t, 7)
   expect(ctx.calls).toContainEqual(['git', '-C', WT, 'fetch', 'origin', 'main'])
-  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'merge', '--no-edit', '-m', 'chore(factory): sync with main', 'origin/main'])
+  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'merge', '--no-edit', '-m', 'chore(factory): sync with main', '-m', 'Refs: #7', 'origin/main'])
+})
+
+test('the sync commit names the issue, not the PR, in its footer', async () => {
+  const { ctx, t } = setup()
+  await merge(ctx, t, 9)
+  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'merge', '--no-edit', '-m', 'chore(factory): sync with main', '-m', 'Refs: #7', 'origin/main'])
 })
 
 test('merge refuses when the gate fails after sync', async () => {
