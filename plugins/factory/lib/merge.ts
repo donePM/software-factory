@@ -107,7 +107,7 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
 
   await must(ctx, ['git', '-C', wt, 'fetch', 'origin', base])
   const reviewed = await checkReviewed(ctx, wt, job.reviewed, origin)
-  const sync = await ctx.run(['git', '-C', wt, 'merge', '--no-edit', '-m', `chore(factory): sync with ${base}`, origin])
+  const sync = await ctx.run(['git', '-C', wt, 'merge', '--no-edit', '-m', `chore(factory): sync with ${base}`, '-m', `Refs: #${issue}`, origin])
   if (sync.exitCode !== 0) {
     // Only a stopped merge leaves MERGE_HEAD. Other failures (lock, disk, bad ref) are no conflict.
     const conflict = (await ctx.run(['git', '-C', wt, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0
