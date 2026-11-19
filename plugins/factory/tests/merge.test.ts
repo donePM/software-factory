@@ -34,6 +34,7 @@ function tracker(o: Opts = {}) {
   const reviews: string[] = []
   const merges: { pr: number; subject: string; sha: string }[] = []
   const upserts: { name: string; body: string }[] = []
+  const assigns: string[] = []
   let merged = false
   let closed = o.closed ?? false
   const comments: Comment[] = [{ id: 1, author: 'op', body: withMarker('intake', intakeComment({ ...J, ...o.job }, INTAKE)), createdAt: at, updatedAt: at }]
@@ -47,8 +48,9 @@ function tracker(o: Opts = {}) {
     headRefName: 'factory/7', headRefOid: HEAD, reviewDecision: o.approved === true ? 'APPROVED' : '', ...o.pr,
   })
   const t = {
-    log, states, posts, reviews, merges, upserts,
+    log, states, posts, reviews, merges, upserts, assigns,
     login: async () => 'op',
+    assign: async (n: number, on: boolean) => { assigns.push(`${on ? '+' : '-'}${n}`) },
     get: async (n: number) => (n === 9 ? prTicket : { ...issue, state: closed ? 'closed' : 'open' }),
     setState: async (_n: number, to: State) => {
       assertTransition(stateOf(issue.labels) as State | null, to)
@@ -421,6 +423,15 @@ test('merge sets done, closes the issue and cleans up', async () => {
   expect(t.log).toContain('close done')
   expect(ctx.calls).toContainEqual(['rm', '-rf', DIR])
   expect(r.cleanup.removed).toContain(DIR)
+})
+
+test('merge unassigns the factory from the issue and the PR', async () => {
+  const { ctx, t } = setup()
+  await merge(ctx, t, 7)
+  expect(t.assigns).toEqual(['-7', '-9'])
+  const conflict = setup({}, [CONFLICT])
+  await rejects(merge(conflict.ctx, conflict.t, 7), 'sync-conflict')
+  expect(conflict.t.assigns).toEqual(['-7', '-9'])
 })
 
 test('merge does not close an issue that GitHub already closed', async () => {
