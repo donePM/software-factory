@@ -1,4 +1,4 @@
-import { type CleanupReport, sweep } from './cleanup.ts'
+import { type SweepReport, sweep } from './cleanup.ts'
 import { type Check, doctor } from './doctor.ts'
 import { type Config, configPath, defaultConfig, loadConfig, migrate, planMigration, writeConfig } from './config.ts'
 import { detectAll } from './stacks/index.ts'
@@ -17,7 +17,7 @@ export type SetupReport = {
   standard: StandardCheck[]
   labels: number
   gitignore: boolean
-  sweep: CleanupReport
+  sweep: SweepReport
   next: string[]
 }
 
@@ -38,7 +38,7 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   const stacks: Config['stacks'] = (await detectAll(ctx, ctx.root).catch(() => [])) // doctor reports a failed detection
     .map(d => ({ id: d.stack, path: d.path }))
   const checks = await doctor(ctx, stacks)
-  const empty = { created: false, migrated: [], standard: [], labels: 0, gitignore: false, sweep: { removed: [], kept: [] } }
+  const empty = { created: false, migrated: [], standard: [], labels: 0, gitignore: false, sweep: { removed: [], kept: [], finished: [] } }
   if (checks.some(c => !c.ok)) {
     const fixes = checks.filter(c => !c.ok).map(c => c.fix ?? c.detail)
     return { checks, config: defaultConfig('', 'main', stacks), ...empty, next: fixes }

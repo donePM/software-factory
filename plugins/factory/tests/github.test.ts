@@ -113,6 +113,17 @@ test('setState rejects an illegal transition', async () => {
   expect(has(ctx.calls, 'gh', 'issue', 'edit')).toBe(false)
 })
 
+test('setState to done from review needs prMerged', async () => {
+  const refused = spyCtx([...writes, ...getReplies(['factory', 'factory:review'])])
+  await expect(githubTracker(refused, 'a/b').setState(5, 'done')).rejects.toMatchObject({ code: 'illegal-transition' })
+  expect(has(refused.calls, 'gh', 'issue', 'edit')).toBe(false)
+  const ctx = spyCtx([...writes, ...getReplies(['factory', 'factory:review'])])
+  await githubTracker(ctx, 'a/b').setState(5, 'done', { prMerged: true })
+  expect(ctx.calls).toContainEqual([
+    'gh', 'issue', 'edit', '5', '-R', 'a/b', '--add-label', 'factory:done', '--remove-label', 'factory:review',
+  ])
+})
+
 test('setState rejects an issue with two status labels', async () => {
   const ctx = spyCtx([...writes, ...getReplies(['factory', 'factory:spec', 'factory:build'])])
   await expect(githubTracker(ctx, 'a/b').setState(5, 'review')).rejects.toMatchObject({ code: 'label-conflict' })
