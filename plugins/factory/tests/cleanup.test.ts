@@ -25,7 +25,7 @@ function tracker(o: { closed?: number[]; labels?: Record<number, string[]>; back
     log,
     get: async (n: number) => { log.push(`get ${n}`); return ticket(n) },
     backlog: async () => o.backlog ?? [],
-    setState: async (n: number, to: State) => { log.push(`state ${n} ${to}`) },
+    setState: async (n: number, to: State, opts?: { prMerged?: boolean }) => { log.push(`state ${n} ${to}${opts?.prMerged === true ? ' prMerged' : ''}`) },
     close: async (n: number, reason: string) => { log.push(`close ${n} ${reason}`) },
     findPr: async (branch: string) => {
       log.push(`findPr ${branch}`)
@@ -143,27 +143,52 @@ test('sweep skips folders that are not issue numbers', async () => {
   const r = await sweep(ctx, t)
   expect(t.log).toEqual([])
   expect(has(ctx.calls, 'rm')).toBe(false)
-  expect(r).toEqual({ removed: [], kept: [] })
+  expect(r).toEqual({ removed: [], kept: [], finished: [] })
 })
 
-test('sweep finishes a ticket that was merged on GitHub', async () => {
-  const ticket = { ...(await tracker().get(9)), labels: ['factory', 'factory:approved'] }
-  const ctx = ctxOf([], { '/repo/.factory/jobs/9/job.md': 'x' })
-  const t = tracker({ backlog: [ticket], labels: { 9: ['factory', 'factory:approved'] }, prs: { 9: { state: 'MERGED' } } })
+test('sweep finishes a ticket in approved or review whose PR was merged on GitHub', async () => {
+  for (const label of ['factory:approved', 'factory:review']) {
+    const ticket = { ...(await tracker().get(9)), labels: ['factory', label] }
+    const ctx = ctxOf([], { '/repo/.factory/jobs/9/job.md': 'x' })
+    const t = tracker({ backlog: [ticket], labels: { 9: ['factory', label] }, prs: { 9: { state: 'MERGED' } } })
+    const r = await sweep(ctx, t)
+    expect(t.log.filter(l => l.startsWith('state'))).toEqual(['state 9 done prMerged']) // folder and backlog name the same ticket
+    expect(t.log).toContain('close 9 done')
+    expect(ctx.calls).toContainEqual(['rm', '-rf', '/repo/.factory/jobs/9'])
+    expect(r.removed).toContain('factory/9')
+    expect(r.finished).toEqual(['#9: PR merged on GitHub, set to done'])
+  }
+})
+
+test('sweep sets done on a closed issue whose PR was merged', async () => {
+  const ctx = ctxOf([], { [`${DIR}/job.md`]: 'x' })
+  const t = tracker({ closed: [7], labels: { 7: ['factory', 'factory:approved'] }, prs: { 7: { state: 'MERGED' } } })
   const r = await sweep(ctx, t)
-  expect(t.log).toContain('state 9 done')
-  expect(t.log).toContain('close 9 done')
-  expect(ctx.calls).toContainEqual(['rm', '-rf', '/repo/.factory/jobs/9'])
-  expect(r.removed).toContain('factory/9')
-  expect(t.log.filter(l => l === 'state 9 done')).toHaveLength(1) // folder and backlog name the same ticket
+  expect(t.log).toContain('state 7 done prMerged')
+  expect(t.log.some(l => l.startsWith('close'))).toBe(false)
+  expect(ctx.calls).toContainEqual(['rm', '-rf', DIR])
+  expect(r.finished).toEqual(['#7: PR merged on GitHub, set to done'])
+
+  const plain = ctxOf([], { [`${DIR}/job.md`]: 'x' })
+  const u = tracker({ closed: [7], labels: { 7: ['factory', 'factory:approved'] } })
+  const s = await sweep(plain, u)
+  expect(u.log.some(l => l.startsWith('state') || l.startsWith('close'))).toBe(false)
+  expect(plain.calls).toContainEqual(['rm', '-rf', DIR])
+  expect(s.finished).toEqual([])
 })
 
-test('sweep does not finish a ticket whose PR is open or from another branch', async () => {
-  const ticket = { ...(await tracker().get(9)), labels: ['factory', 'factory:needs-human'] }
-  for (const pr of [{ state: 'OPEN' as const }, { state: 'MERGED' as const, headRefName: 'other' }]) {
-    const t = tracker({ backlog: [ticket], prs: { 9: pr } })
-    await sweep(ctxOf(), t)
-    expect(t.log.some(l => l.startsWith('state') || l.startsWith('close'))).toBe(false)
+test('sweep does not finish a ticket whose PR is open, closed, missing, or from another branch', async () => {
+  const prs: Pr[] = [{ state: 'OPEN' }, { state: 'CLOSED' }, null, { state: 'MERGED', headRefName: 'other' }]
+  for (const label of ['factory:needs-human', 'factory:review', 'factory:approved']) {
+    for (const pr of prs) {
+      const ticket = { ...(await tracker().get(9)), labels: ['factory', label] }
+      const ctx = ctxOf()
+      const t = tracker({ backlog: [ticket], prs: { 9: pr } })
+      const r = await sweep(ctx, t)
+      expect(t.log.some(l => l.startsWith('state') || l.startsWith('close'))).toBe(false)
+      expect(has(ctx.calls, 'rm')).toBe(false)
+      expect(r.finished).toEqual([])
+    }
   }
 })
 
@@ -223,6 +248,6 @@ test('tool cleanup without an issue sweeps', async () => {
   const def = TOOLS.find(t => t.name === 'cleanup')!
   const ctx = ctxOf([{ argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } }])
   const out = await invoke(def, ctx, {})
-  expect(out).toEqual({ result: JSON.stringify({ removed: [], kept: [] }, null, 2) })
+  expect(out).toEqual({ result: JSON.stringify({ removed: [], kept: [], finished: [] }, null, 2) })
   expect(ctx.calls).toContainEqual(['git', 'worktree', 'prune'])
 })
