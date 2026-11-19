@@ -38,6 +38,11 @@ Then write these sections in this order:
 - `## Acceptance criteria`: one line for each criterion, as `AC-<n> <behavior>`.
   Each line names its test as ``Test: `<file>` "<test name>"``. An AC with no
   test ends with ``Test: none, see Not tested.``
+  An AC that keeps old behavior is a regression AC. Write it as
+  ``AC-<n> (regression) <old behavior that must stay>. Test: `<file>` "<test name>".``
+  Its test passes before and after the change. Use the mark `(regression)`
+  only for an AC that keeps old behavior, never for new or changed behavior.
+  A regression AC has a test, so it never goes under `## Not tested`.
 - `## Tests`: the test files and what each one covers.
 - `## Not tested`: each part with no test, and why. Only pure docs and pure
   configuration can go here. Write one line for each AC with no test, as
@@ -60,10 +65,11 @@ Users can download the order list as a CSV file from the orders page.
 AC-1 `GET /orders.csv` returns status 200, type `text/csv`, and one row per order. Test: `tests/orders-export.test.ts` "returns one row per order".
 AC-2 The orders page shows an "Export CSV" button that links to `/orders.csv`. Test: `tests/orders-page.test.ts` "links to the CSV export".
 AC-3 `README.md` has one line about the CSV export. Test: none, see Not tested.
+AC-4 (regression) The orders page still lists each order as before. Test: `tests/orders-page.test.ts` "still lists the orders".
 
 ## Tests
 - `tests/orders-export.test.ts`: the status, the content type, and the rows.
-- `tests/orders-page.test.ts`: the button and its link.
+- `tests/orders-page.test.ts`: the button, its link, and the old order list.
 
 ## Not tested
 - AC-3 `README.md`: one line about the export. This is docs only.
@@ -80,6 +86,7 @@ AC-3 `README.md` has one line about the CSV export. Test: none, see Not tested.
 ## Rules
 - Each criterion is observable, and an automated test can check it. Usually use 1 to 5
   criteria, never more than 8. The builder writes each test first and sees it fail.
+  Only the test of a `(regression)` AC passes before the change.
   Only an AC for pure docs or pure configuration can have no test. Then
   `## Not tested` names that AC with a reason.
 - Spec one change that a reviewer can check in one read: a few files. If the

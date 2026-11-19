@@ -45,6 +45,11 @@ expected load in the repo (one user with a script, or many users at once).
    is a `blocker`. An AC that `## Not tested` in `spec.md` names with a reason
    needs no test. Its `build.md` row has the status `not tested`. It is a
    `blocker` only when the diff for that AC is not pure docs or pure configuration.
+   For an AC that `spec.md` marks `(regression)`, a test that passes on the base
+   code is no `blocker`. Its `build.md` row has the red output
+   `none (regression, green before)` and the status `pass`. It is a `blocker`
+   when the marked AC adds or changes behavior, or when the test does not
+   check the named old behavior.
 2. **Bug:** wrong result, crash, missed edge case (empty, zero, last item,
    rounding, time zones), a caller that the change breaks, a fix in one caller
    while the shared function stays broken.
@@ -91,7 +96,7 @@ The first line is machine-readable: `VERDICT: PASS|CHANGES`. Write exactly
 
 Write `VERDICT: CHANGES` only for a `blocker` or a `should`. Nits never block.
 A test failure in `checks.md`, an AC without a test that fails without the
-change (except an AC under `## Not tested`), or a bad commit is always CHANGES. Write each one as a `blocker`
+change (except an AC under `## Not tested` or a `(regression)` AC), or a bad commit is always CHANGES. Write each one as a `blocker`
 finding. A CHANGES review without a `blocker` or a `should` is not valid.
 
 ## Examples
@@ -129,6 +134,7 @@ The round-1 blocker and should are fixed. Each tested AC has a test that fails w
 - Round-1 finding 1: fixed. The test now asserts one row for each order.
 - Round-1 finding 2: fixed. One query loads the orders and the customers.
 - AC-3: not tested. `## Not tested` in spec.md names it. The diff for it changes only docs (`README.md`).
+- AC-4: regression. spec.md marks it `(regression)`. The test passes on the base code and checks the old order list.
 - Gate round-2: PASS.
 - Commits: 3 commits. All follow Conventional Commits and have `Refs: #42`.
 ```
