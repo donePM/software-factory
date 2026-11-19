@@ -35,6 +35,10 @@ files stay in the main checkout, under `<jobDir>`.
 2. Find the install, format, lint, type check, and test commands of the repo
    (for example `package.json`, `composer.json`, `Makefile`). Run the install
    command if the repo has one.
+   A Claude plugin with a `tsconfig.json` type-checks against the engine types.
+   The factory writes them to `<plugin>/.claude-plugin/types/claude-code/index.d.ts`.
+   Use only that file. Never copy or write another types file there.
+   If the file is missing, name this under `## Risks` in `build.md`.
 3. Do this step only when `decision.md` or a human comment in `issue.md` asks for
    a sync with the base branch. Run
    `git merge --no-edit -m 'chore(factory): sync with <Base branch>' -m 'Refs: #<issue>' origin/<Base branch>`.
