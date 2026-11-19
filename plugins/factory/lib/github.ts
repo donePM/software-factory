@@ -13,14 +13,14 @@ export function repoFromUrl(url: string): string {
 }
 
 const ISSUE_FIELDS = 'number,title,body,labels,author,createdAt,url,state'
-const PR_FIELDS = 'number,state,isDraft,title,body,author,headRefName,headRefOid,reviewDecision'
+const PR_FIELDS = 'number,state,isDraft,title,body,author,headRefName,headRefOid,reviewDecision,mergeCommit'
 
 type RawIssue = {
   number: number; title: string; body: string; labels: { name: string }[]
   author: { login: string }; createdAt: string; url: string; state: string
 }
 type RawComment = { id: number; user: { login: string }; body: string; created_at: string; updated_at: string }
-type RawPr = Omit<PrState, 'author'> & { author: { login: string } }
+type RawPr = Omit<PrState, 'author' | 'mergeCommit'> & { author: { login: string }; mergeCommit: { oid: string } | null }
 type RawFields = { number: number; issue_field_values?: { value?: unknown; single_select_option?: { name?: string } | null }[] | null }
 
 const PRIORITIES: readonly string[] = ['Urgent', 'High', 'Medium', 'Low']
@@ -42,7 +42,7 @@ const toTicket = (r: RawIssue, comments: Comment[]): Ticket => ({
 const toComment = (c: RawComment): Comment => ({
   id: c.id, author: c.user.login, body: c.body, createdAt: c.created_at, updatedAt: c.updated_at,
 })
-const toPr = (r: RawPr): PrState => ({ ...r, author: r.author.login })
+const toPr = (r: RawPr): PrState => ({ ...r, author: r.author.login, mergeCommit: r.mergeCommit?.oid ?? null })
 const numberFromUrl = (url: string): number => {
   const m = /\/(\d+)\s*$/.exec(url)
   if (!m) throw new FactoryError('bad-output', `no number in ${url}`)

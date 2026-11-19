@@ -24,8 +24,11 @@ If the path has another form, do not call the tool. Report
 2. Wait for the result. The call syncs the branch and runs the gate, so it can
    take many minutes. Do not call it again.
 3. Report the result:
-   - Success: the PR number, the merge, the new issue state, and the cleanup
-     report (what the tool removed and what it kept).
+   - Success: the PR number, the merge commit, the new issue state, and the
+     cleanup report (what the tool removed and what it kept).
+     The merge commit is `mergeCommit` from the result. Never name `head` as
+     the merge commit. `head` is the pushed branch head.
+     If `mergeCommit` is null, say that the merge commit is unknown.
    - Error: the error code, the error text, and its `Fix` line. Do not try to
      fix the error.
 
