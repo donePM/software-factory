@@ -67,20 +67,20 @@ test('serve answers an unexpected error with an error text', async () => {
   expect(r).toEqual({ isError: true, result: `internal: probe_error: gone\n${FIX}` })
 })
 
-test('a failed log write does not change the tool result', async () => {
+test('a tool call writes no file under .factory/logs', async () => {
   const ctx = fakeCtx({ replies: [{ argv: ['git'], result: { stdout: 'x' } }] })
-  const write = ctx.fs.write
-  let failed = 0
-  ctx.fs.write = async (p, text) => {
-    if (!p.startsWith('/repo/.factory/logs/')) return write(p, text)
-    failed++
-    throw new Error('disk full')
-  }
   const r = await invoke(def(async c => (await c.run(['git'])).stdout), ctx, {})
   expect(r).toEqual({ result: 'x' })
-  const e = await invoke(def(async () => { throw new FactoryError('nope', 'it broke') }), ctx, {})
+  const e = await invoke(def(async c => { await c.run(['git']); throw new FactoryError('nope', 'it broke') }), ctx, {})
   expect(e).toEqual({ isError: true, result: 'nope: it broke' })
-  expect(failed).toBeGreaterThan(0)
+  expect(Object.keys(ctx.files).filter(k => k.startsWith('/repo/.factory/logs/'))).toEqual([])
+})
+
+test('invoke passes the ctx to the handler unchanged', async () => {
+  const ctx = fakeCtx()
+  let seen: unknown
+  await invoke(def(async c => { seen = c; return {} }), ctx, {})
+  expect(seen).toBe(ctx)
 })
 
 const SHA = 'a'.repeat(40)
