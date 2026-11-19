@@ -1,4 +1,3 @@
-import type { Config } from './config.ts'
 import type { State } from './types.ts'
 
 export type Label = { name: string; color: string; description: string }
@@ -58,18 +57,11 @@ const TYPES: { name: string; color: string; description: string }[] = [
   { name: 'revert', color: 'ededed', description: 'A change that reverts an earlier commit.' },
 ]
 
-export function labelSet(cfg: Config): Label[] {
-  const prio: [keyof Config['priorities'], string, string][] = [
-    ['critical', 'b60205', 'Critical priority.'],
-    ['high', 'd93f0b', 'High priority.'],
-    ['medium', 'fbca04', 'Medium priority.'],
-    ['low', 'c5def5', 'Low priority.'],
-  ]
+export function labelSet(): Label[] {
   return [
     { name: 'factory', color: '5319e7', description: 'In the factory backlog.' },
     ...STATUS.map(s => ({ name: statusLabel(s), color: statusColor(s), description: DESCRIPTION[s] })),
     { name: 'factory:pr', color: '5319e7', description: 'A pull request opened by the factory.' },
-    ...prio.map(([k, color, description]) => ({ name: cfg.priorities[k], color, description })),
     ...TYPES.map(t => ({ ...t, name: `type:${t.name}` })),
     { name: 'type:breaking', color: 'b60205', description: 'A breaking change.' },
     { name: 'skip-changelog', color: 'ededed', description: 'Leave this change out of the changelog.' },

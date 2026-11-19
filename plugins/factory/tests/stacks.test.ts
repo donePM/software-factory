@@ -158,6 +158,7 @@ test('setup writes the detected stacks into a new config', async () => {
     { argv: ['gh', 'api', 'repos/a/b'], result: { stdout: repoJson } },
     { argv: ['gh', 'label', 'create'] },
     { argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } },
+    { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
     { argv: ['gh', 'api', '-X', 'PATCH'] },
   ]
   const ctx = fakeCtx({ replies })

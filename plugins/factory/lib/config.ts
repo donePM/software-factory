@@ -17,7 +17,6 @@ export type Config = {
   stacks: StackRef[]
   routing: Record<'low' | 'medium' | 'high', Models>
   surfaces: Record<string, Models>
-  priorities: Record<'critical' | 'high' | 'medium' | 'low', string>
   protectedPaths: string[]
 }
 
@@ -45,12 +44,6 @@ export function defaultConfig(url: string, baseBranch: string, stacks: StackRef[
       'ui-new': { ux: 'sonnet', ui: 'sonnet' },
       security: { security: 'opus' },
       api: { security: 'opus' },
-    },
-    priorities: {
-      critical: 'priority:critical',
-      high: 'priority:high',
-      medium: 'priority:medium',
-      low: 'priority:low',
     },
     protectedPaths: ['.factory/config.json', '.factory/checks.local.ts'],
   }
@@ -114,12 +107,6 @@ export function validateConfig(x: unknown): string[] {
   }
   if (!isObj(x.surfaces)) errs.push('surfaces must be an object')
   else for (const [k, v] of Object.entries(x.surfaces)) checkModels(errs, `surfaces.${k}`, v)
-  if (!isObj(x.priorities)) errs.push('priorities must be an object')
-  else {
-    for (const p of ['critical', 'high', 'medium', 'low']) {
-      if (typeof x.priorities[p] !== 'string') errs.push(`priorities.${p} must be a string`)
-    }
-  }
   if (!isStrings(x.protectedPaths)) errs.push('protectedPaths must be an array of strings')
   return errs
 }

@@ -61,7 +61,7 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   }
   if (!input.apply) {
     const standard = await githubTracker(ctx, repoFromUrl(cfg.tracker.url)).applyStandard(false)
-    return { checks, config: cfg, ...empty, migrated, standard, labels: labelSet(cfg).length, next: ['Run setup again with apply true.'] }
+    return { checks, config: cfg, ...empty, migrated, standard, labels: labelSet().length, next: ['Run setup again with apply true.'] }
   }
 
   const created = !exists
@@ -71,7 +71,7 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
     await ctx.fs.write(ignorePath, GITIGNORE)
   }
   const tracker = githubTracker(ctx, repoFromUrl(cfg.tracker.url))
-  const labels = labelSet(cfg)
+  const labels = labelSet()
   await tracker.ensureLabels(labels)
   const standard = await tracker.applyStandard(true)
   const swept = await sweep(ctx, tracker)

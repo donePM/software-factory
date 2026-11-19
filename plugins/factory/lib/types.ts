@@ -30,6 +30,7 @@ export type Ticket = {
   createdAt: string
   url: string
   comments: Comment[]
+  priority?: string
 }
 export type Pr = { number: number; url: string }
 export type PrState = {
