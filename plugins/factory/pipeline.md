@@ -56,6 +56,7 @@ root as `<root>`. `<jobDir>` is `<root>/.factory/jobs/<n>`. `<roundDir>` is
 ## Start
 
 1. Call `cleanup` without `issue`. It sweeps finished tickets.
+   Show each line of its `finished` list to the operator.
 2. Call `queue`.
 3. For each running job without an agent in this session, resume it:
    1. Call `job_sync` with the issue.

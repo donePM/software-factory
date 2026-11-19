@@ -1,6 +1,6 @@
 import { followState } from './assignee.ts'
 import { loadConfig } from './config.ts'
-import { type CleanupReport, cleanupJob } from './cleanup.ts'
+import { type CleanupReport, cleanupJob, finishMerged } from './cleanup.ts'
 import { FactoryError, must } from './exec.ts'
 import { gateJob } from './gatejob.ts'
 import { intakeComment, jobSync, reviewedOf, verifyJob } from './job.ts'
@@ -90,10 +90,15 @@ export async function approve(ctx: Ctx, t: Tracker, n: number): Promise<{ issue:
   return { issue, pr: pr.number, how: await record(t, issue, pr, reviewed) }
 }
 
-export type MergeResult = { issue: number; pr: number; head: string; mergeCommit: string | null; cleanup: CleanupReport }
+export type MergeResult = { issue: number; pr: number; head: string; mergeCommit: string | null; alreadyMerged: boolean; cleanup: CleanupReport }
 
 export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResult> {
   const { issue, pr: found } = await resolvePair(ctx, t, n)
+  // A human merged the PR on GitHub: only the housekeeping is left.
+  if (found.state === 'MERGED') {
+    const cleanup = await finishMerged(ctx, t, await t.get(issue))
+    return { issue, pr: found.number, head: found.headRefOid, mergeCommit: found.mergeCommit, alreadyMerged: true, cleanup }
+  }
   const cfg = await loadConfig(ctx)
   const base = cfg.baseBranch
   const origin = `origin/${base}`
@@ -161,5 +166,5 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   await followState(t, [issue, pr.number], 'done')
   if ((await t.get(issue)).state !== 'closed') await t.close(issue, 'done')
   // shortcut: no retry when GitHub gives no merge commit, upgrade when a real run shows null.
-  return { issue, pr: pr.number, head: sha, mergeCommit: after.mergeCommit, cleanup: await cleanupJob(ctx, t, issue, 'done') }
+  return { issue, pr: pr.number, head: sha, mergeCommit: after.mergeCommit, alreadyMerged: false, cleanup: await cleanupJob(ctx, t, issue, 'done') }
 }

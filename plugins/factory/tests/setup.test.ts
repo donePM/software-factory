@@ -116,13 +116,13 @@ test('preview migrates in memory only and lists the planned migrations', async (
 test('apply sweeps finished jobs and reports it', async () => {
   const ctx = fakeCtx({ replies: replies(), files: { '/repo/.factory/jobs/setup/checks.md': 'x' } })
   const r = await setup(ctx, { apply: true })
-  expect(r.sweep).toEqual({ removed: [], kept: [] })
+  expect(r.sweep).toEqual({ removed: [], kept: [], finished: [] })
   expect(ctx.calls).toContainEqual(['git', 'worktree', 'prune'])
 })
 
 test('preview does not sweep', async () => {
   const ctx = fakeCtx({ replies: replies() })
   const r = await setup(ctx, { apply: false })
-  expect(r.sweep).toEqual({ removed: [], kept: [] })
+  expect(r.sweep).toEqual({ removed: [], kept: [], finished: [] })
   expect(ctx.calls.some(c => c.includes('prune'))).toBe(false)
 })

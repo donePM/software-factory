@@ -64,6 +64,17 @@ test('assertTransition throws illegal-transition', () => {
   expect(err.message).toBe('factory:spec → factory:done is not allowed')
 })
 
+test('done from any running state needs a merged PR', () => {
+  for (const s of STATUS.filter(s => s !== 'done' && s !== 'rejected')) {
+    expect(canTransition(s, 'done', { prMerged: true })).toBe(true)
+    expect(() => assertTransition(s, 'done', { prMerged: true })).not.toThrow()
+  }
+  for (const s of [null, 'done', 'rejected'] as const) expect(canTransition(s, 'done', { prMerged: true })).toBe(false)
+  expect(canTransition('review', 'done')).toBe(false)
+  expect(() => assertTransition('review', 'done')).toThrow()
+  expect(canTransition('review', 'build', { prMerged: true })).toBe(true)
+})
+
 test('stateOf finds exactly one status label', () => {
   expect(stateOf(['factory', 'factory:spec', 'bug'])).toBe('spec')
 })

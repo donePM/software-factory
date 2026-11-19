@@ -53,8 +53,8 @@ function tracker(o: Opts = {}) {
     login: async () => 'op',
     assign: async (n: number, on: boolean) => { assigns.push(`${on ? '+' : '-'}${n}`) },
     get: async (n: number) => (n === 9 ? prTicket : { ...issue, state: closed ? 'closed' : 'open' }),
-    setState: async (_n: number, to: State) => {
-      assertTransition(stateOf(issue.labels) as State | null, to)
+    setState: async (_n: number, to: State, opts?: { prMerged?: boolean }) => {
+      assertTransition(stateOf(issue.labels) as State | null, to, opts)
       states.push(to)
     },
     upsertComment: async (_n: number, name: MarkerName, body: string): Promise<Comment> => {
@@ -185,6 +185,29 @@ test('merge refuses a PR that is not open', async () => {
   const { ctx, t } = setup({ pr: { state: 'CLOSED' } })
   await rejects(merge(ctx, t, 7), 'bad-state')
   expect(t.merges).toEqual([])
+  expect(t.states).toEqual([])
+  expect(t.log.some(l => l.startsWith('close'))).toBe(false)
+  expect(ctx.calls.some(c => c[0] === 'rm')).toBe(false)
+})
+
+test('merge of a PR merged on GitHub sets done and cleans up', async () => {
+  for (const label of ['factory:review', 'factory:approved']) {
+    const { ctx, t } = setup({ labels: [label], pr: { state: 'MERGED', mergeCommit: MERGE } })
+    const r = await merge(ctx, t, 7)
+    expect(r).toMatchObject({ issue: 7, pr: 9, head: HEAD, mergeCommit: MERGE, alreadyMerged: true })
+    expect(t.states).toEqual(['done'])
+    expect(t.log).toContain('close done')
+    expect(t.merges).toEqual([])
+    expect(count(ctx.calls, 'git', '-C', WT, 'merge')).toBe(0)
+    expect(count(ctx.calls, 'git', '-C', WT, 'push')).toBe(0)
+    expect(idx(ctx.calls, 'vp')).toBe(-1)
+    expect(ctx.calls).toContainEqual(['rm', '-rf', DIR])
+    expect(r.cleanup.removed).toContain(DIR)
+  }
+  const { ctx, t } = setup({ labels: ['factory:done'], closed: true, pr: { state: 'MERGED' } })
+  await merge(ctx, t, 7)
+  expect(t.states).toEqual([])
+  expect(t.log).not.toContain('close done')
 })
 
 const CONFLICT: Reply = { argv: ['git', '-C', WT, 'merge', '--no-edit'], result: { exitCode: 1, stderr: 'CONFLICT' } }
@@ -429,7 +452,7 @@ test('merge sets done, closes the issue and cleans up', async () => {
 test('merge reports the merge commit, not the branch head', async () => {
   const { ctx, t } = setup()
   const r = await merge(ctx, t, 7)
-  expect(r).toMatchObject({ head: HEAD, mergeCommit: MERGE })
+  expect(r).toMatchObject({ head: HEAD, mergeCommit: MERGE, alreadyMerged: false })
   expect(r).not.toHaveProperty('sha')
 })
 

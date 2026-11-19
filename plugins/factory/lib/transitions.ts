@@ -17,12 +17,16 @@ export const TRANSITIONS: Record<State | 'backlog', State[]> = {
   rejected: [],
 }
 
-export function canTransition(from: State | null, to: State): boolean {
+// prMerged: the caller saw GitHub report the PR on factory/<n> as merged.
+export type TransitionOpts = { prMerged?: boolean }
+
+export function canTransition(from: State | null, to: State, opts: TransitionOpts = {}): boolean {
+  if (opts.prMerged === true && to === 'done' && from !== null && from !== 'done' && from !== 'rejected') return true
   return TRANSITIONS[from ?? 'backlog'].includes(to)
 }
 
-export function assertTransition(from: State | null, to: State): void {
-  if (canTransition(from, to)) return
+export function assertTransition(from: State | null, to: State, opts: TransitionOpts = {}): void {
+  if (canTransition(from, to, opts)) return
   const a = from === null ? 'backlog' : `factory:${from}`
   throw new FactoryError('illegal-transition', `${a} → factory:${to} is not allowed`)
 }

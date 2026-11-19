@@ -1,5 +1,6 @@
 import type { Label } from './labels.ts'
 import type { MarkerName } from './markers.ts'
+import type { TransitionOpts } from './transitions.ts'
 import type { Comment, Pr, PrState, State, Ticket } from './types.ts'
 
 export type StandardCheck = { key: string; actual: string; expected: string; ok: boolean; fix: string }
@@ -9,7 +10,7 @@ export interface Tracker {
   login(): Promise<string>
   backlog(): Promise<Ticket[]>
   get(n: number): Promise<Ticket>
-  setState(n: number, to: State): Promise<void>
+  setState(n: number, to: State, opts?: TransitionOpts): Promise<void>
   // Adds or removes only the factory login. n is an issue or a PR number.
   assign(n: number, on: boolean): Promise<void>
   upsertComment(n: number, name: MarkerName, body: string): Promise<Comment>
