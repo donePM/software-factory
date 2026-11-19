@@ -21,6 +21,14 @@ type RawIssue = {
 }
 type RawComment = { id: number; user: { login: string }; body: string; created_at: string; updated_at: string }
 type RawPr = Omit<PrState, 'author'> & { author: { login: string } }
+type RawFields = { number: number; issue_field_values?: { value?: unknown; single_select_option?: { name?: string } | null }[] | null }
+
+const PRIORITIES: readonly string[] = ['Urgent', 'High', 'Medium', 'Low']
+// shortcut: no field id check, upgrade when another single select field uses the same option names.
+const priorityOf = (f: RawFields): string | undefined =>
+  (f.issue_field_values ?? [])
+    .map(v => v.single_select_option?.name ?? (typeof v.value === 'string' ? v.value : undefined))
+    .find((n): n is string => n !== undefined && PRIORITIES.includes(n))
 
 // `--jq '.[]'` makes gh print one compact JSON object per line.
 const parseLines = <T>(text: string): T[] =>
@@ -63,7 +71,15 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
       const rows = await json<RawIssue[]>([
         'issue', 'list', '-R', repo, '--label', 'factory', '--state', 'open', '--limit', '200', '--json', ISSUE_FIELDS,
       ])
-      return rows.map(r => toTicket(r, []))
+      const fields = parseLines<RawFields>(await gh([
+        'api', `repos/${repo}/issues?labels=factory&state=open&per_page=100`, '--paginate', '--jq', '.[] | {number, issue_field_values}',
+      ]))
+      const prio = new Map(fields.map(f => [f.number, priorityOf(f)]))
+      return rows.map(r => {
+        const t = toTicket(r, [])
+        const p = prio.get(r.number)
+        return p === undefined ? t : { ...t, priority: p }
+      })
     },
     async get(n) {
       const raw = await json<RawIssue>(['issue', 'view', String(n), '-R', repo, '--json', ISSUE_FIELDS])

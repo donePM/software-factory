@@ -1,5 +1,4 @@
 import { expect, test } from 'claude-code/testing'
-import { defaultConfig } from '../lib/config.ts'
 import { assertTransition, canTransition, TRANSITIONS } from '../lib/transitions.ts'
 import { labelSet, RUNNING, STATUS, stateOf, statusLabel } from '../lib/labels.ts'
 
@@ -81,16 +80,13 @@ test('statusLabel prefixes the state', () => {
   expect(statusLabel('needs-info')).toBe('factory:needs-info')
 })
 
-test('labelSet uses the configured priority names', () => {
-  const cfg = defaultConfig('https://github.com/o/r', 'main', [])
-  cfg.priorities.high = 'P1'
-  const names = labelSet(cfg).map(l => l.name)
-  expect(names).toContain('P1')
-  expect(names).not.toContain('priority:high')
+test('labelSet has no priority labels', () => {
+  const names = labelSet().map(l => l.name)
+  expect(names.filter(n => n.startsWith('priority:'))).toEqual([])
 })
 
 test('labelSet has one label per state', () => {
-  const names = labelSet(defaultConfig('https://github.com/o/r', 'main', [])).map(l => l.name)
+  const names = labelSet().map(l => l.name)
   expect(names.filter(n => /^factory:(?!pr$)/.test(n))).toHaveLength(12)
   expect(names).toContain('factory')
   expect(names).toContain('factory:pr')
@@ -99,11 +95,10 @@ test('labelSet has one label per state', () => {
 })
 
 test('labelSet colors follow the design', () => {
-  const by = Object.fromEntries(labelSet(defaultConfig('https://github.com/o/r', 'main', [])).map(l => [l.name, l]))
+  const by = Object.fromEntries(labelSet().map(l => [l.name, l]))
   expect(by['factory:build']?.color).toBe('fbca04')
   expect(by['factory:needs-human']?.color).toBe('d93f0b')
   expect(by['factory:approved']?.color).toBe('0e8a16')
   expect(by['type:feat']?.color).toBe('a2eeef')
-  expect(by['priority:critical']?.color).toBe('b60205')
   for (const l of Object.values(by)) expect(l.description.length).toBeGreaterThan(0)
 })

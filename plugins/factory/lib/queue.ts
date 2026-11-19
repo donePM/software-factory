@@ -39,8 +39,10 @@ const WAITING: State[] = ['needs-info', 'needs-human', 'approved', 'needs-design
 const ORDER = ['critical', 'high', 'medium', 'low'] as const
 const BUG_LABELS = ['type:fix', 'bug']
 
-function priorityOf(t: Ticket, cfg: Config): (typeof ORDER)[number] {
-  return ORDER.find(p => t.labels.includes(cfg.priorities[p])) ?? 'medium'
+const FIELD: Record<string, (typeof ORDER)[number]> = { Urgent: 'critical', High: 'high', Medium: 'medium', Low: 'low' }
+
+function priorityOf(t: Ticket): (typeof ORDER)[number] {
+  return t.priority !== undefined && Object.hasOwn(FIELD, t.priority) ? FIELD[t.priority]! : 'medium'
 }
 
 const time = (s: string): number => Date.parse(s)
@@ -80,7 +82,7 @@ export async function queue(_ctx: Ctx, tr: Tracker, cfg: Config): Promise<Queue>
       q.running.push({ number: t.number, state: s })
       continue
     }
-    const item: QueueItem = { number: t.number, title: t.title, priority: priorityOf(t, cfg), createdAt: t.createdAt }
+    const item: QueueItem = { number: t.number, title: t.title, priority: priorityOf(t), createdAt: t.createdAt }
     if (s !== null && WAITING.includes(s)) {
       if (s === 'needs-info') {
         operator ??= await tr.login()

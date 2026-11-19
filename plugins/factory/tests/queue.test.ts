@@ -39,17 +39,19 @@ test('dependsOn reads several numbers', () => {
   expect(dependsOn('nothing')).toEqual([])
 })
 
+const P = (priority: string): Partial<Ticket> => ({ priority })
+
 test('queue orders by priority then age', async () => {
   const q = await queue(ctx, tracker([
-    T(1, ['priority:low']), T(2, ['priority:high']), T(3, ['priority:high'], { createdAt: '2025-12-01T00:00:00Z' }),
-    T(4, ['priority:critical']),
+    T(1, [], P('Low')), T(2, [], P('High')), T(3, [], { priority: 'High', createdAt: '2025-12-01T00:00:00Z' }),
+    T(4, [], P('Urgent')),
   ]), cfg)
   expect(nums(q.ready)).toEqual([4, 3, 2, 1])
   expect(nums(q.next)).toEqual([4, 3])
 })
 
 test('queue puts bugs before other tickets, also before a higher priority', async () => {
-  const q = await queue(ctx, tracker([T(1, ['priority:critical']), T(3, ['type:fix', 'priority:low'])]), cfg)
+  const q = await queue(ctx, tracker([T(1, [], P('Urgent')), T(3, ['type:fix'], P('Low'))]), cfg)
   expect(nums(q.ready)).toEqual([3, 1])
 })
 
@@ -60,32 +62,35 @@ test('queue treats the bug label as a bug', async () => {
 
 test('queue keeps priority and age order in each group', async () => {
   const q = await queue(ctx, tracker([
-    T(1, ['bug', 'priority:low']), T(2, ['type:fix', 'priority:high']), T(3, ['bug', 'priority:high'], { createdAt: '2025-12-01T00:00:00Z' }),
-    T(4, ['priority:critical']), T(5, ['priority:low']), T(6),
+    T(1, ['bug'], P('Low')), T(2, ['type:fix'], P('High')), T(3, ['bug'], { priority: 'High', createdAt: '2025-12-01T00:00:00Z' }),
+    T(4, [], P('Urgent')), T(5, [], P('Low')), T(6),
   ]), cfg)
   expect(nums(q.ready)).toEqual([3, 2, 1, 4, 6, 5])
 })
 
 test('queue gives slots to bugs first and keeps blocked bugs blocked', async () => {
   const q = await queue(ctx, tracker([
-    T(1, ['priority:critical']), T(2, ['bug']), T(3, ['type:fix'], { body: 'Depends on #9' }), T(4, ['bug', 'priority:low']),
+    T(1, [], P('Urgent')), T(2, ['bug']), T(3, ['type:fix'], { body: 'Depends on #9' }), T(4, ['bug'], P('Low')),
   ]), cfg)
   expect(nums(q.next)).toEqual([2, 4])
   expect(nums(q.ready)).toEqual([2, 4, 1])
   expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[3, [9]]])
 })
 
-test('queue counts a ticket without priority as medium', async () => {
-  const q = await queue(ctx, tracker([T(1, ['priority:low']), T(2), T(3, ['priority:high'])]), cfg)
-  expect(nums(q.ready)).toEqual([3, 2, 1])
-  expect(q.ready[1]?.priority).toBe('medium')
+test('queue counts a ticket without a Priority field as medium', async () => {
+  const q = await queue(ctx, tracker([
+    T(1, [], P('Low')), T(2, ['priority:high']), T(3, [], P('High')), T(4, [], P('Someday')), T(5, ['priority:low']),
+  ]), cfg)
+  expect(nums(q.ready)).toEqual([3, 2, 4, 5, 1])
+  expect(q.ready.map(i => i.priority)).toEqual(['high', 'medium', 'medium', 'medium', 'low'])
 })
 
-test('queue takes the highest of several priority labels and reads names from the config', async () => {
-  const c = { ...cfg, priorities: { ...cfg.priorities, high: 'P1' } }
-  const q = await queue(ctx, tracker([T(1, ['priority:low', 'P1']), T(2)]), c)
-  expect(nums(q.ready)).toEqual([1, 2])
-  expect(q.ready[0]?.priority).toBe('high')
+test('queue orders by the Priority field then age', async () => {
+  const q = await queue(ctx, tracker([
+    T(1, [], P('Medium')), T(2, ['priority:critical']), T(3, [], P('Low')), T(4, [], P('High')), T(5, [], P('Urgent')),
+  ]), cfg)
+  expect(nums(q.ready)).toEqual([5, 4, 1, 2, 3])
+  expect(q.ready.map(i => i.priority)).toEqual(['critical', 'high', 'medium', 'medium', 'low'])
 })
 
 test('queue blocks a ticket with an open dependency', async () => {
@@ -199,7 +204,10 @@ test('tool queue returns the queue', async () => {
   const issue = { number: 5, title: 'T', body: '', labels: [{ name: 'factory' }], author: { login: 'a' }, createdAt: '2026-01-01T00:00:00Z', url: 'u/5', state: 'OPEN' }
   const c = fakeCtx({
     files: { '/repo/.factory/config.json': JSON.stringify(defaultConfig('https://github.com/a/b', 'main', [])) },
-    replies: [{ argv: ['gh', 'issue', 'list'], result: { stdout: JSON.stringify([issue]) } }],
+    replies: [
+      { argv: ['gh', 'issue', 'list'], result: { stdout: JSON.stringify([issue]) } },
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
+    ],
   })
   const q = (await def.handler(c, {})) as { ready: { number: number }[]; slots: number }
   expect(nums(q.ready)).toEqual([5])

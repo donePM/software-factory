@@ -38,8 +38,15 @@ test('repoFromUrl handles https, .git and ssh', () => {
   expect(repoFromUrl('git@github.com:a/b.git')).toBe('a/b')
 })
 
+const FIELDS_ARGV = [
+  'gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100', '--paginate', '--jq', '.[] | {number, issue_field_values}',
+]
+
 test('backlog maps gh json to tickets', async () => {
-  const ctx = spyCtx([{ argv: ['gh', 'issue', 'list'], result: { stdout: `[${issueJson(['factory', 'factory:spec'])}]` } }])
+  const ctx = spyCtx([
+    { argv: ['gh', 'issue', 'list'], result: { stdout: `[${issueJson(['factory', 'factory:spec'])}]` } },
+    { argv: FIELDS_ARGV.slice(0, 3), result: { stdout: '' } },
+  ])
   const [t] = await githubTracker(ctx, 'a/b').backlog()
   expect(t).toEqual({
     kind: 'issue', number: 5, title: 'T', body: 'B', author: 'alice', labels: ['factory', 'factory:spec'],
@@ -49,6 +56,21 @@ test('backlog maps gh json to tickets', async () => {
     'gh', 'issue', 'list', '-R', 'a/b', '--label', 'factory', '--state', 'open', '--limit', '200',
     '--json', 'number,title,body,labels,author,createdAt,url,state',
   ])
+})
+
+test('backlog reads the Priority field value', async () => {
+  const fields = [
+    { number: 5, issue_field_values: [{ issue_field_id: 29998494, data_type: 'single_select', value: 'High', single_select_option: { name: 'High' } }] },
+    { number: 6, issue_field_values: [] },
+  ]
+  const ctx = spyCtx([
+    { argv: ['gh', 'issue', 'list'], result: { stdout: `[${issueJson(['factory'], 5)},${issueJson(['factory'], 6)}]` } },
+    { argv: FIELDS_ARGV.slice(0, 3), result: { stdout: fields.map(f => JSON.stringify(f)).join('\n') } },
+  ])
+  const [a, b] = await githubTracker(ctx, 'a/b').backlog()
+  expect(a?.priority).toBe('High')
+  expect(b).not.toHaveProperty('priority')
+  expect(ctx.calls).toContainEqual(FIELDS_ARGV)
 })
 
 test('get filters nothing but loads comments', async () => {
