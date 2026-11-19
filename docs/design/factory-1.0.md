@@ -89,8 +89,7 @@ eine Empfehlung, kein Merge. Kein `merge.auto`.
   anderes merged, Merge-Fenster, Vier-Augen-Prinzip). Wo GitHub es erlaubt, als
   echtes Review-Approval; sonst als Kommentar.
 - `/factory:merge <n>` approved, falls das noch fehlt, und merged.
-- Im Pane steht bei „Bereit zum Merge“ `/factory:merge 42` groß,
-  `/factory:approve 42` klein darunter.
+- Im Pane steht bei „Bereit zum Merge“ nur `/factory:merge 42`.
 
 **Identität in 1.0: der eigene `gh`-Login.** Folge: GitHub lässt niemanden den
 eigenen PR approven. Factory-PRs stammen vom Benutzer selbst, darum wird
