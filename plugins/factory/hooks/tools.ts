@@ -10,6 +10,7 @@ import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
 import { STATUS, stateOf } from '../lib/labels.ts'
 import { githubTracker, repoFromUrl } from '../lib/github.ts'
 import { approve, merge } from '../lib/merge.ts'
+import { planCreate, planFeedback } from '../lib/plan.ts'
 import { addToBacklog, withBoard } from '../lib/project.ts'
 import { guardBash, guardMain } from '../lib/guard.ts'
 import { queue } from '../lib/queue.ts'
@@ -179,6 +180,23 @@ export const TOOLS: ToolDef[] = [
       const tracker = githubTracker(ctx, repoFromUrl(cfg.tracker.url))
       return issueCreate(tracker, input, ns => addToBacklog(ctx, tracker, cfg, ns))
     },
+  },
+  {
+    name: 'plan_create',
+    description: 'Write a product idea to idea.md in the next free plan folder .factory/plans/<n>. Returns planDir for factory:planner.',
+    inputSchema: { type: 'object', properties: { idea: { type: 'string', minLength: 1 } }, required: ['idea'], additionalProperties: false },
+    handler: (ctx, input) => planCreate(ctx, input),
+  },
+  {
+    name: 'plan_feedback',
+    description: 'Add the words of the operator as the next "## Feedback K" section to <planDir>/idea.md. Returns planDir and K.',
+    inputSchema: {
+      type: 'object',
+      properties: { planDir: { type: 'string', minLength: 1 }, feedback: { type: 'string', minLength: 1 } },
+      required: ['planDir', 'feedback'],
+      additionalProperties: false,
+    },
+    handler: (ctx, input) => planFeedback(ctx, input),
   },
   issueTool('job_create', 'Start a job: set the intake label, create the worktree from origin/<base>, write job.md and issue.md.', async (ctx, t, n) => {
     const job = await jobCreate(ctx, t, n)

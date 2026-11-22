@@ -84,6 +84,7 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 |---|---|
 | `/factory:setup` | Checks the tools, writes the config and the labels, runs a first gate check |
 | `/factory:add <todos> [--park]` | Turns free text into issues, one per piece of work, after you confirm. `--park` leaves off the `factory` label |
+| `/factory:plan <idea>` | Plans a product idea in slices and shows the plan. Answer "change" to give feedback, or "start" to create one issue for each slice |
 | `/factory:run [n]` | Starts the ready issues (or only issue `n`) and drives them to `approved` or `needs-human`. An open issue `n` without the `factory` label gets the label and starts |
 | `/factory:status` | Shows free slots and the ready, running, and waiting jobs, with the next command for each |
 | `/factory:approve <n>` | Records your approval on the PR (or as a comment when it is your own PR). Merges nothing |
@@ -216,7 +217,7 @@ plugins/factory/
   .claude-plugin/plugin.json
   pipeline.md                # the main session's event loop, read by /factory:run
   skills/{setup,add,run,status,approve,merge}/SKILL.md
-  agents/*.md                # intake, spec-writer, builder, 4 reviewers, approver, gate-runner, merger, documenter
+  agents/*.md                # intake, spec-writer, builder, 4 reviewers, approver, gate-runner, merger, documenter, planner, auditor
   hooks/tools.ts             # registers the mcp__factory__* tools
   lib/                       # tool logic, stacks, config migrations
   tests/                     # claude plugin test plugins/factory
