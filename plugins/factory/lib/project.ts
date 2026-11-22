@@ -28,8 +28,19 @@ type RawField = { id: string; name: string; options?: { id: string; name: string
 const FIELD = 'Factory'
 export const NO_NUMBER = 'project.number is missing. Run /factory:setup project.'
 
-const project = async <T>(ctx: Ctx, argv: string[]): Promise<T> =>
-  JSON.parse(await must(ctx, ['gh', 'project', ...argv, '--format', 'json'])) as T
+// gh prints "unknown owner type" when its owner lookup fails, and hides the real cause.
+async function project<T>(ctx: Ctx, argv: string[]): Promise<T> {
+  try {
+    return JSON.parse(await must(ctx, ['gh', 'project', ...argv, '--format', 'json'])) as T
+  } catch (e) {
+    const at = argv.indexOf('--owner')
+    if (!(e instanceof FactoryError) || at < 0 || !/unknown owner type/i.test(e.message)) throw e
+    const owner = argv[at + 1]
+    throw new FactoryError('owner-unresolved',
+      `${e.message}. gh could not resolve the owner "${owner}". The probable cause is a GraphQL rate limit.`,
+      'Wait until the GitHub rate limit resets. Do not retry at once. The next queue or job_advance moves the card.')
+  }
+}
 
 const factoryField = async (ctx: Ctx, owner: string, n: number): Promise<RawField | undefined> =>
   (await project<{ fields: RawField[] }>(ctx, ['field-list', String(n), '--owner', owner])).fields.find(f => f.name === FIELD)
