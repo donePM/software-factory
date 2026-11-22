@@ -114,7 +114,10 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
    `maxRounds` (default 3).
 5. **Decide.** The approver recommends `APPROVE` (the PR becomes ready) or
    `ESCALATE` (`needs-human`, with a question on the PR). It never merges.
-6. **Merge.** Review the PR, then run `/factory:merge <n>`. After the merge the
+   With `merge.auto: true` in `.factory/config.json`, an `APPROVE` starts the
+   merge without a human step. An `ESCALATE` still waits for you.
+6. **Merge.** Review the PR, then run `/factory:merge <n>`. With `merge.auto`
+   on, the factory does this step on its own after an `APPROVE`. After the merge the
    factory sets the issue to `done` and removes the worktree, the merged
    branch, and the job folder. Work that is not saved stays and is reported.
 
@@ -153,7 +156,10 @@ The [setup guide](docs/setup.md#5-the-project-board-optional) shows the scope, t
 
 ## Safety notes
 
-- Only a human approves and merges. Never put `mcp__factory__approve` or
+- Only a human approves and merges, unless you set `merge.auto: true`. Then
+  the factory merges each `APPROVE` job without your review. The permission
+  prompt for the merge still comes each time.
+- Never put `mcp__factory__approve` or
   `mcp__factory__merge` into a permission allow rule: the permission prompt is
   the barrier that keeps agents from calling them.
 - Factory agents have no GitHub access. A `tool.call` hook denies each Bash

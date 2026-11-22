@@ -12,7 +12,7 @@ export type Config = {
   concurrency: number
   maxRounds: number
   baseBranch: string
-  merge: { method: 'merge' }
+  merge: { method: 'merge'; auto?: boolean }
   repo: { standard: number }
   stacks: StackRef[]
   routing: Record<'low' | 'medium' | 'high', Models>
@@ -94,6 +94,7 @@ export function validateConfig(x: unknown): string[] {
   if (!posInt(x.maxRounds)) errs.push('maxRounds must be an integer of 1 or more')
   if (typeof x.baseBranch !== 'string' || x.baseBranch === '') errs.push('baseBranch must be a non-empty string')
   if (!isObj(x.merge) || x.merge.method !== 'merge') errs.push('merge.method must be "merge"')
+  else if (x.merge.auto !== undefined && typeof x.merge.auto !== 'boolean') errs.push('merge.auto must be a boolean')
   if (!isObj(x.repo) || typeof x.repo.standard !== 'number') errs.push('repo.standard must be a number')
   if (!Array.isArray(x.stacks)) errs.push('stacks must be an array')
   else {

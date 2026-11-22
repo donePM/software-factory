@@ -93,7 +93,8 @@ This loads the branch code in that process only.
   The main session never waits in a blocking way, never runs Bash, never reads
   code, and never writes job files.
 - Long tools run only in subagents: `gate` in `factory:gate-runner` (job rounds
-  and the setup check), `merge` in `factory:merger` (only from `/factory:merge`).
+  and the setup check), `merge` in `factory:merger` (from `/factory:merge`, or from the pipeline after a
+  `job_advance` result with `autoMerge: true`).
 - Agents get context from files only. Spawn prompts pass only absolute paths
   (`<jobDir>`, `<roundDir>`). Issue text reaches agents only as `> ` quotes in
   `issue.md`, with comments only from the author and the operator. Issue, PR,
@@ -108,7 +109,10 @@ This loads the branch code in that process only.
   push and have no GitHub access; `job_advance` pushes and opens the PR.
 - The gate runs from the plugin and config of the main checkout, never from the
   branch. A diff in `protectedPaths` fails it.
-- No local merge. The human approves, always: merge only through the `merge`
+- No local merge. The human approves, always, unless the operator sets the opt-in
+  `merge.auto: true` in `.factory/config.json` (main checkout, a protected path).
+  Then an APPROVE starts `factory:merger` without a human step; ESCALATE still waits.
+  Merge only through the `merge`
   tool (REST `PUT /repos/{owner}/{repo}/pulls/{n}/merge`, `merge_method: merge`).
   The factory opens every PR as a normal PR, never as a draft. `git branch -d` only after the merge; never
   `branch -D`. `worktree remove --force` only when nothing but untracked files
