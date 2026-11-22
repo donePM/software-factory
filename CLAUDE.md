@@ -75,7 +75,8 @@ This loads the branch code in that process only.
 - `plugins/factory/agents/*.md`: `intake`, `spec-writer`, `builder`, the
   `code|security|ux|ui` reviewers, `approver`, `gate-runner`, `merger`,
   `documenter`, and `planner`. The planner reads `<planDir>/idea.md` and writes
-  `<planDir>/product.md` with ordered slices. No skill starts it yet. With `docs.target: wiki`, the merge sets `docs`. The documenter
+  `<planDir>/product.md` with ordered slices. No skill starts it yet.
+  With `docs.target: wiki`, the merge sets `docs`. The documenter
   writes `docs.md`. `job_advance` with `to: done` pushes the wiki page, posts
   the `<!-- factory:docs -->` comment with the link and the `docs.md` text, and sets `done`.
   It also pushes the pages in `docs/wiki/` of the job worktree, for example `Home.md`.

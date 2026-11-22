@@ -472,11 +472,13 @@ test('planner language block reads idea.md and repeats the STE rules', () => {
 })
 
 test('code first section is the same in all nine agents', () => {
-  const lines = CODE_FIRST.split('\n')
-  expect(lines.length).toBe(5)
-  expect(lines[0]).toBe('## Code first')
-  expect(lines[1]).toBe('The code and its tests are the only source of truth for what the repo does now.')
-  expect(lines[3]).toBe('When they disagree with the code, the code wins.')
+  expect(CODE_FIRST.split('\n')).toEqual([
+    '## Code first',
+    'The code and its tests are the only source of truth for what the repo does now.',
+    'Docs, specs, comments, and other Markdown can be out of date.',
+    'When they disagree with the code, the code wins.',
+    "The job's `spec.md` still defines the new behavior to build.",
+  ])
 })
 
 test('planner example product.md starts with STATUS READY and has the sections in order', () => {
