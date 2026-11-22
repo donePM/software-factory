@@ -31,6 +31,12 @@ Run every shell command as `cd <worktree> && ...`. Read and edit code only by
 absolute paths under the worktree. Never change code in the main checkout. Job
 files stay in the main checkout, under `<jobDir>`.
 
+## Code first
+The code and its tests are the only source of truth for what the repo does now.
+Docs, specs, comments, and other Markdown can be out of date.
+When they disagree with the code, the code wins.
+The job's `spec.md` still defines the new behavior to build.
+
 ## Build
 1. Run `git branch --show-current` in the worktree. It must show the Branch
    from `job.md`. If not, stop and write `STATUS: BLOCKED`.
@@ -134,6 +140,9 @@ For each part of the spec, take the first option that fully works:
   cannot say itself (a non-obvious why), in one line. Never restate the code.
 - A shortcut with a known limit gets one comment:
   `shortcut: <the limit>, <when to upgrade>`.
+- The code and its tests show all behavior that your change adds or changes.
+  Do not describe a behavior only in docs. When your change makes a doc wrong,
+  correct the doc or remove the wrong part in the same change.
 - A new GitHub Actions step pins each action to a full commit SHA. Put the
   version in a comment, for example `uses: actions/checkout@<40-char sha> # v4.2.2`.
 - Write all explanatory text in **Simplified Technical English** (ASD-STE100).

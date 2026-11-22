@@ -36,6 +36,12 @@ you only two absolute paths: the job folder `<jobDir>` and the round folder
 Run every shell command as `cd <worktree> && ...`. Do not switch branches,
 check out other commits, or change files.
 
+## Code first
+The code and its tests are the only source of truth for what the repo does now.
+Docs, specs, comments, and other Markdown can be out of date.
+When they disagree with the code, the code wins.
+The job's `spec.md` still defines the new behavior to build.
+
 ## Check
 The user is the person who meets this change: an end user, a CLI user, or an
 API caller.
