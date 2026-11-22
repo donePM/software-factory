@@ -315,7 +315,7 @@ test('a sync conflict at the round limit sets needs-human', async () => {
   const { ctx, t } = setup({ job: { round: 3 } }, [CONFLICT])
   await rejects(merge(ctx, t, 7), 'sync-conflict-limit')
   expect(t.states).toEqual(['needs-human'])
-  expect(t.posts.some(p => p.startsWith('Factory stopped: Round limit'))).toBe(true)
+  expect(t.posts.some(p => p.startsWith('Factory stopped: Round ') && p.includes('reached the round limit of'))).toBe(true)
   expect(await ctx.fs.exists(`${DIR}/round-4/sync.md`)).toBe(false)
   expect(await ctx.fs.exists(`${DIR}/round-3/sync.md`)).toBe(false)
   expect(t.merges).toEqual([])
@@ -387,7 +387,7 @@ test('a rejected push after the gate returns an error text with a Fix line', asy
   }) as typeof inner
   const def: ToolDef = { name: 'merge', description: 'd', inputSchema: {}, handler: () => merge(ctx, t, 7) }
   const r = await invoke(def, ctx, {})
-  expect(r).toEqual({ isError: true, result: 'internal: merge: timed out after 120000 ms\nFix: Read the error, fix the cause, then call the tool again.' })
+  expect(r).toEqual({ isError: true, result: 'internal: merge: timed out after 120000 ms\nFix: Read the error. Fix the cause. Then call the tool again.' })
   expect(count(ctx.calls, 'vp')).toBeGreaterThan(0)
   expect(t.merges).toEqual([])
   expect(t.states).toEqual([])

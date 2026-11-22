@@ -389,7 +389,7 @@ for (const labels of [[], ['factory:done'], ['factory:rejected'], ['factory:buil
 
 test('jobSync stops on an ls-remote failure and creates no branch', async () => {
   const ctx = fakeCtx({ files: restoreFiles(), replies: [{ argv: ['git', 'ls-remote'], result: { exitCode: 128, stderr: 'network' } }, ...okGit] })
-  await expect(jobSync(ctx, tracker(T(['factory:build'])), 7)).rejects.toMatchObject({ code: 'command-failed' })
+  await expect(jobSync(ctx, tracker(T(['factory:build'])), 7)).rejects.toMatchObject({ code: 'command-failed', fix: 'Check the network and the origin remote. Then run job_sync again.' })
   expect(ctx.calls.some(c => c.includes('worktree'))).toBe(false)
 })
 
