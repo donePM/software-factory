@@ -45,12 +45,12 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
     if (w.state === 'approved') {
       rows.push(`${label(n, titles)}  approved: /factory:merge ${n}${link}`)
     } else if (w.state === 'needs-human' && cause?.merge === true) {
-      rows.push(`${label(n, titles)}  needs you: ${cause.reason} · decide, then /factory:merge ${n}${link}`)
+      rows.push(`${label(n, titles)}  needs you: ${cause.reason} · decide. Then run /factory:merge ${n}${link}`)
     } else if (w.state === 'needs-human' && cause !== undefined) {
       // shortcut: the round-limit row still shows /factory:run, upgrade when operators run it in vain
-      rows.push(`${label(n, titles)}  needs you: ${cause.reason} · fix the cause, then /factory:run ${n}${link}`)
+      rows.push(`${label(n, titles)}  needs you: ${cause.reason} · fix the cause. Then run /factory:run ${n}${link}`)
     } else if (w.state === 'needs-human') {
-      rows.push(`${label(n, titles)}  needs you: answer in the issue, then /factory:run ${n}${link}`)
+      rows.push(`${label(n, titles)}  needs you: answer in the issue. Then run /factory:run ${n}${link}`)
     } else if (w.state === 'needs-info') {
       rows.push(`${label(n, titles)}  needs info: author answers in the issue`)
     } else {
