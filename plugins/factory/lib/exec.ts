@@ -11,7 +11,7 @@ export class FactoryError extends Error {
   }
 }
 
-export const RATE_LIMIT_FIX = 'Wait some minutes until the GitHub rate limit resets. Then call the tool again. Do not retry at once.'
+export const RATE_LIMIT_FIX = 'Wait at least 5 minutes. Then call the tool again. Do not retry at once. GitHub can apply a secondary rate limit, and gh api rate_limit does not show it.'
 
 export async function must(ctx: Ctx, argv: readonly string[], opts?: RunOpts): Promise<string> {
   const r = await ctx.run(argv, opts)

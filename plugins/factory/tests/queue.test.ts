@@ -261,6 +261,15 @@ test('queue reports board failures as warnings and makes no call with the board 
   }
 })
 
+test('queue gives a rate-limited board list a Fix line', async () => {
+  const c = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-list'], result: { exitCode: 1, stderr: 'GraphQL: API rate limit already exceeded for user ID 1.' } }] })
+  const q = await queue(c, boardTracker([T(1)]), onCfg)
+  expect(q.warnings).toHaveLength(1)
+  expect(q.warnings?.[0]?.startsWith('board list failed: ')).toBe(true)
+  expect(q.warnings?.[0]).toContain(' Fix: Wait at least 5 minutes.')
+  expect(q.warnings?.[0]?.endsWith('does not show it.')).toBe(true)
+})
+
 const bare = (n: number, o: Partial<Ticket> = {}): Ticket => ({ ...T(n, [], o), labels: [] })
 
 const url = (n: number): string => `https://github.com/o/r/issues/${n}`

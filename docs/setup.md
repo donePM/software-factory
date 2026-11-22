@@ -64,6 +64,7 @@ The settings are in `.factory/config.json`. Change them in a text editor, then c
 | `concurrency` | The number of jobs that run at the same time | `4` |
 | `maxRounds` | The number of build rounds per job before a human must decide | `3` |
 | `baseBranch` | The branch that the factory starts from and merges into | the default branch of `origin` |
+| `merge.auto` | `true`: the factory merges a job after the approver says `APPROVE`, with no `/factory:merge`. An `ESCALATE` still waits for you | off |
 | `protectedPaths` | Files that a job must not change. A change in these files fails the gate | the config and `.factory/checks.local.ts` |
 | `routing` | The reviewers and their models for each risk level: `low`, `medium`, `high` | `code` always, `security` for `high` |
 | `surfaces` | More reviewers for each type of change, for example `ui` or `api` | `ux` and `ui` for UI work, `security` for `api` |
