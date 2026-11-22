@@ -148,6 +148,15 @@ test('sweep skips folders that are not issue numbers', async () => {
   expect(r).toEqual({ removed: [], kept: [], finished: [], docs: [] })
 })
 
+test('sweep ignores the plan folders', async () => {
+  const ctx = ctxOf([], { '/repo/.factory/plans/1/idea.md': 'x', '/repo/.factory/plans/1/product.md': 'x' })
+  const t = tracker({ closed: [1] })
+  const r = await sweep(ctx, t)
+  expect(t.log).toEqual(['search label:"factory:docs"'])
+  expect(has(ctx.calls, 'rm')).toBe(false)
+  expect(r).toEqual({ removed: [], kept: [], finished: [], docs: [] })
+})
+
 test('sweep finishes a ticket in approved or review whose PR was merged on GitHub', async () => {
   for (const label of ['factory:approved', 'factory:review']) {
     const ticket = { ...(await tracker().get(9)), labels: ['factory', label] }
