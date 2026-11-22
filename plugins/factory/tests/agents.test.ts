@@ -878,7 +878,7 @@ const REVIEW_NO_DIFF = [
   'The review cannot read the diff of the round, so it cannot check the changes.',
   '',
   '## Findings',
-  "1. [blocker] job.md:7: `git diff` fails with `fatal: bad revision 'ea7bfa2'`, so the review sees no change. Fix: set `- Base:` to a commit that exists in the worktree.",
+  "1. [blocker] job.md:8: `git diff` fails with `fatal: bad revision 'ea7bfa2'`, so the review sees no change. Fix: set `- Base:` to a commit that exists in the worktree.",
   '',
   '## Checked',
   '- Gate round-1: PASS.',
