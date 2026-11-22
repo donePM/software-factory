@@ -97,7 +97,7 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 
 1. **Add work.** `/factory:add add a --json flag to the export command` creates
    an issue with the `factory` label. Or add the label to an existing issue.
-   `Depends on #12` in the issue body holds it back until #12 is closed.
+   `Depends on #12` in the issue body holds it back until #12 is closed as completed or is done.
 2. **Run.** `/factory:run` takes the ready issues bugs first, then by priority and age.
    The priority comes from the GitHub issue field `Priority`, not from labels:
    `Urgent`, `High`, `Medium`, and `Low` map to `critical`, `high`, `medium`, and `low`.
