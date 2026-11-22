@@ -52,10 +52,13 @@ Then write these sections in this order:
 - `## Acceptance criteria`: one line for each criterion, as `AC-<n> <behavior>`.
   Each line names its test as ``Test: `<file>` "<test name>"``. An AC with no
   test ends with ``Test: none, see Not tested.``
-  An AC that keeps old behavior is a regression AC. Write it as
-  ``AC-<n> (regression) <old behavior that must stay>. Test: `<file>` "<test name>".``
-  Its test passes before and after the change. Use the mark `(regression)`
-  only for an AC that keeps old behavior, never for new or changed behavior.
+  For each AC, read the base code in the worktree.
+  When the base code already meets an AC, mark it `(regression)`.
+  Also mark it when the issue asks for that behavior.
+  Such an AC is a regression AC. Write it as
+  ``AC-<n> (regression) <behavior that must stay>. Test: `<file>` "<test name>".``
+  Its test passes before and after the change.
+  Never use the mark for behavior that the base code does not meet yet.
   A regression AC has a test, so it never goes under `## Not tested`.
 - `## Tests`: the test files and what each one covers.
 - `## Not tested`: each part with no test, and why. Only pure docs and pure
