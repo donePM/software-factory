@@ -120,6 +120,9 @@ This loads the branch code in that process only.
 - Conventional Commits 1.0.0 for every commit, builder commit, PR title, and
   merge commit. Code-style, commit, and STE rules live in `agents/builder.md`
   and are enforced in `agents/code-reviewer.md`: change them in both places.
+- The `## Code first` section is the same in eight agents: `intake`, `spec-writer`, `builder`,
+  the `code|security|ux|ui` reviewers, and `approver`: change it in all places. The new-code
+  rule lives in `agents/builder.md` and `agents/code-reviewer.md`: change them in both places.
 - `plugins/factory/ste.md` holds the STE rules for text for people. The
   language block of each agent repeats these rules: change them in both places.
 - Lean rules (option ladder, `shortcut:` comments, "no case, no finding") appear
