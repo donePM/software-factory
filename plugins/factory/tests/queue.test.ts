@@ -16,10 +16,15 @@ const T = (n: number, labels: string[] = [], o: Partial<Ticket> = {}): Ticket =>
 const C = (id: number, author: string, body: string, at: string): Comment =>
   ({ id, author, body, createdAt: at, updatedAt: at })
 
-function tracker(backlog: Ticket[], extra: Ticket[] = [], login = 'op'): Tracker & { gets: number[] } {
+function tracker(backlog: Ticket[], extra: Ticket[] = [], login = 'op'): Tracker & { gets: number[]; added: [number, string][] } {
   const gets: number[] = []
+  const added: [number, string][] = []
   return {
     gets,
+    added,
+    addLabel: async (n: number, label: string) => {
+      added.push([n, label])
+    },
     login: async () => login,
     backlog: async () => backlog,
     get: async (n: number) => {
@@ -28,7 +33,7 @@ function tracker(backlog: Ticket[], extra: Ticket[] = [], login = 'op'): Tracker
       if (!t) throw new Error(`no #${n}`)
       return t
     },
-  } as unknown as Tracker & { gets: number[] }
+  } as unknown as Tracker & { gets: number[]; added: [number, string][] }
 }
 const nums = (xs: { number: number }[]): number[] => xs.map(x => x.number)
 
@@ -212,4 +217,75 @@ test('tool queue returns the queue', async () => {
   const q = (await def.handler(c, {})) as { ready: { number: number }[]; slots: number }
   expect(nums(q.ready)).toEqual([5])
   expect(q.slots).toBe(4)
+})
+
+const bare = (n: number, o: Partial<Ticket> = {}): Ticket => ({ ...T(n, [], o), labels: [] })
+
+test('queue with issue labels an open issue and puts it in next', async () => {
+  const tr = tracker([T(1)], [bare(9)])
+  const q = await queue(ctx, tr, cfg, 9)
+  expect(tr.added).toEqual([[9, 'factory']])
+  expect(nums(q.ready)).toContain(9)
+  expect(nums(q.next)).toEqual([9])
+})
+
+test('queue with issue refuses a closed issue, a PR, and a final state', async () => {
+  const cases: [Ticket, string][] = [
+    [bare(5, { state: 'closed' }), '#5 is closed'],
+    [bare(6, { kind: 'pr' }), '#6 is a pull request'],
+    [T(7, ['factory:done']), '#7 is done'],
+    [T(8, ['factory:rejected']), '#8 is rejected'],
+  ]
+  for (const [t, msg] of cases) {
+    const tr = tracker([], [t])
+    const err = await queue(ctx, tr, cfg, t.number).catch(e => e)
+    expect(err).toMatchObject({ code: 'not-startable', message: msg })
+    expect(tr.added).toEqual([])
+  }
+})
+
+test('queue with issue keeps a blocked issue out of next', async () => {
+  const q = await queue(ctx, tracker([T(3)], [bare(9, { body: 'Depends on #3' })]), cfg, 9)
+  expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[9, [3]]])
+  expect(q.next).toEqual([])
+})
+
+test('queue with issue puts only that issue in next', async () => {
+  const backlog = [T(3, [], P('Urgent')), T(4, ['bug']), T(9, [], P('Low'))]
+  const q = await queue(ctx, tracker(backlog), cfg, 9)
+  expect(nums(q.ready)).toEqual([4, 3, 9])
+  expect(nums(q.next)).toEqual([9])
+  const full = await queue(ctx, tracker(backlog), { ...cfg, concurrency: 0 }, 9)
+  expect(full.slots).toBe(0)
+  expect(full.next).toEqual([])
+})
+
+test('queue without issue changes no label', async () => {
+  const tr = tracker([T(1, [], P('Low')), T(2, [], P('High')), T(3)])
+  const q = await queue(ctx, tr, cfg)
+  expect(tr.added).toEqual([])
+  expect(nums(q.ready)).toEqual([2, 3, 1])
+  expect(nums(q.next)).toEqual([2, 3])
+})
+
+test('tool queue takes an issue', async () => {
+  const def = TOOLS.find(t => t.name === 'queue')!
+  expect(def.inputSchema).toMatchObject({ properties: { issue: { type: 'integer', minimum: 1 } } })
+  const issue = { number: 9, title: 'T', body: '', labels: [], author: { login: 'a' }, createdAt: '2026-01-01T00:00:00Z', url: 'u/9', state: 'OPEN' }
+  const c = fakeCtx({
+    files: { '/repo/.factory/config.json': JSON.stringify(defaultConfig('https://github.com/a/b', 'main', [])) },
+    replies: [
+      { argv: ['gh', 'issue', 'view', '9'], result: { stdout: JSON.stringify(issue) } },
+      { argv: ['gh', 'api', 'repos/a/b/issues/9/comments'] },
+      { argv: ['gh', 'issue', 'edit'] },
+      { argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } },
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
+    ],
+  })
+  const q = (await def.handler(c, { issue: 9 })) as { next: { number: number }[] }
+  expect(c.calls).toContainEqual(['gh', 'issue', 'edit', '9', '-R', 'a/b', '--add-label', 'factory'])
+  expect(nums(q.next)).toEqual([9])
+  for (const bad of [0, -1, 1.5, '9']) {
+    await expect(def.handler(c, { issue: bad })).rejects.toMatchObject({ code: 'bad-input' })
+  }
 })
