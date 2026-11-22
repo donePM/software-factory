@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { defaultConfig } from '../lib/config.ts'
+import { githubTracker } from '../lib/github.ts'
 import { queue } from '../lib/queue.ts'
 import type { Queue } from '../lib/queue.ts'
 import { causeOf, statusFor, statusText } from '../lib/status.ts'
@@ -27,6 +28,38 @@ test('an approved job shows only the merge command with its number', () => {
   expect(text).toContain('https://github.com/o/r/pull/50')
   expect(text).not.toContain('/factory:approve')
   expect(text).not.toContain('not yet approved by you?')
+})
+
+test('an approved job with merge.auto shows that the factory merges it', async () => {
+  const T: Ticket = {
+    kind: 'issue', number: 42, title: 'Add login', body: '', author: 'a', labels: ['factory', 'factory:approved'],
+    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: 'u/42', comments: [],
+  }
+  const tr = { repo: 'o/r', login: async () => 'op', backlog: async () => [T], findPr: async () => ({ number: 50 }) } as unknown as Tracker
+  const base = defaultConfig('u', 'main', [])
+  const text = await statusFor(fakeCtx(), tr, { ...base, concurrency: 2, merge: { ...base.merge, auto: true } })
+  expect(lineWith(text, '#42')).toBe('  #42 Add login  approved: the factory merges it (https://github.com/o/r/pull/50)')
+  expect(text).not.toContain('/factory:merge')
+})
+
+test('statusFor lists a closed docs job under Running', async () => {
+  const raw = (n: number, labels: string[], state: string) => JSON.stringify({
+    number: n, title: `t${n}`, body: '', labels: labels.map(name => ({ name })), user: { login: 'a' },
+    created_at: '2026-01-01T00:00:00Z', html_url: `https://github.com/o/r/issues/${n}`, state,
+  })
+  const ctx = fakeCtx({
+    replies: [
+      { argv: ['gh', 'api', 'repos/o/r/issues?labels=factory&state=open&per_page=100'], result: { stdout: raw(1, ['factory'], 'open') } },
+      { argv: ['gh', 'api', 'repos/o/r/issues?labels=factory,factory:docs&state=closed&per_page=100'], result: { stdout: raw(87, ['factory', 'factory:docs'], 'closed') } },
+    ],
+  })
+  const text = await statusFor(ctx, githubTracker(ctx, 'o/r'), { ...defaultConfig('u', 'main', []), concurrency: 2 })
+  expect(text).toContain('Factory · o/r  1/2 slots')
+  const lines = text.split('\n')
+  const start = lines.indexOf('Running')
+  expect(start).toBeGreaterThan(-1)
+  expect(lines[start + 1]).toBe('  #87 t87  docs')
+  expect(text).not.toContain('Waiting for you')
 })
 
 test('idle shows the add hint', () => {

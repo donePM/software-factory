@@ -234,11 +234,30 @@ test('tool queue returns the queue', async () => {
   const issue = { number: 5, title: 'T', body: '', labels: [{ name: 'factory' }], user: { login: 'a' }, created_at: '2026-01-01T00:00:00Z', html_url: 'u/5', state: 'open' }
   const c = fakeCtx({
     files: { '/repo/.factory/config.json': JSON.stringify(defaultConfig('https://github.com/a/b', 'main', [])) },
-    replies: [{ argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'], result: { stdout: JSON.stringify(issue) } }],
+    replies: [
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'], result: { stdout: JSON.stringify(issue) } },
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:docs&state=closed&per_page=100'] },
+    ],
   })
   const q = (await def.handler(c, {})) as { ready: { number: number }[]; slots: number }
   expect(nums(q.ready)).toEqual([5])
   expect(q.slots).toBe(4)
+})
+
+test('tool queue counts a closed docs job against the slots', async () => {
+  const def = TOOLS.find(t => t.name === 'queue')!
+  const issue = { number: 5, title: 'T', body: '', labels: [{ name: 'factory' }], user: { login: 'a' }, created_at: '2026-01-01T00:00:00Z', html_url: 'u/5', state: 'open' }
+  const docs = { ...issue, number: 6, labels: [{ name: 'factory' }, { name: 'factory:docs' }], html_url: 'u/6', state: 'closed' }
+  const c = fakeCtx({
+    files: { '/repo/.factory/config.json': JSON.stringify(defaultConfig('https://github.com/a/b', 'main', [])) },
+    replies: [
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'], result: { stdout: JSON.stringify(issue) } },
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:docs&state=closed&per_page=100'], result: { stdout: JSON.stringify(docs) } },
+    ],
+  })
+  const q = (await def.handler(c, {})) as { running: { number: number; state: string }[]; slots: number }
+  expect(q.running).toEqual([{ number: 6, state: 'docs' }])
+  expect(q.slots).toBe(3)
 })
 
 const onCfg = { ...cfg, ...ON }
@@ -436,6 +455,7 @@ test('tool queue takes an issue', async () => {
       { argv: ['gh', 'api', 'repos/a/b/issues/9/comments'] },
       { argv: ['gh', 'api', '-X', 'POST'] },
       { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:docs&state=closed&per_page=100'] },
     ],
   })
   const q = (await def.handler(c, { issue: 9 })) as { next: { number: number }[] }
