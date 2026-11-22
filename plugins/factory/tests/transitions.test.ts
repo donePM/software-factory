@@ -22,8 +22,9 @@ test('review can loop back to build', () => {
   expect(canTransition('review', 'build')).toBe(true)
 })
 
-test('approved may go back to build', () => {
+test('approved can go back to build', () => {
   expect(canTransition('approved', 'build')).toBe(true)
+  expect(canTransition('approved', 'review')).toBe(false)
   expect(canTransition('approved', 'needs-human')).toBe(true)
   expect(canTransition('approved', 'done')).toBe(true)
   expect(TRANSITIONS.approved).toEqual(['build', 'done', 'needs-human'])
