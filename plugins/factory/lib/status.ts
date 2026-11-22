@@ -48,7 +48,7 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
     if (w.state === 'approved') {
       rows.push(`${label(n, titles)}  approved: /factory:merge ${n}${link}`)
     } else if (w.state === 'needs-human' && cause?.merge === true) {
-      rows.push(`${label(n, titles)}  needs you: ${cause.reason} · decide. Then run /factory:merge ${n}${link}`)
+      rows.push(`${label(n, titles)}  needs you: ${cause.reason} · decide. To merge, run /factory:merge ${n}. To rework, comment in the issue. Then run /factory:run ${n}${link}`)
     } else if (w.state === 'needs-human' && atRoundLimit(cause)) {
       rows.push(`${label(n, titles)}  needs you: ${cause?.reason} · increase maxRounds in .factory/config.json. Then run /factory:run ${n}${link}`)
     } else if (w.state === 'needs-human' && cause !== undefined) {

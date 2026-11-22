@@ -305,6 +305,15 @@ test('approved is refused when HEAD is not the reviewed commit', async () => {
   expect(t.comments).toEqual([])
 })
 
+test('the head-moved fix names /factory:run', async () => {
+  const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE }
+  const { ctx, t } = inReview(files, {}, { reviewed: MOVED })
+  await expect(jobAdvance(ctx, t, { issue: 7, to: 'approved' })).rejects.toMatchObject({
+    code: 'head-moved',
+    fix: 'Commits came after the reviews. Call job_advance with to: needs-human and this error as reason. Then a human comments in the issue and runs /factory:run 7.',
+  })
+})
+
 test('PR body closes the issue', async () => {
   const { ctx, t } = inBuild()
   await jobAdvance(ctx, t, { issue: 7, to: 'review' })
@@ -478,6 +487,14 @@ test('over maxRounds from needs-human changes no label', async () => {
   expect(r.note).toBeDefined()
   expect(t.states).toEqual([])
   expect(count(ctx, 'gh')).toBe(0)
+})
+
+test('build is refused from each state without a legal move to build', async () => {
+  for (const state of ['backlog', 'intake', 'needs-info', 'fastlane', 'needs-design', 'build', 'docs', 'done', 'rejected']) {
+    const { ctx, t } = setup(state, { round: 1 }, { [`${DIR}/spec.md`]: SPEC })
+    await rejects(jobAdvance(ctx, t, { issue: 7, to: 'build' }), 'illegal-transition')
+    expect(t.states).toEqual([])
+  }
 })
 
 test('build from needs-human starts the next round', async () => {
