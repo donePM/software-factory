@@ -45,14 +45,18 @@ async function stackChecks(ctx: Ctx, stacks: StackRef[]): Promise<Check[]> {
   return out
 }
 
+// text: the output of `gh auth status`. Fine-grained tokens show no scope line, so only a listed scope set can miss a scope.
+export function lacksScope(text: string, scope: string): boolean {
+  const scopes = /Token scopes:(.*)/.exec(text)?.[1]
+  return scopes !== undefined && !scopes.split(',').map(s => s.trim().replace(/^'|'$/g, '')).includes(scope)
+}
+
 async function auth(ctx: Ctx): Promise<Check> {
   const r = await ctx.run(['gh', 'auth', 'status'])
   if (r.exitCode !== 0) return { check: 'gh auth', ok: false, detail: 'gh is not logged in', fix: LOGIN }
   const text = `${r.stdout}\n${r.stderr}`
   const login = /account (\S+)/.exec(text)?.[1] ?? 'unknown'
-  const scopes = /Token scopes:(.*)/.exec(text)?.[1]
-  // Fine-grained tokens show no scope line, so only a listed scope set can fail.
-  if (scopes !== undefined && !/\brepo\b/.test(scopes)) {
+  if (lacksScope(text, 'repo')) {
     return { check: 'gh auth', ok: false, detail: `${login} has no repo scope`, fix: 'gh auth refresh -s repo' }
   }
   return { check: 'gh auth', ok: true, detail: `logged in as ${login}` }

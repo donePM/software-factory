@@ -73,18 +73,19 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'setup',
-    description: 'Set up the factory in this repo: config, labels, repo standard. With apply false it only previews.',
+    description: 'Set up the factory in this repo: config, labels, repo standard. project true connects a GitHub Project board. With apply false it only previews.',
     inputSchema: {
       type: 'object',
       properties: {
         apply: { type: 'boolean' },
         baseBranch: { type: 'string' },
         concurrency: { type: 'integer', minimum: 1 },
+        project: { type: 'boolean' },
       },
       required: ['apply'],
       additionalProperties: false,
     },
-    handler: (ctx, input) => setup(ctx, { apply: input.apply, baseBranch: input.baseBranch, concurrency: input.concurrency }),
+    handler: (ctx, input) => setup(ctx, { apply: input.apply, baseBranch: input.baseBranch, concurrency: input.concurrency, project: input.project }),
   },
   {
     name: 'gate',

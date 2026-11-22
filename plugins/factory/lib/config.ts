@@ -18,6 +18,7 @@ export type Config = {
   routing: Record<'low' | 'medium' | 'high', Models>
   surfaces: Record<string, Models>
   protectedPaths: string[]
+  project?: { enabled: boolean; number?: number }
 }
 
 const MODELS: readonly string[] = ['haiku', 'sonnet', 'opus', 'fable']
@@ -45,6 +46,7 @@ export function defaultConfig(url: string, baseBranch: string, stacks: StackRef[
       security: { security: 'opus' },
       api: { security: 'opus' },
     },
+    project: { enabled: false },
     protectedPaths: ['.factory/config.json', '.factory/checks.local.ts'],
   }
 }
@@ -108,6 +110,13 @@ export function validateConfig(x: unknown): string[] {
   if (!isObj(x.surfaces)) errs.push('surfaces must be an object')
   else for (const [k, v] of Object.entries(x.surfaces)) checkModels(errs, `surfaces.${k}`, v)
   if (!isStrings(x.protectedPaths)) errs.push('protectedPaths must be an array of strings')
+  if (x.project !== undefined) {
+    if (!isObj(x.project)) errs.push('project must be an object')
+    else {
+      if (typeof x.project.enabled !== 'boolean') errs.push('project.enabled must be a boolean')
+      if (x.project.number !== undefined && !posInt(x.project.number)) errs.push('project.number must be an integer of 1 or more')
+    }
+  }
   return errs
 }
 

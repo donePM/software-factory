@@ -1,0 +1,99 @@
+import { lacksScope } from './doctor.ts'
+import { FactoryError, must } from './exec.ts'
+import { stateOf } from './labels.ts'
+import type { Tracker } from './tracker.ts'
+import type { Ctx, State } from './types.ts'
+
+export const FACTORY_OPTIONS = [
+  'Backlog', 'Intake', 'Spec', 'Design', 'Build', 'Review', 'Waiting', 'Ready to merge', 'Docs', 'Done', 'Rejected',
+] as const
+export type FactoryOption = (typeof FACTORY_OPTIONS)[number]
+
+const OPTION: Record<State, FactoryOption> = {
+  intake: 'Intake', 'needs-info': 'Waiting', fastlane: 'Build', spec: 'Spec', 'needs-design': 'Design', build: 'Build',
+  review: 'Review', 'needs-human': 'Waiting', approved: 'Ready to merge', docs: 'Docs', done: 'Done', rejected: 'Rejected',
+}
+
+export const optionFor = (s: State | null): FactoryOption => (s === null ? 'Backlog' : OPTION[s])
+
+export type ProjectReport = { number?: number; url?: string; viewSteps: string[]; added: number; warnings: string[] }
+export type Board = { owner: string; number: number; id: string; fieldId: string; options: Map<string, string> }
+
+type RawProject = { number: number; id: string; url: string }
+type RawField = { id: string; name: string; options?: { id: string; name: string }[] }
+
+const FIELD = 'Factory'
+
+const project = async <T>(ctx: Ctx, argv: string[]): Promise<T> =>
+  JSON.parse(await must(ctx, ['gh', 'project', ...argv, '--format', 'json'])) as T
+
+const factoryField = async (ctx: Ctx, owner: string, n: number): Promise<RawField | undefined> =>
+  (await project<{ fields: RawField[] }>(ctx, ['field-list', String(n), '--owner', owner])).fields.find(f => f.name === FIELD)
+
+export async function addItem(ctx: Ctx, board: Board, url: string): Promise<string> {
+  return (await project<{ id: string }>(ctx, ['item-add', String(board.number), '--owner', board.owner, '--url', url])).id
+}
+
+export async function setOption(ctx: Ctx, board: Board, item: string, option: FactoryOption): Promise<void> {
+  const id = board.options.get(option)
+  if (id === undefined) throw new FactoryError('project-option', `the field ${FIELD} has no option "${option}"`)
+  await must(ctx, [
+    'gh', 'project', 'item-edit', '--id', item, '--project-id', board.id, '--field-id', board.fieldId, '--single-select-option-id', id,
+  ])
+}
+
+// shortcut: gh and the API cannot create a project view, upgrade when gh or the GraphQL API can create one.
+const viewSteps = (url: string): string[] => [
+  `Open ${url}.`,
+  'Click "New view" and select "Board".',
+  'Open the view menu. Set "Column by: Factory".',
+  'Click "Save".',
+]
+
+const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
+// Connects the project (creates it when number is undefined) and adds each open ticket. A failure becomes a warning.
+export async function connectProject(ctx: Ctx, tracker: Tracker, number: number | undefined): Promise<ProjectReport> {
+  const report: ProjectReport = { viewSteps: [], added: 0, warnings: [] }
+  const auth = await ctx.run(['gh', 'auth', 'status'])
+  if (lacksScope(`${auth.stdout}\n${auth.stderr}`, 'project')) {
+    report.warnings.push('The gh token has no project scope. Fix: gh auth refresh -s project')
+    return report
+  }
+  const owner = tracker.repo.split('/')[0]!
+  try {
+    const p = number === undefined
+      ? await project<RawProject>(ctx, ['create', '--owner', owner, '--title', `Factory ${tracker.repo}`])
+      : await project<RawProject>(ctx, ['view', String(number), '--owner', owner])
+    report.number = p.number
+    report.url = p.url
+    report.viewSteps = viewSteps(p.url)
+    let field = await factoryField(ctx, owner, p.number)
+    if (field === undefined) {
+      await project(ctx, [
+        'field-create', String(p.number), '--owner', owner, '--name', FIELD,
+        '--data-type', 'SINGLE_SELECT', '--single-select-options', FACTORY_OPTIONS.join(','),
+      ])
+      field = await factoryField(ctx, owner, p.number)
+      if (field === undefined) throw new FactoryError('project-field', `the field ${FIELD} is missing after field-create`)
+    }
+    const board: Board = { owner, number: p.number, id: p.id, fieldId: field.id, options: new Map(field.options?.map(o => [o.name, o.id])) }
+    // shortcut: setup does not add missing options to an existing field, upgrade when operators ask for it.
+    const missing = FACTORY_OPTIONS.filter(o => !board.options.has(o))
+    if (missing.length > 0) report.warnings.push(`The field ${FIELD} has no option ${missing.join(', ')}. Add the options in the project settings.`)
+    for (const t of await tracker.backlog()) {
+      const state = stateOf(t.labels)
+      try {
+        const item = await addItem(ctx, board, t.url)
+        report.added++
+        if (state === 'conflict') report.warnings.push(`#${t.number} has more than one status label. Its card has no ${FIELD} value.`)
+        else await setOption(ctx, board, item, optionFor(state))
+      } catch (e) {
+        report.warnings.push(`#${t.number}: ${messageOf(e)}`)
+      }
+    }
+  } catch (e) {
+    report.warnings.push(messageOf(e))
+  }
+  return report
+}
