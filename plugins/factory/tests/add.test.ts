@@ -37,6 +37,22 @@ test('issue_create with park adds no label', async () => {
   expect(made[0]!.labels).toEqual([])
 })
 
+test('issue_create adds the new factory issues to the board backlog', async () => {
+  const seen: number[][] = []
+  const board = async (ns: number[]): Promise<string[]> => {
+    seen.push(ns)
+    return []
+  }
+  const items = [{ title: 'Add x', body: 'b' }, { title: 'Add y', body: 'b' }]
+  const r = await issueCreate(fakeTracker().t, { items }, board)
+  expect(seen).toEqual([[10, 11]])
+  expect(Array.isArray(r)).toBe(true)
+  await issueCreate(fakeTracker().t, { items, park: true }, board)
+  expect(seen).toHaveLength(1)
+  const warned = await issueCreate(fakeTracker().t, { items: [items[0]!] }, async () => ['#10: boom'])
+  expect(warned).toEqual({ created: [{ ref: '', number: 10, url: 'https://github.com/a/b/issues/10' }], warnings: ['#10: boom'] })
+})
+
 test('issue_create links a later item to an earlier one', async () => {
   const { t, made } = fakeTracker(11)
   await issueCreate(t, {
