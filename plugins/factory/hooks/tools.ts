@@ -78,14 +78,17 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'doctor',
-    description: 'Check that git, gh, the GitHub login and the origin remote are ready. With the project board on, it also checks the project token scope. Returns checks with fixes.',
+    description: 'Check that git, gh, the GitHub login and the origin remote are ready. With the project board on, it also checks the project token scope. With the wiki as docs target, it also checks the wiki repo. Returns checks with fixes.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    // doctor runs before setup, so a missing or outdated config turns the project check off.
-    handler: async ctx => doctor(ctx, [], (await loadConfig(ctx).catch(() => undefined))?.project?.enabled === true),
+    // doctor runs before setup, so a missing or outdated config turns the project and wiki checks off.
+    handler: async ctx => {
+      const cfg = await loadConfig(ctx).catch(() => undefined)
+      return doctor(ctx, [], cfg?.project?.enabled === true, cfg?.docs?.target === 'wiki')
+    },
   },
   {
     name: 'setup',
-    description: 'Set up the factory in this repo: config, labels, repo standard. project true connects a GitHub Project board, project false stores no. language sets the ticket language. askProject and askLanguage true mean: ask the user. With apply false it only previews.',
+    description: 'Set up the factory in this repo: config, labels, repo standard. project true connects a GitHub Project board, project false stores no. language sets the ticket language. docs sets the docs target. askProject, askLanguage and askDocs true mean: ask the user. A failed wiki check gives the steps to create the wiki. With apply false it only previews.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -94,11 +97,12 @@ export const TOOLS: ToolDef[] = [
         concurrency: { type: 'integer', minimum: 1 },
         project: { type: 'boolean' },
         language: { type: 'string', maxLength: 40 },
+        docs: { type: 'string', enum: ['docs', 'wiki'] },
       },
       required: ['apply'],
       additionalProperties: false,
     },
-    handler: (ctx, input) => setup(ctx, { apply: input.apply, baseBranch: input.baseBranch, concurrency: input.concurrency, project: input.project, language: input.language }),
+    handler: (ctx, input) => setup(ctx, { apply: input.apply, baseBranch: input.baseBranch, concurrency: input.concurrency, project: input.project, language: input.language, docs: input.docs }),
   },
   {
     name: 'gate',

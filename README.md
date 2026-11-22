@@ -140,13 +140,14 @@ comments from the issue author and from you reach them.
 ```
 .factory/
   .gitignore                 # ignores all but config.json and checks.local.ts
-  config.json                # tracker, base branch, concurrency, maxRounds, language, protectedPaths (tracked)
+  config.json                # tracker, base branch, concurrency, maxRounds, language, docs, protectedPaths (tracked)
   jobs/<n>/                  # working copy: job.md, issue.md, intake.md, spec.md, round-N/, decision.md
   worktrees/<n>/             # one worktree per job, branch factory/<n>
   gate/setup/                # result of the setup gate check
 ```
 
 `language` in `.factory/config.json` sets the language of the issues that `/factory:add` writes. The default is English.
+`docs.target` sets where the factory writes the docs: `docs` (the `docs/` folder) or `wiki` (the GitHub wiki). `/factory:setup` asks for it until you choose one.
 
 ## Kanban board (optional)
 

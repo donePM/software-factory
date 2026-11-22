@@ -122,3 +122,21 @@ test('validateConfig checks merge.auto', () => {
   expect(validateConfig({ ...c, merge: { method: 'merge', auto: false } })).toEqual([])
   for (const auto of ['yes', 1]) expect(validateConfig({ ...c, merge: { method: 'merge', auto } })).toEqual(['merge.auto must be a boolean'])
 })
+
+test('validates the docs target', () => {
+  const c = defaultConfig(url, 'main', [])
+  expect(c).not.toHaveProperty('docs')
+  expect(validateConfig({ ...c, docs: { target: 'docs', path: 'docs/' } })).toEqual([])
+  expect(validateConfig({ ...c, docs: { target: 'wiki' } })).toEqual([])
+  expect(validateConfig({ ...c, docs: { target: 'pages' } })).toEqual(['docs.target must be "docs" or "wiki"'])
+  for (const path of ['', '/x', '../x']) {
+    expect(validateConfig({ ...c, docs: { target: 'docs', path } })).toEqual(['docs.path must be a relative path'])
+  }
+})
+
+test('loads a config without docs', async () => {
+  const ctx = fakeCtx({ files: { [configPath('/repo')]: JSON.stringify(defaultConfig(url, 'main', [])) } })
+  const c = await loadConfig(ctx)
+  expect(c.docs).toBeUndefined()
+  expect(CONFIG_VERSION).toBe(1)
+})

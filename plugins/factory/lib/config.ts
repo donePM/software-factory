@@ -20,6 +20,7 @@ export type Config = {
   protectedPaths: string[]
   project?: { enabled: boolean; number?: number }
   language?: string
+  docs?: { target: 'docs' | 'wiki'; path?: string }
 }
 
 const MODELS: readonly string[] = ['haiku', 'sonnet', 'opus', 'fable']
@@ -128,6 +129,17 @@ export function validateConfig(x: unknown): string[] {
     }
   }
   if (x.language !== undefined && !validLanguage(x.language)) errs.push(LANGUAGE_ERROR)
+  if (x.docs !== undefined) {
+    if (!isObj(x.docs)) errs.push('docs must be an object')
+    else {
+      if (x.docs.target !== 'docs' && x.docs.target !== 'wiki') errs.push('docs.target must be "docs" or "wiki"')
+      const p = x.docs.path
+      // The path reaches a later docs step, so it must stay inside the repo.
+      if (p !== undefined && (typeof p !== 'string' || p === '' || p.startsWith('/') || p.split('/').includes('..'))) {
+        errs.push('docs.path must be a relative path')
+      }
+    }
+  }
   return errs
 }
 

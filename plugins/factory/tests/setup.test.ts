@@ -370,3 +370,67 @@ test('tool setup passes the language', async () => {
   const out = await invoke(def, fakeCtx({ replies: replies() }), { apply: false, language: 'Deutsch' })
   expect('result' in out && out.result !== undefined && JSON.parse(out.result).config.language).toBe('Deutsch')
 })
+
+test('asks for the docs target until one is stored', async () => {
+  expect((await setup(fakeCtx({ replies: replies() }), { apply: false })).askDocs).toBe(true)
+  expect((await setup(fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify(stored()) } }), { apply: false })).askDocs).toBe(true)
+  const set = await setup(fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify({ ...stored(), docs: { target: 'docs', path: 'docs/' } }) } }), { apply: false })
+  expect(set.askDocs).toBe(false)
+})
+
+const wikiView = (on: boolean): Reply => ({ argv: ['gh', 'repo', 'view', 'a/b', '--json', 'hasWikiEnabled'], result: { stdout: JSON.stringify({ hasWikiEnabled: on }) } })
+const lsRemote = (exitCode: number): Reply => ({ argv: ['git', 'ls-remote', 'https://github.com/a/b.wiki.git'], result: { exitCode } })
+
+test('stores the docs target', async () => {
+  const fresh = fakeCtx({ replies: replies() })
+  await setup(fresh, { apply: true, docs: 'docs' })
+  expect(JSON.parse(fresh.files[CFG]!).docs).toEqual({ target: 'docs', path: 'docs/' })
+
+  const custom = fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify({ ...stored(), docs: { target: 'wiki', path: 'manual/' } }) } })
+  await setup(custom, { apply: true, docs: 'docs' })
+  expect(JSON.parse(custom.files[CFG]!).docs).toEqual({ target: 'docs', path: 'manual/' })
+
+  const wiki = fakeCtx({ replies: [wikiView(true), lsRemote(0), ...replies()], files: { [CFG]: JSON.stringify(stored()) } })
+  await setup(wiki, { apply: true, docs: 'wiki' })
+  expect(JSON.parse(wiki.files[CFG]!).docs).toEqual({ target: 'wiki' })
+
+  const later = fakeCtx({ replies: replies() })
+  await setup(later, { apply: true })
+  expect(JSON.parse(later.files[CFG]!)).not.toHaveProperty('docs')
+
+  const def = TOOLS.find(t => t.name === 'setup')!
+  expect((def.inputSchema.properties as Record<string, unknown>).docs).toEqual({ type: 'string', enum: ['docs', 'wiki'] })
+  const out = await invoke(def, fakeCtx({ replies: replies() }), { apply: false, docs: 'docs' })
+  expect('result' in out && out.result !== undefined && JSON.parse(out.result).config.docs).toEqual({ target: 'docs', path: 'docs/' })
+})
+
+test('reports the missing wiki steps', async () => {
+  const run = async (extra: Reply[]) => {
+    const ctx = fakeCtx({ replies: [...extra, ...replies()] })
+    const r = await setup(ctx, { apply: true, docs: 'wiki' })
+    return { r, ctx }
+  }
+  const ok = await run([wikiView(true), lsRemote(0)])
+  expect(ok.ctx.calls).toContainEqual(['gh', 'repo', 'view', 'a/b', '--json', 'hasWikiEnabled'])
+  expect(ok.ctx.calls).toContainEqual(['git', 'ls-remote', 'https://github.com/a/b.wiki.git'])
+  expect(ok.r.wiki!.ok).toBe(true)
+
+  const off = await run([wikiView(false), lsRemote(128)])
+  expect(off.r.wiki!.ok).toBe(false)
+  expect(off.r.wiki!.fix).toContain('gh repo edit a/b --enable-wiki')
+  expect(off.r.wiki!.fix).toContain('https://github.com/a/b/wiki')
+  expect(off.r.next).toContain(off.r.wiki!.fix!)
+  expect(off.r.applied).toBe(true)
+  expect(off.r.gitignore).toBe(true)
+  expect(off.ctx.calls).toContainEqual(['git', 'worktree', 'prune'])
+
+  const empty = await run([wikiView(true), lsRemote(128)])
+  expect(empty.r.wiki!.ok).toBe(false)
+  expect(empty.r.wiki!.fix).toContain('first page')
+  expect(empty.r.wiki!.fix).toContain('https://github.com/a/b/wiki')
+  expect(empty.r.next).toContain(empty.r.wiki!.fix!)
+
+  const none = fakeCtx({ replies: replies() })
+  expect((await setup(none, { apply: true, docs: 'docs' })).wiki).toBeUndefined()
+  expect(none.calls.some(c => c[1] === 'repo' || c[1] === 'ls-remote')).toBe(false)
+})

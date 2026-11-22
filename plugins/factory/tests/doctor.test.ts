@@ -95,3 +95,36 @@ test('doctor tool runs the project scope check only when the config turns the pr
   expect(await names(cfg(false))).not.toContain('project scope')
   expect(await names({})).not.toContain('project scope')
 })
+
+const wikiView = (on: boolean): Reply => ({ argv: ['gh', 'repo', 'view', 'a/b', '--json', 'hasWikiEnabled'], result: { stdout: JSON.stringify({ hasWikiEnabled: on }) } })
+const lsRemote = (exitCode: number): Reply => ({ argv: ['git', 'ls-remote', 'https://github.com/a/b.wiki.git'], result: { exitCode } })
+
+test('reports a wiki target with a missing wiki repo', async () => {
+  const wiki = async (replies: Reply[]) => (await doctor(fakeCtx({ replies: [...replies, ...good] }), [], false, true)).find(c => c.check === 'wiki')!
+  expect((await wiki([wikiView(true), lsRemote(0)])).ok).toBe(true)
+  const off = await wiki([wikiView(false), lsRemote(0)])
+  expect(off.ok).toBe(false)
+  expect(off.fix).toContain('gh repo edit a/b --enable-wiki')
+  expect(off.fix).toContain('https://github.com/a/b/wiki')
+  const empty = await wiki([wikiView(true), lsRemote(128)])
+  expect(empty.ok).toBe(false)
+  expect(empty.fix).toContain('first page')
+  expect(empty.fix).toContain('https://github.com/a/b/wiki')
+
+  const def = TOOLS.find(t => t.name === 'doctor')!
+  const files = { '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/a/b', 'main', []), docs: { target: 'wiki' } }) }
+  const out = await invoke(def, fakeCtx({ replies: [wikiView(true), lsRemote(0), ...good], files }), {})
+  expect((JSON.parse(out.result) as { check: string }[]).map(c => c.check)).toContain('wiki')
+})
+
+test('runs no wiki check without a wiki target', async () => {
+  const ctx = fakeCtx({ replies: [wikiView(true), lsRemote(0), ...good] })
+  const checks = await doctor(ctx, [])
+  expect(checks.map(c => c.check)).toEqual(['git', 'gh', 'gh auth', 'origin'])
+  expect(ctx.calls.some(c => c[1] === 'repo' || c[1] === 'ls-remote')).toBe(false)
+  const def = TOOLS.find(t => t.name === 'doctor')!
+  const files = { '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/a/b', 'main', []), docs: { target: 'docs', path: 'docs/' } }) }
+  const tool = fakeCtx({ replies: [wikiView(true), lsRemote(0), ...good], files })
+  await invoke(def, tool, {})
+  expect(tool.calls.some(c => c[1] === 'repo' || c[1] === 'ls-remote')).toBe(false)
+})
