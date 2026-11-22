@@ -1,5 +1,5 @@
 import { lacksScope } from './doctor.ts'
-import { FactoryError, must } from './exec.ts'
+import { FactoryError, must, RATE_LIMIT_FIX } from './exec.ts'
 import { jobDir, readJob, writeJob } from './jobfile.ts'
 import type { BoardIds } from './jobfile.ts'
 import { stateOf } from './labels.ts'
@@ -38,7 +38,7 @@ async function project<T>(ctx: Ctx, argv: string[]): Promise<T> {
     const owner = argv[at + 1]
     throw new FactoryError('owner-unresolved',
       `${e.message}. gh could not resolve the owner "${owner}". The probable cause is a GraphQL rate limit.`,
-      'Wait until the GitHub rate limit resets. Do not retry at once. The next queue or job_advance moves the card.')
+      RATE_LIMIT_FIX)
   }
 }
 
@@ -158,7 +158,9 @@ export async function addToBacklog(ctx: Ctx, tracker: Pick<Tracker, 'repo'>, cfg
     try {
       await setOption(ctx, board, await addItem(ctx, board, `https://github.com/${tracker.repo}/issues/${n}`), 'Backlog')
     } catch (e) {
-      warnings.push(`#${n}: ${messageOf(e)}`)
+      warnings.push(`#${n}: ${messageOf(e)}${e instanceof FactoryError && e.fix !== undefined ? ` Fix: ${e.fix}` : ''}`)
+      // More gh calls make a rate limit last longer. The next queue adds the missing cards.
+      if (e instanceof FactoryError && (e.code === 'rate-limited' || e.code === 'owner-unresolved')) break
     }
   }
   return warnings
