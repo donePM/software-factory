@@ -100,6 +100,10 @@ The first line is machine-readable: `DECISION: APPROVE|ESCALATE`. Write exactly
   human one clear question. Say what you need to know and what each answer
   causes.
 
+Copy each `[nit] commit` finding of `<roundDir>/review-code.md` into
+`## Checks`. Write one `- Commit note: <the finding>` line for each finding.
+A commit note is no reason to escalate.
+
 ## Examples
 APPROVE:
 

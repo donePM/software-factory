@@ -849,11 +849,31 @@ const REVIEW_COMMITS = [
   '   `<type>(<optional scope>): <summary>`, with a type from `feat`, `fix`,',
   '   `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,',
   '   `revert`. A breaking change has `!` and a `BREAKING CHANGE:` footer. Each',
-  '   commit has the footer `Refs: #<issue>`, with the issue from `job.md`. A bad',
-  '   commit is a `blocker`.',
+  '   commit has the footer `Refs: #<issue>`, with the issue from `job.md`.',
   '   A commit body that ends in the middle of a sentence, or that contains `...`',
-  '   or `…` in place of text, is a `should`. Give this finding only when the',
+  '   or `…` in place of text, is a finding. Give this finding only when the',
   '   raw commit shows it in the `git cat-file commit <sha>` output.',
+  '   Each reviewed commit is already pushed, so the builder cannot rewrite it.',
+  '   Thus each finding on a commit message is a `nit`. This also applies to an',
+  '   STE finding on a commit body from check 5. The finding line is',
+  '   `N. [nit] commit <short sha>: <problem>. Fix: none, the commit is pushed.`',
+].join('\n')
+
+// REVIEW_VERDICT_RULE is the verdict paragraph of `## Write` in agents/code-reviewer.md word for word.
+const REVIEW_VERDICT_RULE = [
+  'Write `VERDICT: CHANGES` only for a `blocker` or a `should`. Nits never block.',
+  'A test failure in `checks.md`, or an AC without a test that fails without the',
+  'change (except an AC under `## Not tested` or a `(regression)` AC), is always',
+  'CHANGES. Write each one as a `blocker` finding. A commit finding is a `nit`',
+  '(check 8) and never gives CHANGES. A CHANGES review without a `blocker` or a',
+  '`should` is not valid.',
+].join('\n')
+
+// APPROVER_COMMIT_NOTES stands in `## Write` of agents/approver.md word for word.
+const APPROVER_COMMIT_NOTES = [
+  'Copy each `[nit] commit` finding of `<roundDir>/review-code.md` into',
+  '`## Checks`. Write one `- Commit note: <the finding>` line for each finding.',
+  'A commit note is no reason to escalate.',
 ].join('\n')
 
 // BUILDER_COMMIT_CHECK is steps 1 to 3 of `## Commits` in agents/builder.md word for word.
@@ -885,11 +905,29 @@ test('builder checks its commit body raw with git cat-file', () => {
   expect(oneLine(BUILDER_COMMIT_CHECK)).not.toContain('git log -1 --format=%B')
 })
 
-test('code-reviewer commit check keeps the blocker and should levels', () => {
+test('code-reviewer gives each commit finding as a nit', () => {
   const t = oneLine(REVIEW_COMMITS)
   expect(t).toContain('`Refs: #<issue>`')
-  expect(t).toContain('A bad commit is a `blocker`.')
-  expect(t).toContain('is a `should`')
+  expect(t).toContain('Each reviewed commit is already pushed, so the builder cannot rewrite it.')
+  expect(t).toContain('each finding on a commit message is a `nit`')
+  expect(t).toContain('STE finding on a commit body from check 5')
+  expect(t).toContain('`N. [nit] commit <short sha>: <problem>. Fix: none, the commit is pushed.`')
+  expect(t).not.toContain('A bad commit is a `blocker`.')
+  expect(t).not.toContain('is a `should`')
+})
+
+test('code-reviewer verdict rule does not block on a commit', () => {
+  const t = oneLine(REVIEW_VERDICT_RULE)
+  expect(t).not.toContain('a bad commit')
+  expect(t).toContain('A commit finding is a `nit` (check 8) and never gives CHANGES.')
+  expect(t).toContain('A CHANGES review without a `blocker` or a `should` is not valid.')
+})
+
+test('approver copies the commit notes into Checks', () => {
+  const t = oneLine(APPROVER_COMMIT_NOTES)
+  expect(t).toContain('Copy each `[nit] commit` finding of `<roundDir>/review-code.md` into `## Checks`.')
+  expect(t).toContain('`- Commit note: <the finding>`')
+  expect(t).toContain('A commit note is no reason to escalate.')
 })
 
 // shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
