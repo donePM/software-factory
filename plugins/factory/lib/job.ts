@@ -463,7 +463,8 @@ async function advanceReview(ctx: Ctx, t: Tracker, old: Job): Promise<AdvanceRes
     }
     job = { ...old, pr }
   }
-  job = { ...job, reviewed: sha }
+  // Reviewers diff from Base: after a sync merge, the old Base also shows the base branch commits.
+  job = { ...job, reviewed: sha, base: await must(ctx, ['git', '-C', old.worktree, 'merge-base', 'HEAD', `origin/${old.baseBranch}`]) }
   // Always: a spec change during build updates Spec updated, and approved compares it with this comment.
   // The comment first: job.md must not be ahead of the ticket when the upsert fails.
   await t.upsertComment(n, 'intake', intakeComment(job, await readRequired(ctx, `${job.jobDir}/intake.md`, 'no-intake', 'Run the intake step first.')))
