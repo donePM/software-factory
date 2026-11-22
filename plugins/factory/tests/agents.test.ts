@@ -839,3 +839,55 @@ test('agent language blocks have no sentence over 20 words', () => {
     for (const s of sentences(block)) expect(s.split(/\s+/).length).toBeLessThanOrEqual(20)
   }
 })
+
+// REVIEW_COMMITS is check 8 in agents/code-reviewer.md word for word.
+const REVIEW_COMMITS = [
+  '8. **Commits:** list the commits with `git rev-list <base>..HEAD` in the',
+  '   worktree. Read each message with `git cat-file commit <sha>`. Do not use',
+  '   `git log`. A host output filter can shorten `git log` output.',
+  '   Each commit follows Conventional Commits 1.0.0:',
+  '   `<type>(<optional scope>): <summary>`, with a type from `feat`, `fix`,',
+  '   `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,',
+  '   `revert`. A breaking change has `!` and a `BREAKING CHANGE:` footer. Each',
+  '   commit has the footer `Refs: #<issue>`, with the issue from `job.md`. A bad',
+  '   commit is a `blocker`.',
+  '   A commit body that ends in the middle of a sentence, or that contains `...`',
+  '   or `…` in place of text, is a `should`. Give this finding only when the',
+  '   raw commit shows it in the `git cat-file commit <sha>` output.',
+].join('\n')
+
+// BUILDER_COMMIT_CHECK is steps 1 to 3 of `## Commits` in agents/builder.md word for word.
+const BUILDER_COMMIT_CHECK = [
+  '1. Write the full message to `<roundDir>/commit-msg.txt` with the `Write` tool.',
+  '2. Commit with `git commit -F <roundDir>/commit-msg.txt`. Never use `-m` or a',
+  '   heredoc for a message with a body.',
+  '3. Read the commit with `git cat-file commit HEAD`, not with `git log`. A host',
+  '   output filter can shorten `git log` output. Make sure that the body ends',
+  '   in a full sentence, with no `...` or `…`. If not, write the file again and',
+  '   run `git commit --amend -F <roundDir>/commit-msg.txt`.',
+].join('\n')
+
+const oneLine = (s: string): string => s.replace(/\s+/g, ' ')
+
+test('code-reviewer reads each commit message raw with git cat-file', () => {
+  const t = oneLine(REVIEW_COMMITS)
+  expect(t).toContain('`git rev-list <base>..HEAD`')
+  expect(t).toContain('`git cat-file commit <sha>`')
+  expect(t).toContain('A host output filter can shorten `git log` output.')
+})
+
+test('code-reviewer gives a dots finding only when the raw commit shows it', () => {
+  expect(oneLine(REVIEW_COMMITS)).toContain('Give this finding only when the raw commit shows it in the `git cat-file commit <sha>` output.')
+})
+
+test('builder checks its commit body raw with git cat-file', () => {
+  expect(oneLine(BUILDER_COMMIT_CHECK)).toContain('`git cat-file commit HEAD`')
+  expect(oneLine(BUILDER_COMMIT_CHECK)).not.toContain('git log -1 --format=%B')
+})
+
+test('code-reviewer commit check keeps the blocker and should levels', () => {
+  const t = oneLine(REVIEW_COMMITS)
+  expect(t).toContain('`Refs: #<issue>`')
+  expect(t).toContain('A bad commit is a `blocker`.')
+  expect(t).toContain('is a `should`')
+})

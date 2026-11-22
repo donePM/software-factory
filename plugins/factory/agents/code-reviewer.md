@@ -85,7 +85,9 @@ expected load in the repo (one user with a script, or many users at once).
 7. **Code first:** the diff makes a doc wrong and leaves it. Or docs describe
    a behavior that no code or test shows. Each case is a `should`. The finding
    quotes the doc line and names the code that disagrees.
-8. **Commits:** run `git log --format='%H%n%B' <base>..HEAD` in the worktree.
+8. **Commits:** list the commits with `git rev-list <base>..HEAD` in the
+   worktree. Read each message with `git cat-file commit <sha>`. Do not use
+   `git log`. A host output filter can shorten `git log` output.
    Each commit follows Conventional Commits 1.0.0:
    `<type>(<optional scope>): <summary>`, with a type from `feat`, `fix`,
    `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
@@ -93,7 +95,8 @@ expected load in the repo (one user with a script, or many users at once).
    commit has the footer `Refs: #<issue>`, with the issue from `job.md`. A bad
    commit is a `blocker`.
    A commit body that ends in the middle of a sentence, or that contains `...`
-   or `…` in place of text, is a `should`.
+   or `…` in place of text, is a `should`. Give this finding only when the
+   raw commit shows it in the `git cat-file commit <sha>` output.
 
 ## Lean rules
 - Each finding needs a concrete case: "this input leads to this wrong result".
