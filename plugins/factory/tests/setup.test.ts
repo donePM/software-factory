@@ -384,7 +384,7 @@ test('asks for the docs target until one is stored', async () => {
 const wikiView = (on: boolean): Reply => ({ argv: ['gh', 'repo', 'view', 'a/b', '--json', 'hasWikiEnabled'], result: { stdout: JSON.stringify({ hasWikiEnabled: on }) } })
 const GH_GIT = ['git', '-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
 const LS = [...GH_GIT, 'ls-remote', 'https://github.com/a/b.wiki.git']
-const DRY = [...GH_GIT, '-C', '/repo', 'push', '--dry-run', 'https://github.com/a/b.wiki.git', 'HEAD:refs/heads/factory-wiki-check']
+const DRY = [...GH_GIT, '-C', '/repo', 'push', '--dry-run', '--no-verify', 'https://github.com/a/b.wiki.git', 'HEAD:refs/heads/factory-wiki-check']
 const lsRemote = (exitCode: number): Reply => ({ argv: LS, result: { exitCode } })
 const dryPush = (exitCode: number): Reply => ({ argv: DRY, result: { exitCode, stderr: exitCode === 0 ? '' : 'fatal: could not read Username\n' } })
 
