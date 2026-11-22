@@ -24,14 +24,14 @@ const raw = (labels: string[], n = 5, o: Record<string, unknown> = {}) => ({
   created_at: '2026-01-01T00:00:00Z', html_url: `https://github.com/a/b/issues/${n}`, state: 'open', assignees: [], ...o,
 })
 const issueJson = (labels: string[], n = 5, o: Record<string, unknown> = {}) => JSON.stringify(raw(labels, n, o))
-const writes: Reply[] = [{ argv: ['gh', 'api', '-X'] }, { argv: ['gh', 'pr', 'merge'] }]
+const writes: Reply[] = [{ argv: ['gh', 'api', '-X'] }]
 const getReplies = (labels: string[], comments: unknown[] = [], n = 5): Reply[] => [
   { argv: ['gh', 'api', `repos/a/b/issues/${n}`], result: { stdout: issueJson(labels, n) } },
   { argv: ['gh', 'api', `repos/a/b/issues/${n}/comments`], result: { stdout: comments.map(c => JSON.stringify(c)).join('\n') } },
 ]
 const BACKLOG_ARGV = ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100', '--paginate', '--jq', '.[]']
 // Each gh call that is not a REST call is GraphQL.
-const graphql = (calls: string[][]): string[][] => calls.filter(c => c[0] === 'gh' && c[1] !== 'api')
+const graphql = (calls: string[][]): string[][] => calls.filter(c => c[0] === 'gh' && (c[1] !== 'api' || c[2] === 'graphql'))
 
 test('repoFromUrl handles https, .git and ssh', () => {
   expect(repoFromUrl('https://github.com/a/b')).toBe('a/b')
@@ -221,40 +221,87 @@ test('createIssue sends the body on stdin', async () => {
   expect(JSON.parse(s.stdin!)).toEqual({ title: 'Title', body: 'Body', labels: ['factory', 'type:feat'] })
 })
 
-test('openPr opens a draft with labels', async () => {
+const restPr = (o: Record<string, unknown> = {}) => ({
+  number: 9, state: 'open', draft: true, title: 't', body: 'b', user: { login: 'op' }, node_id: 'PR_9',
+  head: { ref: 'factory/5', sha: 'abc' }, merged_at: null, merge_commit_sha: 'test-merge', ...o,
+})
+const prOut = { number: 9, state: 'OPEN', isDraft: true, title: 't', body: 'b', author: 'op', headRefName: 'factory/5', headRefOid: 'abc', mergeCommit: null }
+const FIND_ARGV = ['gh', 'api', 'repos/a/b/pulls?head=a:factory/5&state=all&per_page=100', '--paginate', '--jq', '.[]']
+
+test('openPr opens a draft through REST, then adds the labels', async () => {
   const ctx = spyCtx([
-    { argv: ['gh', 'pr', 'create'], result: { stdout: 'https://github.com/a/b/pull/9\n' } },
+    { argv: ['gh', 'api', '-X', 'POST', 'repos/a/b/pulls'], result: { stdout: JSON.stringify(restPr({ html_url: 'https://github.com/a/b/pull/9' })) } },
+    ...writes,
   ])
   const pr = await githubTracker(ctx, 'a/b').openPr('factory/5', 'main', 'feat: x', 'Body', ['factory:pr', 'type:feat'])
   expect(pr).toEqual({ number: 9, url: 'https://github.com/a/b/pull/9' })
-  expect(ctx.calls[0]).toEqual([
-    'gh', 'pr', 'create', '-R', 'a/b', '--draft', '--base', 'main', '--head', 'factory/5', '--title', 'feat: x',
-    '--body-file', '-', '--label', 'factory:pr', '--label', 'type:feat',
+  expect(ctx.stdins.map(s => [s.argv.join(' '), s.stdin === undefined ? undefined : JSON.parse(s.stdin)])).toEqual([
+    ['gh api -X POST repos/a/b/pulls --input -', { title: 'feat: x', head: 'factory/5', base: 'main', body: 'Body', draft: true }],
+    ['gh api -X POST repos/a/b/issues/9/labels --input -', { labels: ['factory:pr', 'type:feat'] }],
   ])
-  expect(ctx.stdins[0]!.stdin).toBe('Body')
+  expect(graphql(ctx.calls)).toEqual([])
 })
 
-test('findPr returns the first match or null', async () => {
-  const pr = { number: 9, state: 'OPEN', isDraft: true, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: '', mergeCommit: null }
-  const hit = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: JSON.stringify([pr]) } }])
-  expect(await githubTracker(hit, 'a/b').findPr('factory/5')).toEqual({ ...pr, author: 'op' })
-  const none = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: '[]' } }])
+test('findPr reads the PRs of the branch through REST and returns the first match or null', async () => {
+  const hit = spyCtx([{ argv: FIND_ARGV.slice(0, 3), result: { stdout: JSON.stringify(restPr()) } }])
+  expect(await githubTracker(hit, 'a/b').findPr('factory/5')).toEqual(prOut)
+  expect(hit.calls).toEqual([FIND_ARGV])
+  const none = spyCtx([{ argv: ['gh', 'api'], result: { stdout: '' } }])
   expect(await githubTracker(none, 'a/b').findPr('x')).toBe(null)
 })
 
-test('merge passes the subject', async () => {
+test('merge puts a merge commit with the subject and pins the sha', async () => {
   const ctx = spyCtx(writes)
   await githubTracker(ctx, 'a/b').merge(9, 'feat: x (#9)', 'f'.repeat(40))
-  expect(ctx.calls[0]).toEqual(['gh', 'pr', 'merge', '9', '-R', 'a/b', '--merge', '--subject', 'feat: x (#9)', '--match-head-commit', 'f'.repeat(40)])
+  expect(ctx.calls).toEqual([['gh', 'api', '-X', 'PUT', 'repos/a/b/pulls/9/merge', '--input', '-']])
+  expect(JSON.parse(ctx.stdins[0]!.stdin!)).toEqual({ merge_method: 'merge', commit_title: 'feat: x (#9)', sha: 'f'.repeat(40) })
 })
 
 test('findPr prefers an open PR over a newer closed one', async () => {
-  const mk = (number: number, state: string) => ({ number, state, isDraft: false, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: '', mergeCommit: null })
-  const rows = [mk(11, 'CLOSED'), mk(9, 'OPEN'), mk(8, 'MERGED')]
-  const ctx = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: JSON.stringify(rows) } }])
+  const rows = [
+    restPr({ number: 11, state: 'closed' }), restPr({ number: 9 }), restPr({ number: 8, state: 'closed', merged_at: '2026-01-01T00:00:00Z' }),
+  ]
+  const lines = (r: unknown[]) => r.map(x => JSON.stringify(x)).join('\n')
+  const ctx = spyCtx([{ argv: ['gh', 'api'], result: { stdout: lines(rows) } }])
   expect((await githubTracker(ctx, 'a/b').findPr('factory/5'))?.number).toBe(9)
-  const none = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: JSON.stringify([mk(11, 'CLOSED'), mk(8, 'MERGED')]) } }])
+  const none = spyCtx([{ argv: ['gh', 'api'], result: { stdout: lines([rows[0], rows[2]]) } }])
   expect((await githubTracker(none, 'a/b').findPr('factory/5'))?.number).toBe(11)
+})
+
+test('prReady leaves a PR that is not a draft and makes one mutation for a draft', async () => {
+  const ready = spyCtx([{ argv: ['gh', 'api', 'repos/a/b/pulls/9'], result: { stdout: JSON.stringify(restPr({ draft: false })) } }])
+  await githubTracker(ready, 'a/b').prReady(9)
+  expect(ready.calls).toEqual([['gh', 'api', 'repos/a/b/pulls/9']])
+  const draft = spyCtx([{ argv: ['gh', 'api', 'repos/a/b/pulls/9'], result: { stdout: JSON.stringify(restPr()) } }, { argv: ['gh', 'api', 'graphql'] }])
+  await githubTracker(draft, 'a/b').prReady(9)
+  expect(draft.calls[1]).toEqual([
+    'gh', 'api', 'graphql', '-f', 'query=mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { clientMutationId } }', '-f', 'id=PR_9',
+  ])
+  expect(draft.calls).toHaveLength(2)
+})
+
+test('prApproved needs an approval of the given commit', async () => {
+  const reviews = [
+    { state: 'APPROVED', commit_id: 'old' }, { state: 'COMMENTED', commit_id: 'abc' }, { state: 'DISMISSED', commit_id: 'abc' },
+  ]
+  const ctx = (r: unknown[]) => spyCtx([{ argv: ['gh', 'api', 'repos/a/b/pulls/9/reviews?per_page=100'], result: { stdout: r.map(x => JSON.stringify(x)).join('\n') } }])
+  const no = ctx(reviews)
+  expect(await githubTracker(no, 'a/b').prApproved(9, 'abc')).toBe(false)
+  expect(no.calls).toEqual([['gh', 'api', 'repos/a/b/pulls/9/reviews?per_page=100', '--paginate', '--jq', '.[]']])
+  expect(await githubTracker(ctx([...reviews, { state: 'APPROVED', commit_id: 'abc' }]), 'a/b').prApproved(9, 'abc')).toBe(true)
+})
+
+test('the PR calls use no GraphQL for a PR that is not a draft', async () => {
+  const ctx = spyCtx([{ argv: ['gh', 'api'], result: { stdout: JSON.stringify(restPr({ draft: false, html_url: 'u/pull/9' })) } }])
+  const t = githubTracker(ctx, 'a/b')
+  await t.openPr('factory/5', 'main', 't', 'b', ['factory:pr'])
+  await t.findPr('factory/5')
+  await t.prState(9)
+  await t.prReady(9)
+  await t.prComment(9, 'x')
+  await t.approvePr(9, 'x')
+  await t.merge(9, 's', 'abc')
+  expect(graphql(ctx.calls)).toEqual([])
 })
 
 test('ensureLabels reads once and writes only a missing or changed label', async () => {
@@ -311,27 +358,28 @@ test('get with no comments returns an empty list', async () => {
   expect(t.comments).toEqual([])
 })
 
-test('searchIssues maps labels to names', async () => {
-  const ctx = spyCtx([{ argv: ['gh', 'issue', 'list'], result: { stdout: JSON.stringify([{ number: 3, title: 'X', labels: [{ name: 'factory' }, { name: 'type:fix' }] }]) } }])
+test('searchIssues searches the issues of the repo through REST', async () => {
+  const ctx = spyCtx([{ argv: ['gh', 'api'], result: { stdout: JSON.stringify({ number: 3, title: 'X', labels: [{ name: 'factory' }, { name: 'type:fix' }] }) } }])
   expect(await githubTracker(ctx, 'a/b').searchIssues('dup in:title')).toEqual([{ number: 3, title: 'X', labels: ['factory', 'type:fix'] }])
-  expect(ctx.calls[0]).toEqual(['gh', 'issue', 'list', '-R', 'a/b', '--state', 'all', '--search', 'dup in:title', '--limit', '50', '--json', 'number,title,labels'])
+  expect(ctx.calls[0]).toEqual(['gh', 'api', '-X', 'GET', 'search/issues', '-f', 'q=repo:a/b is:issue dup in:title', '-f', 'per_page=50', '--jq', '.items[]'])
+  expect(graphql(ctx.calls)).toEqual([])
 })
 
-test('prState maps the author', async () => {
-  const pr = { number: 9, state: 'MERGED', isDraft: false, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: 'APPROVED', mergeCommit: null }
-  const ctx = spyCtx([{ argv: ['gh', 'pr', 'view'], result: { stdout: JSON.stringify(pr) } }])
-  expect(await githubTracker(ctx, 'a/b').prState(9)).toEqual({ ...pr, author: 'op' })
-  expect(ctx.calls[0]).toEqual(['gh', 'pr', 'view', '9', '-R', 'a/b', '--json', 'number,state,isDraft,title,body,author,headRefName,headRefOid,reviewDecision,mergeCommit'])
+test('prState maps the REST fields', async () => {
+  const ctx = spyCtx([{ argv: ['gh', 'api', 'repos/a/b/pulls/9'], result: { stdout: JSON.stringify(restPr({ body: null, draft: false })) } }])
+  expect(await githubTracker(ctx, 'a/b').prState(9)).toEqual({ ...prOut, body: '', isDraft: false })
+  expect(ctx.calls).toEqual([['gh', 'api', 'repos/a/b/pulls/9']])
 })
 
-test('prState maps the merge commit oid', async () => {
-  const pr = { number: 9, state: 'MERGED', isDraft: false, title: 't', body: 'b', author: { login: 'op' }, headRefName: 'factory/5', headRefOid: 'abc', reviewDecision: '' }
-  const hit = spyCtx([{ argv: ['gh', 'pr', 'view'], result: { stdout: JSON.stringify({ ...pr, mergeCommit: { oid: 'm' } }) } }])
-  expect((await githubTracker(hit, 'a/b').prState(9)).mergeCommit).toBe('m')
-  expect(hit.calls[0]).toEqual(['gh', 'pr', 'view', '9', '-R', 'a/b', '--json', 'number,state,isDraft,title,body,author,headRefName,headRefOid,reviewDecision,mergeCommit'])
-  const none = spyCtx([{ argv: ['gh', 'pr', 'view'], result: { stdout: JSON.stringify({ ...pr, mergeCommit: null }) } }])
-  expect((await githubTracker(none, 'a/b').prState(9)).mergeCommit).toBe(null)
-  const list = spyCtx([{ argv: ['gh', 'pr', 'list'], result: { stdout: JSON.stringify([{ ...pr, mergeCommit: { oid: 'm' } }]) } }])
+test('prState is MERGED with the merge commit only after the merge', async () => {
+  const merged = restPr({ state: 'closed', merged_at: '2026-01-01T00:00:00Z', merge_commit_sha: 'm' })
+  const hit = spyCtx([{ argv: ['gh', 'api'], result: { stdout: JSON.stringify(merged) } }])
+  expect(await githubTracker(hit, 'a/b').prState(9)).toMatchObject({ state: 'MERGED', mergeCommit: 'm' })
+  const closed = spyCtx([{ argv: ['gh', 'api'], result: { stdout: JSON.stringify(restPr({ state: 'closed' })) } }])
+  expect(await githubTracker(closed, 'a/b').prState(9)).toMatchObject({ state: 'CLOSED', mergeCommit: null })
+  const open = spyCtx([{ argv: ['gh', 'api'], result: { stdout: JSON.stringify(restPr()) } }])
+  expect(await githubTracker(open, 'a/b').prState(9)).toMatchObject({ state: 'OPEN', mergeCommit: null })
+  const list = spyCtx([{ argv: ['gh', 'api'], result: { stdout: JSON.stringify(merged) } }])
   expect((await githubTracker(list, 'a/b').findPr('factory/5'))?.mergeCommit).toBe('m')
 })
 

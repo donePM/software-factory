@@ -212,7 +212,7 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   }
   const login = await t.login()
   const marker = findMarked((await t.get(issue)).comments, 'approval', login)
-  const recorded = pr.reviewDecision === 'APPROVED' || marker?.body.includes(`Reviewed commit: ${reviewed}.`) === true
+  const recorded = marker?.body.includes(`Reviewed commit: ${reviewed}.`) === true || await t.prApproved(pr.number, sha)
   if (!recorded) await record(t, issue, pr, reviewed)
 
   if (pr.isDraft) await t.prReady(pr.number) // GitHub does not merge a draft
