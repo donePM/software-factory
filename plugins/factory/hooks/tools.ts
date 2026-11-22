@@ -14,7 +14,8 @@ import { addToBacklog, withBoard } from '../lib/project.ts'
 import { guardBash, guardMain } from '../lib/guard.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
-import { statusFor } from '../lib/status.ts'
+import { renderStatus, statusData } from '../lib/status.ts'
+import { refreshSnapshot, writeSnapshot } from '../lib/view.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import type { Ctx, State } from '../lib/types.ts'
 
@@ -132,7 +133,11 @@ export const TOOLS: ToolDef[] = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     handler: async ctx => {
       const cfg = await loadConfig(ctx)
-      return statusFor(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+      const tr = githubTracker(ctx, repoFromUrl(cfg.tracker.url))
+      const d = await statusData(ctx, tr, cfg)
+      // A failed snapshot never fails the tool.
+      await writeSnapshot(ctx, tr.repo, cfg, d).catch(() => undefined)
+      return renderStatus(tr.repo, cfg, d)
     },
   },
   {
@@ -267,13 +272,19 @@ export async function makeCtx($: any): Promise<Ctx> {
   }
 }
 
-export type ToolOutcome = { result: string } | { isError: true; result: string }
+// status writes its snapshot itself, from the data of its text.
+const SNAPSHOT_TOOLS = ['job_create', 'job_advance', 'job_sync', 'merge', 'cleanup']
+
+export type ToolOutcome ={ result: string } | { isError: true; result: string }
 
 export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<ToolOutcome> {
   try {
     const out = await def.handler(ctx, input)
     // Text results (status) go out as they are, not as a quoted JSON string.
     const result = typeof out === 'string' ? out : JSON.stringify(out, null, 2)
+    // shortcut: no snapshot after a failed tool, upgrade when the view shows stale state after an error
+    // A failed snapshot never fails the tool.
+    if (SNAPSHOT_TOOLS.includes(def.name)) await refreshSnapshot(ctx).catch(() => undefined)
     return { result }
   } catch (err) {
     if (err instanceof FactoryError) {

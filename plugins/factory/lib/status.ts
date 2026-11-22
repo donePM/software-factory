@@ -32,6 +32,21 @@ export const atRoundLimit = (cause: Cause | undefined): boolean => /^Round \d+ r
 
 const label = (n: number, titles: Record<number, string>): string => (titles[n] ? `#${n} ${titles[n]}` : `#${n}`)
 
+// The next step of a waiting row, without the label and the PR link. The status text and the snapshot share it.
+export function hintOf(repo: string, n: number, state: string, cause: Cause | undefined, autoMerge: boolean, closed: number[]): string {
+  // queue refuses a closed issue: the sweep of a plain run moves it on.
+  const run = closed.includes(n) ? '/factory:run' : `/factory:run ${n}`
+  if (state === 'conflict') return `conflict: remove all status labels but one. Then run /factory:run ${n}`
+  if (state === 'approved') return `approved: ${autoMerge ? 'the factory merges it' : `/factory:merge ${n}`}`
+  if (state === 'needs-human' && cause?.merge === true) return `needs you: ${cause.reason} · decide. To merge, run /factory:merge ${n}. To rework, comment in the issue. Then run ${run}`
+  if (state === 'needs-human' && atRoundLimit(cause)) return `needs you: ${cause?.reason} · increase maxRounds in .factory/config.json. Then run ${run}`
+  if (state === 'needs-human' && cause !== undefined) return `needs you: ${cause.reason} · fix the cause. Then run ${run}`
+  if (state === 'needs-human') return `needs you: answer in the issue. Then run ${run}`
+  if (state === 'needs-info') return 'needs info: author answers in the issue'
+  // needs-design and any state without its own hint
+  return `${state}: see the issue https://github.com/${repo}/issues/${n}`
+}
+
 // prs maps an issue number to its PR number; titles maps an issue number to its title.
 export function statusText(repo: string, q: Queue, prs: Record<number, number>, concurrency: number, titles: Record<number, string> = {}, causes: Record<number, Cause> = {}, drift: string[] = [], autoMerge = false, closed: number[] = []): string {
   const lines = [`Factory · ${repo}  ${q.running.length}/${concurrency} slots`]
@@ -43,30 +58,11 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
   if (q.running.length > 0) section('Running', q.running.map(r => `${label(r.number, titles)}  ${r.state}`))
   const rows: string[] = []
   for (const w of q.waiting) {
-    const n = w.number
-    const pr = prs[n]
-    const cause = causes[n]
-    const link = pr === undefined ? '' : ` (https://github.com/${repo}/pull/${pr})`
-    // queue refuses a closed issue: the sweep of a plain run moves it on.
-    const run = closed.includes(n) ? '/factory:run' : `/factory:run ${n}`
-    if (w.state === 'approved') {
-      rows.push(`${label(n, titles)}  approved: ${autoMerge ? 'the factory merges it' : `/factory:merge ${n}`}${link}`)
-    } else if (w.state === 'needs-human' && cause?.merge === true) {
-      rows.push(`${label(n, titles)}  needs you: ${cause.reason} · decide. To merge, run /factory:merge ${n}. To rework, comment in the issue. Then run ${run}${link}`)
-    } else if (w.state === 'needs-human' && atRoundLimit(cause)) {
-      rows.push(`${label(n, titles)}  needs you: ${cause?.reason} · increase maxRounds in .factory/config.json. Then run ${run}${link}`)
-    } else if (w.state === 'needs-human' && cause !== undefined) {
-      rows.push(`${label(n, titles)}  needs you: ${cause.reason} · fix the cause. Then run ${run}${link}`)
-    } else if (w.state === 'needs-human') {
-      rows.push(`${label(n, titles)}  needs you: answer in the issue. Then run ${run}${link}`)
-    } else if (w.state === 'needs-info') {
-      rows.push(`${label(n, titles)}  needs info: author answers in the issue`)
-    } else {
-      // needs-design and any state without its own hint
-      rows.push(`${label(n, titles)}  ${w.state}: see the issue https://github.com/${repo}/issues/${n}`)
-    }
+    const pr = prs[w.number]
+    const link = pr === undefined || (w.state !== 'approved' && w.state !== 'needs-human') ? '' : ` (https://github.com/${repo}/pull/${pr})`
+    rows.push(`${label(w.number, titles)}  ${hintOf(repo, w.number, w.state, causes[w.number], autoMerge, closed)}${link}`)
   }
-  for (const n of q.conflicts) rows.push(`${label(n, titles)}  conflict: remove all status labels but one. Then run /factory:run ${n}`)
+  for (const n of q.conflicts) rows.push(`${label(n, titles)}  ${hintOf(repo, n, 'conflict', undefined, autoMerge, closed)}`)
   if (rows.length > 0) section('Waiting for you', rows)
   if (q.running.length === 0 && q.ready.length === 0 && q.blocked.length === 0 && rows.length === 0) {
     lines.push('', 'Nothing to do. Add work with /factory:add <text>')
@@ -77,9 +73,18 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
   return lines.join('\n')
 }
 
+export type StatusData = {
+  q: Queue
+  prs: Record<number, number>
+  titles: Record<number, string>
+  causes: Record<number, Cause>
+  drift: string[]
+  closed: number[]
+}
+
 // One gh call per waiting ticket that can have a PR, and one more per needs-human ticket for its cause.
 // A failed lookup leaves the PR or the cause out. With the project on, one more call reads the board.
-export async function statusFor(ctx: Ctx, base: Tracker, cfg: Config): Promise<string> {
+export async function statusData(ctx: Ctx, base: Tracker, cfg: Config): Promise<StatusData> {
   // The queue and the board check share one backlog read and one card read.
   const backlog = base.backlog()
   const tr: Tracker = { ...base, backlog: () => backlog }
@@ -100,5 +105,10 @@ export async function statusFor(ctx: Ctx, base: Tracker, cfg: Config): Promise<s
     const cause = ticket === null ? undefined : causeOf(ticket.comments, await tr.login())
     if (cause !== undefined) causes[w.number] = cause
   }
-  return statusText(tr.repo, q, prs, cfg.concurrency, titles, causes, await boardDrift(ctx, tr, cfg, tickets, read), cfg.merge.auto === true, tickets.filter(t => t.state === 'closed').map(t => t.number))
+  return { q, prs, titles, causes, drift: await boardDrift(ctx, tr, cfg, tickets, read), closed: tickets.filter(t => t.state === 'closed').map(t => t.number) }
 }
+
+export const renderStatus = (repo: string, cfg: Config, d: StatusData): string =>
+  statusText(repo, d.q, d.prs, cfg.concurrency, d.titles, d.causes, d.drift, cfg.merge.auto === true, d.closed)
+
+export const statusFor = async (ctx: Ctx, tr: Tracker, cfg: Config): Promise<string> => renderStatus(tr.repo, cfg, await statusData(ctx, tr, cfg))
