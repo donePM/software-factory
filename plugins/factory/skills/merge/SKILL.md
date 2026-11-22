@@ -30,7 +30,7 @@ Follow `${CLAUDE_PLUGIN_ROOT}/ste.md` for all text to the user.
      - `sync-conflict`: the branch conflicts with the base branch. The factory undid the merge. The job went back to build on its own, in a new round. Read `${CLAUDE_PLUGIN_ROOT}/pipeline.md` and follow it as `/factory:run <issue>`: start the builder. The builder merges the base branch, then the reviews run again. When the job is `approved` or `needs-human` again, tell the user to run `/factory:merge <issue>` again.
      - `sync-conflict-limit`: the branch conflicts with the base branch, and the job reached the round limit. The job is now `needs-human`. A human decides how to go on.
      - `sync-failed`: git could not merge the base branch, but there is no conflict. Nothing changed. Fix the git problem, then run `/factory:merge` again.
-     - `not-reviewed`: the branch has commits that no review saw. Nothing was merged. The job must go back to build for a new review.
+     - `not-reviewed`: the branch has commits that no review saw. Nothing was merged. Usually the job must go back to build for a new review. At the round limit, the `Fix` line names the step. Increase `maxRounds` in `.factory/config.json`. Then run `/factory:run <issue>`.
      - `gate-failed`: the gate is red after the sync. Nothing was merged. Fix the failures first.
      - `head-mismatch`: the branch changed during the merge, or GitHub did not show the pushed commit in time. Run `/factory:merge` again.
      - `gate-not-green`: the branch changed during the merge. Run `/factory:merge` again.
