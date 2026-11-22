@@ -1,6 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 import { STATUS } from '../lib/labels.ts'
-import { FACTORY_OPTIONS, optionFor } from '../lib/project.ts'
+import { FACTORY_OPTIONS, optionFor, withBoard } from '../lib/project.ts'
+import type { Tracker } from '../lib/tracker.ts'
+import { boardCalls, boardReplies, edit, onBoard } from './support/board.ts'
+import { fakeCtx } from './support/host.ts'
 
 test('optionFor maps each state to one Factory option', () => {
   expect(FACTORY_OPTIONS).toEqual(['Backlog', 'Intake', 'Spec', 'Design', 'Build', 'Review', 'Waiting', 'Ready to merge', 'Docs', 'Done', 'Rejected'])
@@ -9,4 +12,59 @@ test('optionFor maps each state to one Factory option', () => {
     intake: 'Intake', 'needs-info': 'Waiting', fastlane: 'Build', spec: 'Spec', 'needs-design': 'Design', build: 'Build',
     review: 'Review', 'needs-human': 'Waiting', approved: 'Ready to merge', docs: 'Docs', done: 'Done', rejected: 'Rejected',
   })
+})
+
+const fake = (fail = false): Tracker => ({
+  repo: 'o/r',
+  setState: async () => { if (fail) throw new Error('bad move') },
+}) as unknown as Tracker
+
+test('withBoard adds the card and sets the option after the label change', async () => {
+  const ctx = fakeCtx({ replies: boardReplies })
+  const { tracker, warnings } = onBoard(ctx, fake())
+  await tracker.setState(7, 'spec')
+  await tracker.setState(7, 'build')
+  expect(boardCalls(ctx.calls)).toEqual([
+    'setState 7 spec', 'gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit',
+    'setState 7 build', 'gh project item-add', 'gh project item-edit',
+  ])
+  expect(ctx.calls).toContainEqual(['gh', 'project', 'item-add', '3', '--owner', 'o', '--url', 'https://github.com/o/r/issues/7', '--format', 'json'])
+  expect(ctx.calls).toContainEqual(edit('Spec'))
+  expect(ctx.calls).toContainEqual(edit('Build'))
+  expect(warnings).toEqual([])
+})
+
+test('withBoard warns when project.number is missing', async () => {
+  const ctx = fakeCtx({ replies: boardReplies })
+  const { tracker, warnings } = onBoard(ctx, fake(), { project: { enabled: true } })
+  await tracker.setState(7, 'spec')
+  expect(boardCalls(ctx.calls)).toEqual(['setState 7 spec'])
+  expect(warnings).toEqual(['project.number is missing. Run /factory:setup project.'])
+})
+
+test('withBoard turns a failed project call into a warning', async () => {
+  const ctx = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-edit'], result: { exitCode: 1, stderr: 'boom' } }, ...boardReplies] })
+  const { tracker, warnings } = onBoard(ctx, fake())
+  await tracker.setState(7, 'spec')
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]).toContain('#7: ')
+  expect(warnings[0]).toContain('boom')
+})
+
+test('no gh project call with the project off', async () => {
+  for (const cfg of [{ project: { enabled: false, number: 3 } }, {}]) {
+    const ctx = fakeCtx({ replies: boardReplies })
+    const t = fake()
+    const { tracker, warnings } = withBoard(ctx, t, cfg)
+    expect(tracker).toBe(t)
+    await tracker.setState(7, 'spec')
+    expect(boardCalls(ctx.calls)).toEqual([])
+    expect(warnings).toEqual([])
+  }
+  // A failed label change makes no project call either.
+  const ctx = fakeCtx({ replies: boardReplies })
+  const { tracker, warnings } = onBoard(ctx, fake(true))
+  await expect(tracker.setState(7, 'spec')).rejects.toThrow('bad move')
+  expect(boardCalls(ctx.calls)).toEqual([])
+  expect(warnings).toEqual([])
 })

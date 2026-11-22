@@ -4,6 +4,7 @@ import { defaultConfig } from '../lib/config.ts'
 import { invoke, TOOLS } from '../hooks/tools.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import type { PrState, State, Ticket } from '../lib/types.ts'
+import { boardCalls, boardReplies, edit, onBoard } from './support/board.ts'
 import { fakeCtx, type Reply } from './support/host.ts'
 
 const WT = '/repo/.factory/worktrees/7'
@@ -158,6 +159,16 @@ test('sweep finishes a ticket in approved or review whose PR was merged on GitHu
     expect(r.removed).toContain('factory/9')
     expect(r.finished).toEqual(['#9: PR merged on GitHub, set to done'])
   }
+})
+
+test('sweep sets the Done option on the board for a merged PR', async () => {
+  const ticket = { ...(await tracker().get(9)), labels: ['factory', 'factory:approved'] }
+  const ctx = ctxOf(boardReplies)
+  const { tracker: t, warnings } = onBoard(ctx, tracker({ backlog: [ticket], prs: { 9: { state: 'MERGED' } } }))
+  await sweep(ctx, t)
+  expect(boardCalls(ctx.calls)).toEqual(['setState 9 done', 'gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit'])
+  expect(ctx.calls).toContainEqual(edit('Done'))
+  expect(warnings).toEqual([])
 })
 
 test('sweep sets done on a closed issue whose PR was merged', async () => {

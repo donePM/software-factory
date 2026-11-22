@@ -10,7 +10,8 @@ import { route } from '../lib/route.ts'
 import { assertTransition } from '../lib/transitions.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import type { Comment, State, Ticket } from '../lib/types.ts'
-import { TOOLS } from '../hooks/tools.ts'
+import { invoke, TOOLS } from '../hooks/tools.ts'
+import { boardCalls, boardReplies, edit, ON, onBoard } from './support/board.ts'
 import { fakeCtx, type Reply } from './support/host.ts'
 
 const SHA = 'a'.repeat(40)
@@ -541,6 +542,40 @@ test('job_advance is registered and validates its input', async () => {
   for (const input of [{}, { issue: 0, to: 'spec' }, { issue: 1.5, to: 'spec' }, { issue: '7', to: 'spec' }, { issue: 7, to: 'nope' }, { issue: 7 }, { issue: 7, to: 'spec', reason: 5 }, { issue: 7, to: 'spec', from: 'nope' }]) {
     await rejects(advDef().handler(ctx, input), 'bad-input')
   }
+})
+
+test('job_advance sets the option of the new state on the board', async () => {
+  const { ctx, t } = setup('intake', {}, {}, { replies: boardReplies })
+  const { tracker, warnings } = onBoard(ctx, t)
+  await jobAdvance(ctx, tracker, { issue: 7, to: 'spec' })
+  expect(boardCalls(ctx.calls)).toEqual(['setState 7 spec', 'gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit'])
+  expect(ctx.calls).toContainEqual(edit('Spec'))
+  expect(warnings).toEqual([])
+})
+
+test('a failed project call leaves the transition done and returns a warning', async () => {
+  const raw = { number: 7, title: 'Add thing', body: 'b', labels: [{ name: 'factory' }, { name: 'factory:build' }], author: { login: 'alice' }, createdAt: '2026-01-01T00:00:00Z', url: 'https://github.com/o/r/issues/7', state: 'OPEN' }
+  const ctx = fakeCtx({
+    files: {
+      '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/o/r', 'main', []), ...ON }),
+      [`${DIR}/job.md`]: renderJob({ ...J, round: 1 }),
+    },
+    replies: [
+      { argv: ['gh', 'issue', 'view'], result: { stdout: JSON.stringify(raw) } },
+      { argv: ['gh', 'api', 'user'], result: { stdout: 'op' } },
+      { argv: ['gh', 'project', 'item-edit'], result: { exitCode: 1, stderr: 'item-edit refused' } },
+      ...boardReplies,
+      { argv: [] },
+    ],
+  })
+  const out = await invoke(advDef(), ctx, { issue: 7, to: 'needs-human', reason: 'stuck' })
+  expect('isError' in out).toBe(false)
+  expect(ctx.calls).toContainEqual(['gh', 'issue', 'edit', '7', '-R', 'o/r', '--add-label', 'factory:needs-human', '--remove-label', 'factory:build'])
+  const r = JSON.parse(out.result) as { state: string; warnings: string[] }
+  expect(r.state).toBe('needs-human')
+  expect(r.warnings).toHaveLength(1)
+  expect(r.warnings[0]).toContain('#7: ')
+  expect(r.warnings[0]).toContain('item-edit refused')
 })
 
 const noEffects = (r: Run): void => {
