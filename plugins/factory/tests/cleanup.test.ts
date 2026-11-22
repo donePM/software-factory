@@ -257,7 +257,7 @@ test('sweep records a failing setState as kept and continues', async () => {
 
 test('tool cleanup without an issue sweeps', async () => {
   const def = TOOLS.find(t => t.name === 'cleanup')!
-  const ctx = ctxOf([{ argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } }])
+  const ctx = ctxOf()
   const out = await invoke(def, ctx, {})
   expect(out).toEqual({ result: JSON.stringify({ removed: [], kept: [], finished: [] }, null, 2) })
   expect(ctx.calls).toContainEqual(['git', 'worktree', 'prune'])

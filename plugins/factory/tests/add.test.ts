@@ -94,10 +94,10 @@ test('issue_create names the created issues when a later item fails', async () =
 test('issue_search passes the query to gh', async () => {
   const ctx = fakeCtx({
     files: { '/repo/.factory/config.json': JSON.stringify(defaultConfig('https://github.com/a/b', 'main', [])) },
-    replies: [{ argv: ['gh', 'issue', 'list'], result: { stdout: JSON.stringify([{ number: 4, title: 'T', labels: [{ name: 'bug' }] }]) } }],
+    replies: [{ argv: ['gh', 'api', '-X', 'GET', 'search/issues'], result: { stdout: JSON.stringify({ number: 4, title: 'T', labels: [{ name: 'bug' }] }) } }],
   })
   const tool = TOOLS.find(d => d.name === 'issue_search')!
   expect(await tool.handler(ctx, { query: 'login page' })).toEqual([{ number: 4, title: 'T', labels: ['bug'] }])
-  expect(ctx.calls.find(c => c[1] === 'issue')).toContain('login page')
+  expect(ctx.calls.find(c => c[4] === 'search/issues')).toContain('q=repo:a/b is:issue login page')
   expect(await issueSearch(fakeTracker().t, 'q')).toEqual([{ number: 3, title: 'hit q', labels: ['factory'] }])
 })

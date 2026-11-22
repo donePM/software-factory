@@ -12,16 +12,18 @@ export function repoFromUrl(url: string): string {
   return m[1]!
 }
 
-const PR_FIELDS = 'number,state,isDraft,title,body,author,headRefName,headRefOid,reviewDecision,mergeCommit'
-
-// Issues go through REST: one `gh issue` command makes several GraphQL requests, one REST call is one request.
+// Issues and PRs go through REST: one `gh issue` or `gh pr` command makes several GraphQL requests, one REST call is one request.
 type RawFields = { issue_field_values?: { value?: unknown; single_select_option?: { name?: string } | null }[] | null }
 type RawIssue = RawFields & {
   number: number; title: string; body: string | null; labels: { name: string }[]; user: { login: string }
   created_at: string; html_url: string; state: string; pull_request?: unknown; assignees?: { login: string }[] | null
 }
 type RawComment = { id: number; user: { login: string }; body: string; created_at: string; updated_at: string }
-type RawPr = Omit<PrState, 'author' | 'mergeCommit'> & { author: { login: string }; mergeCommit: { oid: string } | null }
+type RawPr = {
+  number: number; state: string; draft: boolean; title: string; body: string | null; user: { login: string }; node_id: string
+  head: { ref: string; sha: string }; merged_at: string | null; merge_commit_sha: string | null; html_url: string
+}
+type RawReview = { state: string; commit_id: string }
 type RawLabel = { name: string; color: string; description: string | null }
 
 const PRIORITIES: readonly string[] = ['Urgent', 'High', 'Medium', 'Low']
@@ -47,13 +49,15 @@ const toTicket = (r: RawIssue, comments: Comment[]): Ticket => {
 const toComment = (c: RawComment): Comment => ({
   id: c.id, author: c.user.login, body: c.body, createdAt: c.created_at, updatedAt: c.updated_at,
 })
-const toPr = (r: RawPr): PrState => ({ ...r, author: r.author.login, mergeCommit: r.mergeCommit?.oid ?? null })
-const numberFromUrl = (url: string): number => {
-  const m = /\/(\d+)\s*$/.exec(url)
-  if (!m) throw new FactoryError('bad-output', `no number in ${url}`)
-  return Number(m[1])
+// An open PR has a test merge commit in merge_commit_sha: only a merged PR has a merge commit.
+const toPr = (r: RawPr): PrState => {
+  const merged = r.merged_at !== null
+  return {
+    number: r.number, state: merged ? 'MERGED' : r.state === 'open' ? 'OPEN' : 'CLOSED', isDraft: r.draft, title: r.title,
+    body: r.body ?? '', author: r.user.login, headRefName: r.head.ref, headRefOid: r.head.sha, mergeCommit: merged ? r.merge_commit_sha : null,
+  }
 }
-const labelArgs = (labels: string[]): string[] => labels.flatMap(l => ['--label', l])
+const READY = 'query=mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { clientMutationId } }'
 
 const STANDARD: Record<string, string | boolean> = {
   allow_merge_commit: true, allow_squash_merge: false, allow_rebase_merge: false,
@@ -140,32 +144,36 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
     async createIssue(title, body, labels) {
       return Number(await gh(['api', '-X', 'POST', `repos/${repo}/issues`, '--input', '-', '--jq', '.number'], JSON.stringify({ title, body, labels })))
     },
-    // shortcut: GraphQL search through gh, upgrade when the search limit hurts.
+    // shortcut: one search page of 50 hits, upgrade when the search limit hurts.
     async searchIssues(query) {
-      const rows = await json<{ number: number; title: string; labels: { name: string }[] }[]>([
-        'issue', 'list', '-R', repo, '--state', 'all', '--search', query, '--limit', '50', '--json', 'number,title,labels',
-      ])
+      const rows = parseLines<{ number: number; title: string; labels: { name: string }[] }>(await gh([
+        'api', '-X', 'GET', 'search/issues', '-f', `q=repo:${repo} is:issue ${query}`, '-f', 'per_page=50', '--jq', '.items[]',
+      ]))
       return rows.map(r => ({ number: r.number, title: r.title, labels: r.labels.map(l => l.name) }))
     },
-    // PRs stay on GraphQL through gh: only GraphQL has reviewDecision and can end a draft.
     async findPr(branch) {
-      const rows = await json<RawPr[]>(['pr', 'list', '-R', repo, '--head', branch, '--state', 'all', '--json', PR_FIELDS])
-      // A reused branch can have old closed PRs: take the open one, else the newest.
-      const row = rows.find(r => r.state === 'OPEN') ?? rows[0]
+      const owner = repo.split('/')[0]!
+      const rows = parseLines<RawPr>(await gh(['api', `repos/${repo}/pulls?head=${owner}:${branch}&state=all&per_page=100`, '--paginate', '--jq', '.[]']))
+      // A reused branch can have old closed PRs: take the open one, else the newest. REST lists the newest first.
+      const row = rows.find(r => r.state === 'open') ?? rows[0]
       return row ? toPr(row) : null
     },
     async openPr(branch, base, title, body, labels) {
-      const url = await gh([
-        'pr', 'create', '-R', repo, '--draft', '--base', base, '--head', branch, '--title', title,
-        '--body-file', '-', ...labelArgs(labels),
-      ], body)
-      return { number: numberFromUrl(url), url }
+      const r = JSON.parse(await api('POST', 'pulls', { title, head: branch, base, body, draft: true })) as RawPr
+      if (labels.length > 0) await api('POST', `issues/${r.number}/labels`, { labels })
+      return { number: r.number, url: r.html_url }
     },
     async prState(pr) {
-      return toPr(await json<RawPr>(['pr', 'view', String(pr), '-R', repo, '--json', PR_FIELDS]))
+      return toPr(await json<RawPr>(['api', `repos/${repo}/pulls/${pr}`]))
     },
+    // shortcut: REST cannot end a draft, so a draft PR takes one GraphQL mutation; upgrade when REST can.
     async prReady(pr) {
-      await gh(['pr', 'ready', String(pr), '-R', repo])
+      const r = await json<RawPr>(['api', `repos/${repo}/pulls/${pr}`])
+      if (r.draft) await gh(['api', 'graphql', '-f', READY, '-f', `id=${r.node_id}`])
+    },
+    async prApproved(pr, sha) {
+      const reviews = parseLines<RawReview>(await gh(['api', `repos/${repo}/pulls/${pr}/reviews?per_page=100`, '--paginate', '--jq', '.[]']))
+      return reviews.some(r => r.state === 'APPROVED' && r.commit_id === sha)
     },
     async prComment(pr, body) {
       await api('POST', `issues/${pr}/comments`, { body })
@@ -174,7 +182,7 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
       await api('POST', `pulls/${pr}/reviews`, { event: 'APPROVE', body })
     },
     async merge(pr, subject, sha) {
-      await gh(['pr', 'merge', String(pr), '-R', repo, '--merge', '--subject', subject, '--match-head-commit', sha])
+      await api('PUT', `pulls/${pr}/merge`, { merge_method: 'merge', commit_title: subject, sha })
     },
     async ensureLabels(labels: Label[]) {
       // One read, then a write only for a missing or a changed label.

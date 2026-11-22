@@ -107,6 +107,16 @@ test('withBoard turns a failed project call into a warning', async () => {
   expect(warnings[0]).toContain('boom')
 })
 
+test('withBoard turns a GraphQL rate limit into a warning and keeps the label change', async () => {
+  const ctx = fakeCtx({ replies: [{ argv: ['gh', 'project'], result: { exitCode: 1, stderr: 'GraphQL: API rate limit already exceeded for user ID 1.' } }] })
+  const { tracker, warnings } = onBoard(ctx, fake())
+  await tracker.setState(7, 'spec')
+  expect(boardCalls(ctx.calls)).toEqual(['setState 7 spec', 'gh project view'])
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]).toContain('rate limit')
+  expect(warnings[0]).toContain('Fix: Wait')
+})
+
 test('no gh project call with the project off', async () => {
   for (const cfg of [{ project: { enabled: false, number: 3 } }, {}]) {
     const ctx = fakeCtx({ replies: boardReplies })

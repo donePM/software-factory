@@ -23,7 +23,10 @@ export interface Tracker {
   findPr(branch: string): Promise<PrState | null>
   openPr(branch: string, base: string, title: string, body: string, labels: string[]): Promise<Pr>
   prState(pr: number): Promise<PrState>
+  // Ends the draft. A PR that is not a draft stays as it is.
   prReady(pr: number): Promise<void>
+  // True when a review approves the commit sha.
+  prApproved(pr: number, sha: string): Promise<boolean>
   prComment(pr: number, body: string): Promise<void>
   approvePr(pr: number, body: string): Promise<void>
   // sha: GitHub refuses the merge when the PR head is not this commit.

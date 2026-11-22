@@ -42,6 +42,5 @@ export type PrState = {
   author: string
   headRefName: string
   headRefOid: string
-  reviewDecision: string
   mergeCommit: string | null
 }

@@ -17,7 +17,10 @@ test('must throws FactoryError on exit 1', async () => {
 })
 
 test('must names a GitHub rate limit and tells the operator to wait', async () => {
-  for (const stderr of ['GraphQL: API rate limit already exceeded for user ID 1.', 'You have exceeded a secondary rate limit.']) {
+  for (const stderr of [
+    'GraphQL: API rate limit already exceeded for user ID 1.', 'You have exceeded a secondary rate limit.',
+    'gh: API rate limit exceeded for user ID 1. (HTTP 403)', 'gh: API rate limit exceeded for user ID 1. If you reach out to GitHub Support for help, please include the request ID. (HTTP 429)',
+  ]) {
     const ctx = fakeCtx({ replies: [{ argv: ['gh'], result: { exitCode: 1, stderr } }] })
     const err = await must(ctx, ['gh', 'api', 'user']).catch(e => e)
     expect(err.code).toBe('rate-limited')
