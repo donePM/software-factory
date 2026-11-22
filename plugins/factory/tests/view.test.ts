@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { defaultConfig } from '../lib/config.ts'
-import { invoke, TOOLS, type ToolDef } from '../hooks/tools.ts'
+import { invoke, makeCtx, SNAPSHOT_TOOLS, TOOLS, type ToolDef } from '../hooks/tools.ts'
 import type { Queue } from '../lib/queue.ts'
 import { buildSnapshot, statusLine, type Snapshot } from '../lib/view.ts'
 import { fakeCtx, fakeHost, type Reply } from './support/host.ts'
@@ -134,7 +134,6 @@ test('statusLine is undefined when nothing runs and nothing waits', () => {
 })
 
 const LINE = 'Factory 1/2 slots · #3 build R2 · 1 waits for you'
-const SNAPSHOT_TOOLS = ['job_create', 'job_advance', 'job_sync', 'merge', 'cleanup']
 
 // The engine loads its own copy of TOOLS, so it runs the real tools. These two need no issue input.
 const ENGINE_TOOLS = ['status', 'cleanup']
@@ -180,6 +179,11 @@ test('the tools clear the status line when the factory is idle', async ($, on) =
   const idle = { stdout: raw(6, []) }
   expect(await statusLines($, on, idle, ['terminal'])).toEqual(each(['terminal'], undefined))
   expect(await listedLines(idle)).toEqual(Object.fromEntries(SNAPSHOT_TOOLS.map(n => [n, [undefined]])))
+})
+
+test('a rejected status line call does not reject', async () => {
+  const ctx = await makeCtx({ session: { root: async () => '/repo' }, ui: { status: () => Promise.reject(new Error('no surface')) } })
+  expect(await ctx.status?.('x')).toBeUndefined()
 })
 
 test('a failed status line leaves the tool result unchanged', async () => {

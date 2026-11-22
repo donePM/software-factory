@@ -256,7 +256,7 @@ export async function makeCtx($: any): Promise<Ctx> {
     root,
     now: () => new Date(),
     sleep: ms => $.clock.sleep(ms),
-    status: text => $.ui.status(text),
+    status: text => $.ui.status(text).catch(() => undefined),
     run: (argv, opts) =>
       $.process.run(argv, {
         ...opts,
@@ -274,7 +274,7 @@ export async function makeCtx($: any): Promise<Ctx> {
 }
 
 // status writes its snapshot itself, from the data of its text.
-const SNAPSHOT_TOOLS = ['job_create', 'job_advance', 'job_sync', 'merge', 'cleanup']
+export const SNAPSHOT_TOOLS = ['job_create', 'job_advance', 'job_sync', 'merge', 'cleanup']
 
 export type ToolOutcome = { result: string } | { isError: true; result: string }
 
