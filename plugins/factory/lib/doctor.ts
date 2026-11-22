@@ -88,7 +88,30 @@ async function origin(ctx: Ctx): Promise<Check> {
   }
 }
 
-export async function doctor(ctx: Ctx, stacks: StackRef[], project = false): Promise<Check[]> {
+const WIKI_TIMEOUT_MS = 30_000
+
+export async function wikiCheck(ctx: Ctx, repo: string): Promise<Check> {
+  const page = `https://github.com/${repo}/wiki`
+  const view = await ctx.run(['gh', 'repo', 'view', repo, '--json', 'hasWikiEnabled'])
+  if (view.exitCode !== 0) {
+    return { check: 'wiki', ok: false, detail: `gh repo view failed: ${first(view.stderr)}`, fix: 'Wait a moment. Then run setup again.' }
+  }
+  let on = false
+  try {
+    on = (JSON.parse(view.stdout) as { hasWikiEnabled?: unknown }).hasWikiEnabled === true
+  } catch {}
+  if (!on) {
+    return { check: 'wiki', ok: false, detail: `the wiki of ${repo} is off`, fix: `Run gh repo edit ${repo} --enable-wiki. Then open ${page} and create the first page.` }
+  }
+  // A missing wiki repo of a private repo can ask for a user name, so git must not prompt.
+  const ls = await ctx.run(['git', 'ls-remote', `https://github.com/${repo}.wiki.git`], { env: { GIT_TERMINAL_PROMPT: '0' }, timeoutMs: WIKI_TIMEOUT_MS })
+  if (ls.exitCode !== 0) {
+    return { check: 'wiki', ok: false, detail: `the wiki repo of ${repo} does not exist`, fix: `Open ${page} and create the first page.` }
+  }
+  return { check: 'wiki', ok: true, detail: `the wiki of ${repo} is ready` }
+}
+
+export async function doctor(ctx: Ctx, stacks: StackRef[], project = false, wiki = false): Promise<Check[]> {
   const git = await tool(ctx, 'git')
   if (!git.ok) return [git]
   const gh = await tool(ctx, 'gh')
@@ -98,7 +121,9 @@ export async function doctor(ctx: Ctx, stacks: StackRef[], project = false): Pro
     checks.push(a.check)
     if (project && a.check.ok) checks.push(projectScope(a))
   }
-  checks.push(await origin(ctx))
+  const o = await origin(ctx)
+  checks.push(o)
+  if (wiki && gh.ok && o.ok) checks.push(await wikiCheck(ctx, o.detail))
   checks.push(...(await stackChecks(ctx, stacks)))
   return checks
 }

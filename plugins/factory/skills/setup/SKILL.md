@@ -24,11 +24,16 @@ Follow `${CLAUDE_PLUGIN_ROOT}/ste.md` for all text to the user.
    - When the preview has `askLanguage: true`, also ask for the ticket language.
      The question: "In which language must the factory write the tickets?"
      The answers: "English (recommended)" first. The user can type another language.
+   - When the preview has `askDocs: true`, also ask for the docs target.
+     The question: "Where must the factory write the docs?"
+     The answers: "docs/ folder (recommended)" first, then "GitHub wiki", then "Ask later".
 5. Call `mcp__factory__setup` with `apply: true`, plus `baseBranch` or `concurrency` if the user chose them. Tell the user what was created.
    - When the user typed `/factory:setup project`, pass `project: true` in steps 1 and 5.
    - When you asked about the board in step 4, pass the answer in step 5: `project: true` for "Yes", `project: false` for "No".
    - When you asked for the language in step 4, pass the answer as `language`, for example `language: "Deutsch"`. Pass `language: "English"` for "English (recommended)". With no answer, pass no `language`.
    - On a `language must be a short single-line name` error, ask for the language again. Use only letters, spaces, `(`, `)` and `-`.
+   - When you asked for the docs target in step 4, pass `docs: "docs"` for "docs/ folder", `docs: "wiki"` for "GitHub wiki". For "Ask later", pass no `docs`.
+   - When the report has `wiki` with `ok: false`, show its `detail` and its `fix`. The user must do these steps in the browser or in a terminal. Then they run `/factory:setup` again. The setup stays valid.
    - When the report has `project`, show its `url`, the count in `added`, each step of `viewSteps`, and each entry of `warnings`.
    - A warning with `gh auth refresh -s project` means that the token scope is missing. Tell the user to type `! gh auth refresh -s project` in this session. Then they run `/factory:setup` again.
    - Otherwise, only mention the board in one sentence: `/factory:setup project` shows the tickets on a Kanban board in GitHub Projects.
