@@ -70,7 +70,7 @@ const messageOf = (e: unknown): string => (e instanceof Error ? e.message : Stri
 const boardOf = (owner: string, p: RawProject, field: RawField): Board =>
   ({ owner, number: p.number, id: p.id, fieldId: field.id, options: new Map(field.options?.map(o => [o.name, o.id])) })
 
-async function loadBoard(ctx: Ctx, owner: string, number: number): Promise<Board> {
+export async function loadBoard(ctx: Ctx, owner: string, number: number): Promise<Board> {
   const p = await project<RawProject>(ctx, ['view', String(number), '--owner', owner])
   const field = await factoryField(ctx, owner, p.number)
   if (field === undefined) throw new FactoryError('project-field', `the project has no field ${FIELD}`)
@@ -167,7 +167,7 @@ export async function addToBacklog(ctx: Ctx, tracker: Pick<Tracker, 'repo'>, cfg
 }
 
 type RawItem = { id: string; content?: { url?: string }; factory?: string }
-type Card = { id: string; factory?: string }
+export type Card = { id: string; factory?: string }
 
 // Maps the issue URL of each card to its item id and Factory option.
 export async function listCards(ctx: Ctx, owner: string, number: number): Promise<Map<string | undefined, Card>> {
