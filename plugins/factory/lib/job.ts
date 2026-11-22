@@ -195,9 +195,19 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
       await ctx.fs.write(`${dir}/decision.md`, decision.input.slice(decision[0].length))
       rebuilt.push('decision.md')
     }
+    // An old docs comment holds only the link, so the documenter must run again.
+    const docs = /^Docs: .*\r?\n\r?\n/.exec(stripMarker(findMarked(ticket.comments, 'docs', operator)?.body ?? ''))
+    const page = docs === null ? '' : docs.input.slice(docs[0].length)
+    if (page.startsWith('STATUS: DONE')) {
+      await ctx.fs.write(`${dir}/docs.md`, page)
+      rebuilt.push('docs.md')
+    }
   }
 
-  await ensureWorktree(ctx, job.worktree, job.branch, job.base === 'none' ? `origin/${job.baseBranch}` : job.base)
+  // The PR of a docs job is merged, so the documenter needs the code of the base branch.
+  const fromBase = state === 'docs' || job.base === 'none'
+  if (state === 'docs' && !(await ctx.fs.exists(job.worktree))) await must(ctx, ['git', 'fetch', 'origin', job.baseBranch])
+  await ensureWorktree(ctx, job.worktree, job.branch, fromBase ? `origin/${job.baseBranch}` : job.base)
   await copyTypes(ctx, job.worktree, cfg)
 
   let specChanged = false
@@ -552,7 +562,8 @@ async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, page
 // The PR is merged already: a failed push stops the job, and the merge stays.
 async function advanceDocs(ctx: Ctx, t: Tracker, job: Job, ticket: Ticket): Promise<AdvanceResult> {
   const n = job.issue
-  const docs = parseDocs(await readRequired(ctx, `${job.jobDir}/docs.md`, 'docs-not-done', 'The documenter must write docs.md.'))
+  const text = await readRequired(ctx, `${job.jobDir}/docs.md`, 'docs-not-done', 'The documenter must write docs.md.')
+  const docs = parseDocs(text)
   if (docs.status !== 'DONE' || docs.page === '') {
     throw new FactoryError('docs-not-done', 'docs.md must start with "STATUS: DONE" and have a non-empty "## Page"', 'The documenter must finish first.')
   }
@@ -563,7 +574,9 @@ async function advanceDocs(ctx: Ctx, t: Tracker, job: Job, ticket: Ticket): Prom
     await moveJob(t, job, 'needs-human')
     return done(job, 'needs-human')
   }
-  await t.upsertComment(n, 'docs', `Docs: https://github.com/${t.repo}/wiki/Issue-${n}`)
+  // jobSync rebuilds docs.md from the text after the link line.
+  // shortcut: no guard for a docs.md over the GitHub comment limit, upgrade when a page reaches the limit.
+  await t.upsertComment(n, 'docs', `Docs: https://github.com/${t.repo}/wiki/Issue-${n}\n\n${text}`)
   await moveJob(t, job, 'done')
   if (ticket.state !== 'closed') await t.close(n, 'done')
   return done(job, 'done', { cleanup: await cleanupJob(ctx, t, n, 'done') })

@@ -16,7 +16,7 @@ const ctxOf = (over: Reply[] = [], files: Record<string, string> = {}) =>
   fakeCtx({ files: { ...CFG, ...files }, replies: [...over, { argv: [] }] })
 
 type Pr = Partial<PrState> | null
-function tracker(o: { closed?: number[]; labels?: Record<number, string[]>; backlog?: Ticket[]; prs?: Record<number, Pr> } = {}) {
+function tracker(o: { closed?: number[]; labels?: Record<number, string[]>; backlog?: Ticket[]; prs?: Record<number, Pr>; search?: { number: number; labels: string[] }[] } = {}) {
   const log: string[] = []
   const ticket = (n: number): Ticket => ({
     kind: 'issue', number: n, title: 't', body: '', author: 'a', labels: o.labels?.[n] ?? ['factory', 'factory:done'],
@@ -26,6 +26,7 @@ function tracker(o: { closed?: number[]; labels?: Record<number, string[]>; back
     log,
     get: async (n: number) => { log.push(`get ${n}`); return ticket(n) },
     backlog: async () => o.backlog ?? [],
+    searchIssues: async (query: string) => { log.push(`search ${query}`); return (o.search ?? []).map(r => ({ title: 't', ...r })) },
     setState: async (n: number, to: State, opts?: { prMerged?: boolean }) => { log.push(`state ${n} ${to}${opts?.prMerged === true ? ' prMerged' : ''}`) },
     close: async (n: number, reason: string) => { log.push(`close ${n} ${reason}`) },
     findPr: async (branch: string) => {
@@ -142,7 +143,7 @@ test('sweep skips folders that are not issue numbers', async () => {
   const ctx = ctxOf([], { '/repo/.factory/jobs/setup/checks.md': 'x', '/repo/.factory/worktrees/tmp/a': 'x' })
   const t = tracker()
   const r = await sweep(ctx, t)
-  expect(t.log).toEqual([])
+  expect(t.log).toEqual(['search label:"factory:docs"'])
   expect(has(ctx.calls, 'rm')).toBe(false)
   expect(r).toEqual({ removed: [], kept: [], finished: [], docs: [] })
 })
@@ -281,4 +282,15 @@ test('sweep moves a merged job to docs with a wiki target and keeps it', async (
   expect(r.removed).toEqual([])
   expect(await finishMerged(ctx, t, await t.get(7))).toEqual({ removed: [], kept: [] })
   expect(t.log.filter(l => l.startsWith('state') || l.startsWith('close'))).toEqual(['state 9 docs prMerged'])
+})
+
+test('sweep finds a docs job with no job folder', async () => {
+  const ctx = ctxOf([], { ...WIKI, '/repo/.factory/jobs/8/job.md': 'x' })
+  const t = tracker({
+    labels: { 8: ['factory', 'factory:docs'] },
+    search: [{ number: 5, labels: ['factory', 'factory:docs'] }, { number: 8, labels: ['factory', 'factory:docs'] }, { number: 6, labels: ['factory', 'factory:done'] }],
+  })
+  const r = await sweep(ctx, t)
+  expect(t.log).toContain('search label:"factory:docs"')
+  expect([...r.docs].sort()).toEqual([5, 8])
 })
