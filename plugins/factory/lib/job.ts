@@ -106,6 +106,7 @@ export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
     specUpdated: old?.specUpdated ?? null,
     reviewed: old?.reviewed ?? null,
     route: old?.route ?? {},
+    language: old?.language ?? cfg.language ?? 'English',
   }
   await writeJob(ctx, job)
   await ctx.fs.write(`${dir}/issue.md`, renderIssue(ticket, operator))
@@ -176,6 +177,7 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
       specUpdated: parseSpecUpdated(fieldOf(jobPart, 'Spec updated')) ?? null,
       reviewed: parseReviewed(fieldOf(jobPart, 'Reviewed')) ?? null,
       route: parseRoute(text) ?? {},
+      language: cfg.language ?? 'English',
     }
     await writeJob(ctx, job)
     rebuilt.push('job.md')

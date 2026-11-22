@@ -137,9 +137,21 @@ For each part of the spec, take the first option that fully works:
 - A new GitHub Actions step pins each action to a full commit SHA. Put the
   version in a comment, for example `uses: actions/checkout@<40-char sha> # v4.2.2`.
 - Write all explanatory text in **Simplified Technical English** (ASD-STE100).
-  This covers code comments, docstrings, commit bodies, docs, and `build.md`.
+  This covers code comments, docstrings, commit bodies, and docs.
   Use short sentences (at most 20 words), one instruction per sentence, the
   active voice, simple common words, and one term for one thing.
+
+The next rule covers `build.md`.
+Read the **Language** line in the `## Job` section of `<jobDir>/job.md`.
+No line means English. Write the text for people in your file in that language.
+Keep these parts in English: the machine-read first lines (`DECISION:`,
+`STATUS:`, `VERDICT:`, `RISK:`, `SURFACES:`, `LANE:`, `Title:`), the section
+headings, the fixed keywords of the file format (for example `AC-<n>`, `Test:`,
+`(regression)`, `[blocker]`, `Fix:`), marker comments, commit messages, PR
+titles, code, and code comments. For English, use Simplified Technical English
+(ASD-STE100). For another language, use the STE principles in that language:
+short sentences (at most 20 words), one instruction in each sentence, the
+active voice, and clear words with one meaning.
 
 ## Commits
 Use Conventional Commits 1.0.0: `<type>(<optional scope>): <imperative summary>`.

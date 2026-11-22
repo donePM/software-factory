@@ -1,3 +1,4 @@
+import { validLanguage } from './config.ts'
 import { FactoryError } from './exec.ts'
 import type { Route } from './route.ts'
 import type { Ctx, Model, Reviewer } from './types.ts'
@@ -16,6 +17,7 @@ export type Job = {
   // The commit that the gate passed and the reviewers saw. A new round clears it.
   reviewed: string | null
   route: Route
+  language: string
 }
 
 export const jobDir = (root: string, n: number): string => `${root}/.factory/jobs/${n}`
@@ -98,6 +100,8 @@ export function parseJob(text: string, dir = ''): Job {
   if (specUpdated === undefined) throw bad('Spec updated')
   const reviewed = parseReviewed(fieldOf(text, 'Reviewed'))
   if (reviewed === undefined) throw bad('Reviewed')
+  const language = fieldOf(text, 'Language') ?? 'English' // an older job.md has no Language line
+  if (!validLanguage(language)) throw bad('Language')
   const route = parseRoute(text)
   if (route === null) throw bad('Route')
   return {
@@ -113,6 +117,7 @@ export function parseJob(text: string, dir = ''): Job {
     specUpdated,
     reviewed,
     route,
+    language,
   }
 }
 
@@ -135,6 +140,7 @@ export function renderJob(j: Job): string {
     `- Round: ${j.round}`,
     `- Spec updated: ${j.specUpdated ?? 'none'}`,
     `- Reviewed: ${j.reviewed ?? 'none'}`,
+    `- Language: ${j.language}`,
     '',
     '## Route',
   ]

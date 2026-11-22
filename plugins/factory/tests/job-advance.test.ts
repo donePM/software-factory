@@ -25,7 +25,7 @@ const pkg = JSON.stringify({ name: 'x', scripts: { test: 'vitest' } })
 
 const J: Job = {
   issue: 7, title: 'Add thing', jobDir: DIR, worktree: WT, branch: 'factory/7', base: SHA, baseBranch: 'main',
-  pr: null, round: 0, specUpdated: null, reviewed: null, route: { code: 'sonnet', security: 'opus' },
+  pr: null, round: 0, specUpdated: null, reviewed: null, route: { code: 'sonnet', security: 'opus' }, language: 'English',
 }
 const INTAKE = 'DECISION: ACCEPT\nRISK: high\nSURFACES: security\nLANE: regular\n\n## Summary\nDo it.\n\n## Scope\nsmall\n'
 const SPEC = 'STATUS: READY\nTitle: feat: add thing\n\n## Summary\nx\n'

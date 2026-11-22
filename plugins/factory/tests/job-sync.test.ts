@@ -47,6 +47,7 @@ function tracker(t: Ticket): Tracker & { states: State[]; assigns: string[] } {
 const J: Job = {
   issue: 7, title: 'Add thing', jobDir: DIR, worktree: WT, branch: 'factory/7', base: SHA, baseBranch: 'main',
   pr: 12, round: 2, specUpdated: '2026-01-02T00:00:00Z', reviewed: REVIEWED, route: { code: 'sonnet', security: 'opus' },
+  language: 'English',
 }
 const gitCalls = (calls: string[][]): string[][] => calls.filter(c => c[0] === 'git')
 const okGit: Reply[] = [{ argv: ['git', 'ls-remote'], result: { exitCode: 2 } }, { argv: ['git', 'fetch'] }, { argv: ['git', 'worktree', 'add'] }]
@@ -81,6 +82,7 @@ for (const [key, from, to] of [
   ['Spec updated', '- Spec updated: 2026-01-02T00:00:00Z', '- Spec updated: yesterday'],
   ['Title', '- Title: Add thing\n', ''],
   ['Reviewed', `- Reviewed: ${REVIEWED}`, '- Reviewed: abc123'],
+  ['Language', '- Language: English', '- Language: 1English'],
 ] as const) {
   test(`parseJob rejects an invalid ${key}`, () => {
     parseFails(renderJob(J).replace(from, to), key)
@@ -89,6 +91,16 @@ for (const [key, from, to] of [
 
 test('parseJob reads a job.md without Reviewed as not reviewed', () => {
   expect(parseJob(renderJob(J).replace(/- Reviewed:.*\n/, ''), DIR).reviewed).toBeNull()
+})
+
+test('renderJob writes the Language line', () => {
+  const text = renderJob({ ...J, language: 'German' })
+  expect(text).toContain(`- Reviewed: ${REVIEWED}\n- Language: German\n`)
+  expect(parseJob(text, DIR).language).toBe('German')
+})
+
+test('parseJob reads a job.md without Language as English', () => {
+  expect(parseJob(renderJob(J).replace(/- Language:.*\n/, ''), DIR).language).toBe('English')
 })
 
 test('parseJob rejects a missing key', () => {
@@ -104,6 +116,21 @@ test('jobCreate sets intake and writes issue.md', async () => {
   expect(ctx.files[`${DIR}/issue.md`]).toContain('# Issue #7: Add thing')
   expect(job.title).toBe('Add thing')
   expect(job.round).toBe(0)
+})
+
+test('jobCreate writes the Language from the config', async () => {
+  const cfg = { '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('u', 'main', []), language: 'German' }) }
+  const ctx = fakeCtx({ files: cfg, replies: createReplies })
+  await jobCreate(ctx, tracker(T([])), 7)
+  expect(ctx.files[`${DIR}/job.md`]).toContain('- Language: German\n')
+})
+
+test('jobCreate writes English when the config has no language', async () => {
+  const c: Partial<ReturnType<typeof defaultConfig>> = defaultConfig('u', 'main', [])
+  delete c.language
+  const ctx = fakeCtx({ files: { '/repo/.factory/config.json': JSON.stringify(c) }, replies: createReplies })
+  await jobCreate(ctx, tracker(T([])), 7)
+  expect(ctx.files[`${DIR}/job.md`]).toContain('- Language: English\n')
 })
 
 test('job_create sets the Intake option on the board', async () => {
@@ -208,6 +235,14 @@ test('jobSync rebuilds job.md from the intake comment', async () => {
   const r = await jobSync(ctx, tracker(T(['factory:review'], comments())), 7)
   expect(r.job).toEqual(J)
   expect(parseJob(ctx.files[`${DIR}/job.md`]!, DIR)).toEqual(J)
+})
+
+test('jobSync rebuilds job.md with the Language from the config', async () => {
+  const cfg = { '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('u', 'main', []), language: 'German' }) }
+  const ctx = fakeCtx({ files: { ...cfg, [WT]: '' } })
+  const r = await jobSync(ctx, tracker(T(['factory:review'], comments())), 7)
+  expect(r.job.language).toBe('German')
+  expect(ctx.files[`${DIR}/job.md`]).toContain('- Language: German\n')
 })
 
 test('jobSync takes the base from merge-base when the intake comment has none', async () => {
