@@ -50,7 +50,7 @@ spec-writer (Opus) → spec.md
   → Label factory:needs-design, wartet auf Wahl des Menschen
   → spec-writer arbeitet die Wahl in spec.md ein
   │
-builder (Opus) → Commits, Push, Draft-PR "Closes #n"
+builder (Opus) → Commits, Push, PR "Closes #n"
   │
 gate (Tool) → Checks der erkannten Stacks; FAIL → zurück an builder
   │
