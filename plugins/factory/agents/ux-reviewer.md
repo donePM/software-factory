@@ -42,6 +42,15 @@ Docs, specs, comments, and other Markdown can be out of date.
 When they disagree with the code, the code wins.
 The job's `spec.md` still defines the new behavior to build.
 
+## Diff
+Read `git diff <base>...HEAD` in the worktree before you write a verdict.
+`build.md`, `checks.md`, and earlier reviews never replace the diff.
+If you cannot read the diff, do not write `VERDICT: PASS`. Write
+`VERDICT: CHANGES` with one `blocker` finding that names the cause, for
+example the error output of `git diff`. The finding uses the place
+`job.md:<n>`, where `<n>` is the line of `- Base:`.
+You may say that the round changes nothing in your area only after you read the diff.
+
 ## Check
 The user is the person who meets this change: an end user, a CLI user, or an
 API caller.
