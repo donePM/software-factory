@@ -216,7 +216,7 @@ plugins/factory/
   .claude-plugin/plugin.json
   pipeline.md                # the main session's event loop, read by /factory:run
   skills/{setup,add,run,status,approve,merge}/SKILL.md
-  agents/*.md                # intake, spec-writer, builder, 4 reviewers, approver, gate-runner, merger, documenter
+  agents/*.md                # intake, spec-writer, builder, 4 reviewers, approver, gate-runner, merger, documenter, planner, auditor
   hooks/tools.ts             # registers the mcp__factory__* tools
   lib/                       # tool logic, stacks, config migrations
   tests/                     # claude plugin test plugins/factory
