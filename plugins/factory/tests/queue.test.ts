@@ -175,11 +175,28 @@ test('queue calls get only for needs-info tickets and dependencies', async () =>
   expect(tr.gets).toEqual([])
 })
 
-test('queue reads a dependency from the backlog without a call', async () => {
+test('queue reads each dependency once', async () => {
   const tr = tracker([T(1, [], { body: 'Depends on #3, #4' }), T(2, [], { body: 'Depends on #3' }), T(3)], [T(4, [], { state: 'closed' })])
   const q = await queue(ctx, tr, cfg)
   expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[1, [3]], [2, [3]]])
-  expect(tr.gets).toEqual([4])
+  expect(tr.gets).toEqual([3, 4])
+})
+
+test('queue frees a ticket whose dependency the backlog list still shows open', async () => {
+  const tr = tracker([T(1, [], { body: 'Depends on #3' }), T(3), T(2, [], { body: 'Depends on #3' })], [T(3, ['factory:done'], { state: 'closed' })])
+  const q = await queue(ctx, tr, cfg)
+  expect(nums(q.ready)).toEqual([1, 2, 3])
+  expect(q.blocked).toEqual([])
+  expect(tr.gets).toEqual([3])
+})
+
+test('queue warns when a dependency cannot be read', async () => {
+  const q = await queue(ctx, tracker([T(1, [], { body: 'Depends on #99' })]), cfg)
+  expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[1, [99]]])
+  expect(q.warnings).toHaveLength(1)
+  expect(q.warnings?.[0]).toContain('#1')
+  expect(q.warnings?.[0]).toContain('#99')
+  expect(q.warnings?.[0]).toContain('Fix:')
 })
 
 test('queue puts a ticket with two status labels into conflicts', async () => {

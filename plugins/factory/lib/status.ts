@@ -39,6 +39,7 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
     lines.push('', name, ...rows.map(r => `  ${r}`))
   }
   if (q.ready.length > 0) section(`Ready (${q.ready.length})`, q.ready.map(i => `#${i.number} ${i.title}`))
+  if (q.blocked.length > 0) section(`Blocked (${q.blocked.length})`, q.blocked.map(i => `#${i.number} ${i.title}  waits for ${(i.blockedBy ?? []).map(d => `#${d}`).join(', ')}`))
   if (q.running.length > 0) section('Running', q.running.map(r => `${label(r.number, titles)}  ${r.state}`))
   const rows: string[] = []
   for (const w of q.waiting) {
@@ -63,8 +64,9 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
       rows.push(`${label(n, titles)}  ${w.state}: see the issue https://github.com/${repo}/issues/${n}`)
     }
   }
+  for (const n of q.conflicts) rows.push(`${label(n, titles)}  conflict: remove all status labels but one. Then run /factory:run ${n}`)
   if (rows.length > 0) section('Waiting for you', rows)
-  if (q.running.length === 0 && q.ready.length === 0 && rows.length === 0) {
+  if (q.running.length === 0 && q.ready.length === 0 && q.blocked.length === 0 && rows.length === 0) {
     lines.push('', 'Nothing to do. Add work with /factory:add <text>')
   } else if (q.running.length === 0 && q.ready.length > 0) {
     lines.push('', 'Start the ready work with /factory:run')
