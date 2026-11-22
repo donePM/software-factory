@@ -3,6 +3,9 @@ import { FactoryError } from './exec.ts'
 import type { Route } from './route.ts'
 import type { Ctx, Model, Reviewer } from './types.ts'
 
+// The ids of the issue card on the project board. They never change: the factory looks them up once.
+export type BoardIds = { project: string; field: string; item: string; options: Record<string, string> }
+
 export type Job = {
   issue: number
   title: string
@@ -18,6 +21,7 @@ export type Job = {
   reviewed: string | null
   route: Route
   language: string
+  board?: BoardIds
 }
 
 export const jobDir = (root: string, n: number): string => `${root}/.factory/jobs/${n}`
@@ -80,6 +84,23 @@ export function parseSpecUpdated(v: string | null): string | null | undefined {
   return v !== null && /^\d{4}-\d{2}-\d{2}T/.test(v) && !Number.isNaN(Date.parse(v)) ? v : undefined
 }
 
+const ID = /^[A-Za-z0-9_-]+$/
+
+// An incomplete or bad Board section counts as no ids: the next board write looks them up again.
+export function parseBoard(md: string): BoardIds | undefined {
+  const sec = lastSection(md, 'Board')
+  if (sec === null) return undefined
+  const [project, field, item] = ['Project', 'Field', 'Item'].map(k => fieldOf(sec, k))
+  const options: Record<string, string> = {}
+  for (const line of sec.split('\n')) {
+    const m = /^- Option (.+): (\S+)$/.exec(line)
+    if (m) options[m[1]!] = m[2]!
+  }
+  const ids = [project, field, item, ...Object.values(options)]
+  if (Object.keys(options).length === 0 || !ids.every(v => v !== null && v !== undefined && ID.test(v))) return undefined
+  return { project: project!, field: field!, item: item!, options }
+}
+
 const bad = (key: string): FactoryError => new FactoryError('bad-job', key, `job.md has a missing or invalid "${key}".`)
 
 export function parseJob(text: string, dir = ''): Job {
@@ -104,6 +125,7 @@ export function parseJob(text: string, dir = ''): Job {
   if (!validLanguage(language)) throw bad('Language')
   const route = parseRoute(text)
   if (route === null) throw bad('Route')
+  const board = parseBoard(text)
   return {
     issue,
     title: str('Title'),
@@ -118,6 +140,7 @@ export function parseJob(text: string, dir = ''): Job {
     reviewed,
     route,
     language,
+    ...(board === undefined ? {} : { board }),
   }
 }
 
@@ -146,6 +169,11 @@ export function renderJob(j: Job): string {
   ]
   const r = renderRoute(j.route)
   if (r !== '') lines.push(r)
+  if (j.board !== undefined) {
+    const b = j.board
+    lines.push('', '## Board', `- Project: ${b.project}`, `- Field: ${b.field}`, `- Item: ${b.item}`)
+    lines.push(...Object.entries(b.options).map(([name, id]) => `- Option ${name}: ${id}`))
+  }
   return `${lines.join('\n')}\n`
 }
 

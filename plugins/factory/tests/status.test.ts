@@ -70,10 +70,14 @@ test('statusFor asks for a PR only for approved and needs-human tickets', async 
     state: 'open', createdAt: '2026-01-01T00:00:00Z', url: `u/${n}`, comments: [],
   })
   const branches: string[] = []
+  let reads = 0
   const tr = {
     repo: 'o/r',
     login: async () => 'op',
-    backlog: async () => [T(1, 'factory:build'), T(2, 'factory:approved'), T(3, 'factory:needs-human'), T(4, 'factory:needs-human')],
+    backlog: async () => {
+      reads++
+      return [T(1, 'factory:build'), T(2, 'factory:approved'), T(3, 'factory:needs-human'), T(4, 'factory:needs-human')]
+    },
     get: async (n: number) => T(n, 'x'),
     findPr: async (b: string) => {
       branches.push(b)
@@ -86,6 +90,7 @@ test('statusFor asks for a PR only for approved and needs-human tickets', async 
   expect(ctx.calls.filter(c => c[0] === 'gh' && c[1] === 'project')).toEqual([])
   expect(text).not.toContain('Board differs from labels')
   expect(branches).toEqual(['factory/2', 'factory/3', 'factory/4'])
+  expect(reads).toBe(1)
   expect(text).toContain('Factory · o/r  1/2 slots')
   expect(lineWith(text, '#2')).toContain('/factory:merge 2')
   expect(lineWith(text, '#4')).toContain('answer in the issue')

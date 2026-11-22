@@ -158,8 +158,8 @@ test('setup writes the detected stacks into a new config', async () => {
     { argv: ['sh', '-c'] },
     { argv: ['git', 'symbolic-ref', 'refs/remotes/origin/HEAD'], result: { stdout: 'refs/remotes/origin/main' } },
     { argv: ['gh', 'api', 'repos/a/b'], result: { stdout: repoJson } },
-    { argv: ['gh', 'label', 'create'] },
-    { argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } },
+    { argv: ['gh', 'api', 'repos/a/b/labels?per_page=100'] },
+    { argv: ['gh', 'api', '-X', 'POST'] },
     { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
     { argv: ['gh', 'api', '-X', 'PATCH'] },
   ]

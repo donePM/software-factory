@@ -71,6 +71,11 @@ test('renderJob and parseJob round-trip', () => {
   expect(parseJob(renderJob(none), DIR)).toEqual(none)
   expect(renderJob(J)).toContain('- PR: #12\n')
   expect(renderJob(J)).toContain('- code: sonnet\n')
+  const board = { ...J, board: { project: 'P1', field: 'F1', item: 'I1', options: { Backlog: 'o1', 'Ready to merge': 'o2' } } }
+  expect(parseJob(renderJob(board), DIR)).toEqual(board)
+  expect(renderJob(board)).toContain('## Board\n- Project: P1\n- Field: F1\n- Item: I1\n- Option Backlog: o1\n- Option Ready to merge: o2\n')
+  // An incomplete Board section counts as no ids: the next board write looks them up again.
+  expect(parseJob(renderJob(board).replace('- Item: I1\n', ''), DIR)).toEqual(J)
 })
 
 for (const [key, from, to] of [
@@ -158,11 +163,13 @@ test('jobCreate creates the worktree from origin/base', async () => {
 })
 
 test('jobCreate on resume keeps the worktree', async () => {
-  const ctx = fakeCtx({ files: { ...CFG, [WT]: '', [`${DIR}/job.md`]: renderJob({ ...J, base: OTHER }) }, replies: createReplies })
+  const board = { project: 'P1', field: 'F1', item: 'I1', options: { Intake: 'o1' } }
+  const ctx = fakeCtx({ files: { ...CFG, [WT]: '', [`${DIR}/job.md`]: renderJob({ ...J, base: OTHER, board }) }, replies: createReplies })
   const job = await jobCreate(ctx, tracker(T(['factory:needs-info'])), 7)
   expect(ctx.calls.filter(c => c.includes('worktree'))).toEqual([])
   expect(job.base).toBe(OTHER)
   expect(job.pr).toBe(12)
+  expect((await readJob(ctx, 7)).board).toEqual(board)
 })
 
 test('jobCreate on resume creates a missing worktree', async () => {

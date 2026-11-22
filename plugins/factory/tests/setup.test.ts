@@ -18,12 +18,12 @@ const replies = (head = 'refs/remotes/origin/main'): Reply[] => [
   { argv: ['git', '-C', '/repo', 'ls-files'], result: { stdout: 'README.md' } },
   { argv: ['git', 'symbolic-ref', 'refs/remotes/origin/HEAD'], result: { stdout: head } },
   { argv: ['gh', 'api', 'repos/a/b'], result: { stdout: repoJson } },
-  { argv: ['gh', 'label', 'create'] },
-  { argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } },
+  { argv: ['gh', 'api', 'repos/a/b/labels?per_page=100'] },
+  { argv: ['gh', 'api', '-X', 'POST'] },
   { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
   { argv: ['gh', 'api', '-X', 'PATCH'] },
 ]
-const labelCreates = (calls: string[][]) => calls.filter(c => c[1] === 'label' && c[2] === 'create').length
+const labelCreates = (calls: string[][]) => calls.filter(c => c[3] === 'POST' && c[4] === 'repos/a/b/labels').length
 const CFG = '/repo/.factory/config.json'
 
 test('setup without apply writes nothing', async () => {
@@ -243,8 +243,8 @@ test('setup creates the project and the Factory field', async () => {
 
 test('setup adds the open tickets with their Factory option', async () => {
   const issue = (number: number, labels: string[]) => ({
-    number, title: 't', body: '', labels: labels.map(name => ({ name })), author: { login: 'x' }, createdAt: '',
-    url: `https://github.com/a/b/issues/${number}`, state: 'OPEN',
+    number, title: 't', body: '', labels: labels.map(name => ({ name })), user: { login: 'x' }, created_at: '',
+    html_url: `https://github.com/a/b/issues/${number}`, state: 'open',
   })
   const issues = [issue(1, ['factory']), issue(2, ['factory', 'factory:review'])]
   const ctx = fakeCtx({
@@ -255,7 +255,7 @@ test('setup adds the open tickets with their Factory option', async () => {
       { argv: ['gh', 'project', 'item-add', '7', '--owner', 'a', '--url', 'https://github.com/a/b/issues/1'], result: { stdout: '{"id":"I1"}' } },
       { argv: ['gh', 'project', 'item-add', '7', '--owner', 'a', '--url', 'https://github.com/a/b/issues/2'], result: { stdout: '{"id":"I2"}' } },
       { argv: ['gh', 'project', 'item-edit'] },
-      { argv: ['gh', 'issue', 'list'], result: { stdout: JSON.stringify(issues) } },
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'], result: { stdout: issues.map(i => JSON.stringify(i)).join('\n') } },
       ...replies(),
     ],
     files: { [CFG]: JSON.stringify({ ...stored(), project: { enabled: true, number: 7 } }) },
