@@ -3,7 +3,7 @@ import { checkMessage, typeOf } from './conventional.ts'
 import { type CleanupReport, cleanupJob } from './cleanup.ts'
 import { FactoryError, must, mkdirp, rmrf } from './exec.ts'
 import { parseDocs } from './docs.ts'
-import { WIKI_TIMEOUT_MS } from './doctor.ts'
+import { WIKI_GIT, WIKI_TIMEOUT_MS } from './doctor.ts'
 import { countAttempts } from './gate.ts'
 import { followState } from './assignee.ts'
 import { gateJob, passedAt } from './gatejob.ts'
@@ -532,13 +532,22 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   return done(job, to, { ...(warnings.length === 0 ? {} : { warnings }), ...(autoMerge ? { autoMerge } : {}) })
 }
 
-// The wiki repo uses the git login of the operator. Agent text cannot pick a path.
+// The merge closed the issue, and queue refuses a closed issue: the sweep of a plain run moves the job on.
+const RETRY = 'Then run /factory:run without an issue number.'
+
+// The wiki repo uses the gh login of the operator. Agent text cannot pick a path.
 async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, page: string, pages: string): Promise<void> {
+  const fixes: Record<string, string> = {
+    clone: `Open https://github.com/${repo}/wiki and create the first page. ${RETRY}`,
+    push: `Run gh auth status. gh must be logged in with the repo scope and you need write access to ${repo}. ${RETRY}`,
+  }
   const git = async (args: string[]): Promise<string> => {
     // A missing wiki repo of a private repo can ask for a user name, so git must not prompt.
-    const r = await ctx.run(['git', ...args], { env: { GIT_TERMINAL_PROMPT: '0' }, timeoutMs: WIKI_TIMEOUT_MS })
-    if (r.exitCode !== 0) throw new Error((r.stderr || r.stdout).trim() || `git exited with ${r.exitCode}`)
-    return r.stdout
+    const r = await ctx.run([...WIKI_GIT, ...args], { env: { GIT_TERMINAL_PROMPT: '0' }, timeoutMs: WIKI_TIMEOUT_MS })
+    if (r.exitCode === 0) return r.stdout
+    const step = args[0] === '-C' ? args[2]! : args[0]!
+    const fix = fixes[step]
+    throw new Error(`the wiki ${step} failed: ${(r.stderr || r.stdout).trim() || `git exited with ${r.exitCode}`}${fix === undefined ? '' : `\nFix: ${fix}`}`)
   }
   await rmrf(ctx, wiki) // a clone from a failed run blocks a new clone
   await git(['clone', '--depth', '1', `https://github.com/${repo}.wiki.git`, wiki])
@@ -564,7 +573,8 @@ async function advanceDocs(ctx: Ctx, t: Tracker, job: Job, ticket: Ticket): Prom
   try {
     await publishWiki(ctx, t.repo, n, `${job.jobDir}/wiki`, docs.page, `${job.worktree}/docs/wiki`)
   } catch (e) {
-    await t.comment(n, `Factory stopped: the wiki push failed: ${e instanceof Error ? e.message : String(e)}\n\nFix the cause. Then run /factory:run without an issue number.`)
+    const msg = e instanceof Error ? e.message : String(e)
+    await t.comment(n, `Factory stopped: ${msg}${msg.includes('\nFix: ') ? '' : `\n\nFix the cause. ${RETRY}`}`)
     await moveJob(t, job, 'needs-human')
     return done(job, 'needs-human')
   }

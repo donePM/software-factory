@@ -89,6 +89,9 @@ async function origin(ctx: Ctx): Promise<Check> {
 }
 
 export const WIKI_TIMEOUT_MS = 30_000
+// The empty helper drops the helpers of the user, so git asks only gh for the credentials.
+export const WIKI_GIT = ['git', '-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
+const WIKI_RUN = { env: { GIT_TERMINAL_PROMPT: '0' }, timeoutMs: WIKI_TIMEOUT_MS }
 
 function parseWikiOn(stdout: string): boolean {
   try {
@@ -113,10 +116,16 @@ export async function wikiCheck(ctx: Ctx, repo: string): Promise<Check> {
   if (!parseWikiOn(view.stdout)) {
     return { check: 'wiki', ok: false, detail: `the wiki of ${repo} is off`, fix: `Run gh repo edit ${repo} --enable-wiki. Then open ${page} and create the first page.` }
   }
-  // A missing wiki repo of a private repo can ask for a user name, so git must not prompt.
-  const ls = await ctx.run(['git', 'ls-remote', `https://github.com/${repo}.wiki.git`], { env: { GIT_TERMINAL_PROMPT: '0' }, timeoutMs: WIKI_TIMEOUT_MS })
+  const url = `https://github.com/${repo}.wiki.git`
+  // shortcut: a failed ls-remote means "repo missing" and a failed push means "no push access", upgrade when git errors get a stable format.
+  const ls = await ctx.run([...WIKI_GIT, 'ls-remote', url], WIKI_RUN)
   if (ls.exitCode !== 0) {
-    return { check: 'wiki', ok: false, detail: `the wiki repo of ${repo} does not exist`, fix: `Open ${page} and create the first page.` }
+    return { check: 'wiki', ok: false, detail: `the wiki repo of ${repo} does not exist: ${first(ls.stderr)}`, fix: `Open ${page} and create the first page.` }
+  }
+  // A public wiki passes ls-remote without credentials. The dry-run push sends no objects and creates no ref.
+  const push = await ctx.run([...WIKI_GIT, '-C', ctx.root, 'push', '--dry-run', url, 'HEAD:refs/heads/factory-wiki-check'], WIKI_RUN)
+  if (push.exitCode !== 0) {
+    return { check: 'wiki', ok: false, detail: `git cannot push to the wiki of ${repo}: ${first(push.stderr)}`, fix: `Run gh auth status. gh must be logged in with the repo scope and you need write access to ${repo}. Then run setup again.` }
   }
   return { check: 'wiki', ok: true, detail: `the wiki of ${repo} is ready` }
 }

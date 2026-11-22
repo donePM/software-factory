@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { invoke, TOOLS } from '../hooks/tools.ts'
 import { defaultConfig } from '../lib/config.ts'
-import { doctor } from '../lib/doctor.ts'
+import { doctor, WIKI_GIT } from '../lib/doctor.ts'
 import { fakeCtx, type Reply } from './support/host.ts'
 
 const good: Reply[] = [
@@ -97,34 +97,72 @@ test('doctor tool runs the project scope check only when the config turns the pr
 })
 
 const wikiView = (on: boolean): Reply => ({ argv: ['gh', 'repo', 'view', 'a/b', '--json', 'hasWikiEnabled'], result: { stdout: JSON.stringify({ hasWikiEnabled: on }) } })
-const lsRemote = (exitCode: number): Reply => ({ argv: ['git', 'ls-remote', 'https://github.com/a/b.wiki.git'], result: { exitCode } })
+const GH_GIT = ['git', '-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
+const LS = [...GH_GIT, 'ls-remote', 'https://github.com/a/b.wiki.git']
+const DRY = [...GH_GIT, '-C', '/repo', 'push', '--dry-run', 'https://github.com/a/b.wiki.git', 'HEAD:refs/heads/factory-wiki-check']
+const lsRemote = (exitCode: number): Reply => ({ argv: LS, result: { exitCode, stderr: exitCode === 0 ? '' : 'fatal: repository not found\nmore' } })
+const dryPush = (exitCode: number): Reply => ({ argv: DRY, result: { exitCode, stderr: exitCode === 0 ? '' : 'fatal: could not read Username\nmore' } })
+const wikiCall = (c: readonly string[]) => c[1] === 'repo' || c.includes('ls-remote') || c.includes('push')
+const envs = (ctx: ReturnType<typeof fakeCtx>) => {
+  const runs: { argv: string[]; env?: Record<string, string> }[] = []
+  const inner = ctx.run
+  ctx.run = async (argv, opts) => {
+    runs.push({ argv: [...argv], env: opts?.env })
+    return inner(argv, opts)
+  }
+  return runs
+}
 
 test('reports a wiki target with a missing wiki repo', async () => {
-  const wiki = async (replies: Reply[]) => (await doctor(fakeCtx({ replies: [...replies, ...good] }), [], false, true)).find(c => c.check === 'wiki')!
-  expect((await wiki([wikiView(true), lsRemote(0)])).ok).toBe(true)
-  const off = await wiki([wikiView(false), lsRemote(0)])
+  expect(WIKI_GIT).toEqual(GH_GIT)
+  const wiki = async (replies: Reply[]) => {
+    const ctx = fakeCtx({ replies: [...replies, ...good] })
+    const runs = envs(ctx)
+    return { check: (await doctor(ctx, [], false, true)).find(c => c.check === 'wiki')!, runs }
+  }
+  const ok = await wiki([wikiView(true), lsRemote(0), dryPush(0)])
+  expect(ok.check.ok).toBe(true)
+  expect(ok.runs.find(r => r.argv.join(' ') === LS.join(' '))?.env).toEqual({ GIT_TERMINAL_PROMPT: '0' })
+  const off = (await wiki([wikiView(false), lsRemote(0), dryPush(0)])).check
   expect(off.ok).toBe(false)
   expect(off.fix).toContain('gh repo edit a/b --enable-wiki')
   expect(off.fix).toContain('https://github.com/a/b/wiki')
-  const empty = await wiki([wikiView(true), lsRemote(128)])
-  expect(empty.ok).toBe(false)
-  expect(empty.fix).toContain('first page')
-  expect(empty.fix).toContain('https://github.com/a/b/wiki')
+  const empty = await wiki([wikiView(true), lsRemote(128), dryPush(0)])
+  expect(empty.check.ok).toBe(false)
+  expect(empty.check.detail).toBe('the wiki repo of a/b does not exist: fatal: repository not found')
+  expect(empty.check.fix).toBe('Open https://github.com/a/b/wiki and create the first page.')
+  expect(empty.runs.some(r => r.argv.includes('push'))).toBe(false)
 
   const def = TOOLS.find(t => t.name === 'doctor')!
   const files = { '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/a/b', 'main', []), docs: { target: 'wiki' } }) }
-  const out = await invoke(def, fakeCtx({ replies: [wikiView(true), lsRemote(0), ...good], files }), {})
+  const out = await invoke(def, fakeCtx({ replies: [wikiView(true), lsRemote(0), dryPush(0), ...good], files }), {})
   expect((JSON.parse(out.result) as { check: string }[]).map(c => c.check)).toContain('wiki')
 })
 
+test('reports a wiki without push access', async () => {
+  const run = async (exitCode: number) => {
+    const ctx = fakeCtx({ replies: [wikiView(true), lsRemote(0), dryPush(exitCode), ...good] })
+    const runs = envs(ctx)
+    return { check: (await doctor(ctx, [], false, true)).find(c => c.check === 'wiki')!, runs }
+  }
+  const red = await run(128)
+  expect(red.check.ok).toBe(false)
+  expect(red.check.detail).toBe('git cannot push to the wiki of a/b: fatal: could not read Username')
+  expect(red.check.fix).toBe('Run gh auth status. gh must be logged in with the repo scope and you need write access to a/b. Then run setup again.')
+  expect(red.runs.find(r => r.argv.join(' ') === DRY.join(' '))?.env).toEqual({ GIT_TERMINAL_PROMPT: '0' })
+  const green = await run(0)
+  expect(green.check).toEqual({ check: 'wiki', ok: true, detail: 'the wiki of a/b is ready' })
+  expect(green.runs.some(r => r.argv.join(' ') === DRY.join(' '))).toBe(true)
+})
+
 test('runs no wiki check without a wiki target', async () => {
-  const ctx = fakeCtx({ replies: [wikiView(true), lsRemote(0), ...good] })
+  const ctx = fakeCtx({ replies: [wikiView(true), lsRemote(0), dryPush(0), ...good] })
   const checks = await doctor(ctx, [])
   expect(checks.map(c => c.check)).toEqual(['git', 'gh', 'gh auth', 'origin'])
-  expect(ctx.calls.some(c => c[1] === 'repo' || c[1] === 'ls-remote')).toBe(false)
+  expect(ctx.calls.some(wikiCall)).toBe(false)
   const def = TOOLS.find(t => t.name === 'doctor')!
   const files = { '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/a/b', 'main', []), docs: { target: 'docs', path: 'docs/' } }) }
-  const tool = fakeCtx({ replies: [wikiView(true), lsRemote(0), ...good], files })
+  const tool = fakeCtx({ replies: [wikiView(true), lsRemote(0), dryPush(0), ...good], files })
   await invoke(def, tool, {})
-  expect(tool.calls.some(c => c[1] === 'repo' || c[1] === 'ls-remote')).toBe(false)
+  expect(tool.calls.some(wikiCall)).toBe(false)
 })

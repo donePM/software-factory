@@ -223,7 +223,7 @@ Then call `status` and show its text.
 Read the first line of `docs.md`.
 - `STATUS: DONE`: call `job_advance` with `to: done`. The tool pushes the
   wiki page, posts the `<!-- factory:docs -->` comment with the link and the page, sets `done`, and
-  cleans up. If the result state is `needs-human`, the wiki push failed.
+  cleans up. If the result state is `needs-human`, a wiki git step failed.
   Start nothing.
 - `STATUS: BLOCKED`: call `job_advance` with `to: needs-human` and the reason
   from its `## Summary`.
