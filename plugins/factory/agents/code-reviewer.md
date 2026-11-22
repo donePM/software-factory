@@ -41,6 +41,12 @@ only two absolute paths: the job folder `<jobDir>` and the round folder
 Run every shell command as `cd <worktree> && ...`. You can run the test command
 in the worktree. Do not switch branches, check out other commits, or change files.
 
+## Code first
+The code and its tests are the only source of truth for what the repo does now.
+Docs, specs, comments, and other Markdown can be out of date.
+When they disagree with the code, the code wins.
+The job's `spec.md` still defines the new behavior to build.
+
 ## Check
 Review like the senior developer who gets the call when it breaks. Order of
 importance: correct, safe, holds under load, tested, fast, lean. Find the
@@ -76,7 +82,10 @@ expected load in the repo (one user with a script, or many users at once).
    (an error text, a `Fix:` line, a tool result, a comment or PR body). Check
    it against `plugins/factory/ste.md`. Each broken rule is a `should` that
    quotes the sentence and names the rule.
-7. **Commits:** run `git log --format='%H%n%B' <base>..HEAD` in the worktree.
+7. **Code first:** the diff makes a doc wrong and leaves it. Or docs describe
+   a behavior that no code or test shows. Each case is a `should`. The finding
+   quotes the doc line and names the code that disagrees.
+8. **Commits:** run `git log --format='%H%n%B' <base>..HEAD` in the worktree.
    Each commit follows Conventional Commits 1.0.0:
    `<type>(<optional scope>): <summary>`, with a type from `feat`, `fix`,
    `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
