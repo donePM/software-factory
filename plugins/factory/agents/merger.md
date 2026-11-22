@@ -35,6 +35,8 @@ If the path has another form, do not call the tool. Report
      - `conflict`: "#<issue> has a conflict and is now <state>". If the state
        is `build`, tell the user to run `/factory:run <issue>`.
      - `failed`: "#<issue> sync failed: <error>". The label did not change.
+     - `backlog-failed` (no issue): "The list of other jobs could not be read:
+       <error>. No other job was synced. The next `/factory:merge` syncs them."
      If `syncs` is empty, say that no other job needed a sync.
    - Success with `alreadyMerged: true`: report "PR merged on GitHub, set to
      done". Then give the merge commit and the cleanup report as above.
