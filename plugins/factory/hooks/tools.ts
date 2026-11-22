@@ -273,7 +273,7 @@ export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<To
     }
     // A rethrown error skips the hook, so the engine returns an empty result.
     const message = err instanceof Error ? err.message : String(err)
-    return { isError: true, result: `internal: ${def.name}: ${message}\nFix: Read the error, fix the cause, then call the tool again.` }
+    return { isError: true, result: `internal: ${def.name}: ${message}\nFix: Read the error. Fix the cause. Then call the tool again.` }
   }
 }
 

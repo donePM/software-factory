@@ -36,7 +36,7 @@ async function onOrigin(ctx: Ctx, branch: string): Promise<boolean> {
   const r = await ctx.run(['git', 'ls-remote', '--exit-code', '--heads', 'origin', branch])
   if (r.exitCode === 0) return true
   if (r.exitCode === 2) return false
-  throw new FactoryError('command-failed', `git ls-remote failed: ${r.stderr.trim()}`, 'Check the network and the origin remote, then run job_sync again.')
+  throw new FactoryError('command-failed', `git ls-remote failed: ${r.stderr.trim()}`, 'Check the network and the origin remote. Then run job_sync again.')
 }
 
 // Restore order: on origin, then a local branch, then a new branch from `start`.
@@ -72,7 +72,7 @@ export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
   const ticket = await t.get(n)
   // The factory label is the trust boundary: only a person with triage rights sets it.
   if (ticket.kind !== 'issue' || ticket.state !== 'open' || !ticket.labels.includes('factory')) {
-    throw new FactoryError('not-factory', `#${n} is not an open issue with the label factory`, 'Add the label factory to an open issue, then run it again.')
+    throw new FactoryError('not-factory', `#${n} is not an open issue with the label factory`, 'Add the label factory to an open issue. Then run it again.')
   }
   const from = stateOf(ticket.labels)
   const resume = from === 'needs-info'
@@ -249,7 +249,7 @@ type Reviews = { missing: string[]; parsed: Partial<Record<Reviewer, ReturnType<
 
 async function readReviews(ctx: Ctx, job: Job, roundDir: string): Promise<Reviews> {
   const reviewers = Object.keys(job.route) as Reviewer[]
-  if (reviewers.length === 0) throw new FactoryError('no-route', 'job.md has an empty Route', 'Run the spec advance again.')
+  if (reviewers.length === 0) throw new FactoryError('no-route', 'job.md has an empty Route', 'Call job_advance with to: spec again.')
   const out: Reviews = { missing: [], parsed: {} }
   for (const r of reviewers) {
     const text = await readIfExists(ctx, `${roundDir}/review-${r}.md`)
@@ -257,7 +257,7 @@ async function readReviews(ctx: Ctx, job: Job, roundDir: string): Promise<Review
     else out.parsed[r] = parseReview(text)
   }
   if (out.missing.length > 0) {
-    throw new FactoryError('reviews-missing', `Missing review files: ${out.missing.join(', ')}`, 'Wait for every routed reviewer to finish.')
+    throw new FactoryError('reviews-missing', `These review files are missing: ${out.missing.join(', ')}.`, 'Wait for every routed reviewer to finish.')
   }
   return out
 }
@@ -320,7 +320,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
   if (from === 'conflict') throw new FactoryError('label-conflict', `#${n} has several status labels`, 'Remove all but one status label.')
   // A late notification must not move a job that left the step it reports on.
   if (input.from !== undefined && from !== input.from) throw new FactoryError('state-moved', `#${n} is ${from ?? 'not a job'}, not ${input.from}`, 'Ignore this notification.')
-  if (!SUPPORTED.includes(to)) throw new FactoryError('unsupported-target', `job_advance cannot move to ${to}`, 'Use merge for done.')
+  if (!SUPPORTED.includes(to)) throw new FactoryError('unsupported-target', `job_advance cannot move to ${to}`, 'Use the merge tool to move a job to done.')
   assertTransition(from, to)
   const dir = jobDir(ctx.root, n)
   if (!(await ctx.fs.exists(`${dir}/job.md`))) throw new FactoryError('no-job', `${dir}/job.md does not exist`, 'Run job_create first.')
@@ -354,7 +354,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
     const text = await intakeText()
     if (parseIntake(text).decision !== 'NEEDS-INFO') throw new FactoryError('intake-mismatch', 'intake.md must say DECISION: NEEDS-INFO')
     if ((lastSection(text, 'Questions') ?? '').trim() === '') throw new FactoryError('intake-no-questions', 'intake.md needs a non-empty "## Questions"')
-    const mention = MENTION.test(ticket.author) ? `@${ticket.author} please answer the questions above.` : undefined
+    const mention = MENTION.test(ticket.author) ? `@${ticket.author} Please answer the questions above.` : undefined
     await upsertIntake(mention)(text)
     await moveJob(t, job, 'needs-info')
     return result('needs-info')
@@ -372,9 +372,9 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
 
   if (to === 'build') return advanceBuild(ctx, t, job, from, await specMoved(t, ticket, job))
   if (to === 'review') return advanceReview(ctx, t, job)
-  if (to === 'needs-human' && from !== 'review') throw new FactoryError('reason-required', 'needs-human outside review needs a reason', 'Pass reason.')
+  if (to === 'needs-human' && from !== 'review') throw new FactoryError('reason-required', 'A move to needs-human outside review needs a reason.', 'Give a reason.')
   if (to === 'approved' && (await specMoved(t, ticket, job))) {
-    throw new FactoryError('spec-changed', 'the spec changed after this round started', 'Call job_advance with to: build, then start a new builder.')
+    throw new FactoryError('spec-changed', 'the spec changed after this round started', 'Call job_advance with to: build. Then start a new builder.')
   }
   return advanceDecision(ctx, t, job, to)
 }
@@ -425,7 +425,7 @@ async function advanceBuild(ctx: Ctx, t: Tracker, old: Job, from: State | null, 
     checkSpec(await readRequired(ctx, `${old.jobDir}/spec.md`, 'no-spec', 'Run the spec step first.'))
   }
   if (over(old)) {
-    const note = `Round limit of ${max} reached after round ${old.round}.`
+    const note = `Round ${old.round} reached the round limit of ${max}.`
     await t.comment(n, `Factory stopped: ${note}`)
     if (from !== 'needs-human') await moveJob(t, old, 'needs-human')
     return done(old, 'needs-human', { note })
@@ -449,7 +449,7 @@ async function advanceReview(ctx: Ctx, t: Tracker, old: Job): Promise<AdvanceRes
   // gate-runner usually ran the gate at this HEAD already: run it again only when it did not pass here.
   if (passedAt(ctx, n, `round-${old.round}`) !== sha) {
     const gate = await gateJob(ctx, n, `round-${old.round}`)
-    if (gate.verdict !== 'PASS') throw new FactoryError('gate-not-green', `the gate is ${gate.verdict}, see ${roundDir}/checks.md`, 'Fix the failures and run the gate again.')
+    if (gate.verdict !== 'PASS') throw new FactoryError('gate-not-green', `The gate is ${gate.verdict}. See ${roundDir}/checks.md.`, 'Fix the failures. Then run the gate again.')
     if ((await head()) !== sha) throw new FactoryError('gate-not-green', 'HEAD moved during the gate', 'Run the gate again.')
   }
   await must(ctx, ['git', '-C', old.worktree, 'push', 'origin', `${sha}:refs/heads/${old.branch}`])

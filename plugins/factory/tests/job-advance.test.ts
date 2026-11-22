@@ -136,7 +136,7 @@ test('needs-info posts the questions and mentions the author', async () => {
   await jobAdvance(ctx, t, { issue: 7, to: 'needs-info' })
   const body = t.comments.find(c => c.name === 'intake')!.body
   expect(body).toContain('## Questions')
-  expect(body).toContain('@alice')
+  expect(body).toContain('@alice Please answer the questions above.')
   expect(body).toContain('## Job')
   expect(body).toContain('## Route')
   expect(t.states).toEqual(['needs-info'])
@@ -193,7 +193,9 @@ const inBuild = (files: Record<string, string> = {}, o: Parameters<typeof setup>
 
 test('review refuses when the gate is not green', async () => {
   const { ctx, t } = inBuild({}, { replies: [{ argv: ['vp', 'lint'], result: { exitCode: 1 } }] })
-  await rejects(jobAdvance(ctx, t, { issue: 7, to: 'review' }), 'gate-not-green')
+  await expect(jobAdvance(ctx, t, { issue: 7, to: 'review' })).rejects.toMatchObject({
+    code: 'gate-not-green', message: `The gate is FAIL. See ${DIR}/round-1/checks.md.`, fix: 'Fix the failures. Then run the gate again.',
+  })
   expect(count(ctx, 'git', '-C', WT, 'push')).toBe(0)
   expect(t.states).toEqual([])
 })
@@ -330,7 +332,7 @@ const inReview = (files: Record<string, string>, o: Parameters<typeof setup>[3] 
 
 test('approved waits for all routed reviews', async () => {
   const { ctx, t } = inReview({ [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE })
-  await expect(jobAdvance(ctx, t, { issue: 7, to: 'approved' })).rejects.toMatchObject({ code: 'reviews-missing', message: expect.stringContaining('security') })
+  await expect(jobAdvance(ctx, t, { issue: 7, to: 'approved' })).rejects.toMatchObject({ code: 'reviews-missing', message: expect.stringMatching(/^These review files are missing: .*security.*\.$/) })
   expect(t.states).toEqual([])
 })
 
@@ -358,7 +360,7 @@ test('build assigns and approved unassigns the issue and the PR', async () => {
 test('approved is refused after a spec change during review', async () => {
   const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE }
   const { ctx, t } = inReview(files, { tamper: { specUpdated: '2026-03-01T00:00:00Z' } })
-  await rejects(jobAdvance(ctx, t, { issue: 7, to: 'approved' }), 'spec-changed')
+  await expect(jobAdvance(ctx, t, { issue: 7, to: 'approved' })).rejects.toMatchObject({ code: 'spec-changed', fix: 'Call job_advance with to: build. Then start a new builder.' })
   expect(t.states).toEqual([])
   expect(t.log).not.toContain('ready 12')
 })
@@ -426,7 +428,8 @@ test('round over maxRounds goes to needs-human', async () => {
   const { ctx, t } = inReview(files, { maxRounds: 3 }, { round: 3 })
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'build' })
   expect(r.state).toBe('needs-human')
-  expect(r.note).toContain('3')
+  expect(r.note).toBe('Round 3 reached the round limit of 3.')
+  expect(t.posts).toContain('Factory stopped: Round 3 reached the round limit of 3.')
   expect(t.states).toEqual(['needs-human'])
   expect(count(ctx, 'mkdir')).toBe(0)
 })
@@ -466,12 +469,14 @@ test('review abort with a reason skips decision.md', async () => {
 
 test('needs-human without a reason is only for a review decision', async () => {
   const { ctx, t } = inBuild()
-  await rejects(jobAdvance(ctx, t, { issue: 7, to: 'needs-human' }), 'reason-required')
+  await expect(jobAdvance(ctx, t, { issue: 7, to: 'needs-human' })).rejects.toMatchObject({
+    code: 'reason-required', message: 'A move to needs-human outside review needs a reason.', fix: 'Give a reason.',
+  })
 })
 
 test('unsupported targets and illegal moves are refused', async () => {
   const a = inBuild()
-  await rejects(jobAdvance(a.ctx, a.t, { issue: 7, to: 'done' }), 'unsupported-target')
+  await expect(jobAdvance(a.ctx, a.t, { issue: 7, to: 'done' })).rejects.toMatchObject({ code: 'unsupported-target', fix: 'Use the merge tool to move a job to done.' })
   const b = inBuild()
   await rejects(jobAdvance(b.ctx, b.t, { issue: 7, to: 'rejected' }), 'illegal-transition')
 })

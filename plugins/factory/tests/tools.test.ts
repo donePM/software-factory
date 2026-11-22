@@ -43,7 +43,7 @@ test('serve passes only the tool arguments, without tool', async () => {
   expect(seen).toEqual({ n: 1 })
 })
 
-const FIX = 'Fix: Read the error, fix the cause, then call the tool again.'
+const FIX = 'Fix: Read the error. Fix the cause. Then call the tool again.'
 
 test('an unexpected error maps to isError with a Fix line', async () => {
   const r = await invoke(def(async () => { throw new Error('spawn timeout') }), fakeCtx(), {})
