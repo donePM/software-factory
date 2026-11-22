@@ -517,7 +517,7 @@ const AUDITOR_FRONTMATTER = [
 ].join('\n')
 
 const AUDITOR_LANGUAGE = [
-  'Read the `"language"` key in `<root>/.factory/config.json`.',
+  'Find `<root>` first (see below). Then read the `"language"` key in `<root>/.factory/config.json`.',
   'No line means English. Write the text for people in your file in that language.',
   'Keep these parts in English: the machine-read first line (`STATUS:`), the',
   'section headings, paths, and code. Keep the fixed keywords of the file format',
@@ -535,8 +535,8 @@ const AUDITOR_TOPICS = [
   '- Scale problems: check-then-write races, lists that only grow, one query for each item.',
   '- Missing tests: risky logic (a branch, a parser, security, data writes) that no test fails on.',
   '- Speed: a large slowdown. A small win goes under `## Nice to have`.',
-  '- Lean cuts: dead code, unused options, a wrapper that only passes through, near-copies,',
-  '  or a dependency that a few lines or the platform can replace.',
+  '- Lean cuts: dead code, unused options, or a wrapper that only passes through.',
+  '- Lean cuts: near-copies, or a dependency that a few lines or the platform can replace.',
   '- `shortcut:` debt: each `shortcut:` comment. Find them with `git grep -nE \'(#|//|/[*]) ?shortcut:\'`.',
   '',
   'No case, no finding. Write a finding only with a concrete case. The case is',
