@@ -645,7 +645,7 @@ const PLAN_SKILL_STEPS = [
   '2. Start `factory:planner` with `run_in_background: true`. The prompt holds only the absolute `<planDir>`. Add no other text.',
   '3. When the planner reports, read `<planDir>/product.md`.',
   '   - If its first line is not `STATUS: READY`, stop. Tell the operator in one short sentence that the plan is not ready, and name `<planDir>/product.md`.',
-  '4. Call `mcp__factory__issue_search` once for each slice with a few key words of the slice. Show the operator the Goal, the Scope, the Stack, the slices, the possible duplicates, and the open questions in plain words. Say if the issues are parked. Then ask "start or change?". Create no issue in this step.',
+  '4. Call `mcp__factory__issue_search` once for each slice with a few key words of the slice. Show the operator the Goal, the Scope, the Stack, and the slices. Show the possible duplicates and the open questions in plain words. Say if the issues are parked. Then ask "start or change?". Create no issue in this step.',
   '   - A hit can be open or closed. Show it as a possible duplicate with its number and title. The skill does not create that slice.',
   '5. On "change", call `mcp__factory__plan_feedback` with `planDir` and the words of the operator as `feedback`. Then go to step 2.',
   '6. On "start", call `mcp__factory__issue_create` once with one item for each slice, in slice order. Leave out each slice with a possible duplicate. Pass `park` when the flag was set.',
