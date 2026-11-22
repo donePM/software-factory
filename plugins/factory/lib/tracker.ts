@@ -10,7 +10,8 @@ export interface Tracker {
   login(): Promise<string>
   backlog(): Promise<Ticket[]>
   get(n: number): Promise<Ticket>
-  setState(n: number, to: State, opts?: TransitionOpts): Promise<void>
+  // Returns the state before the change. A test fake may return nothing.
+  setState(n: number, to: State, opts?: TransitionOpts): Promise<State | null | void>
   addLabel(n: number, label: string): Promise<void>
   // Adds or removes only the factory login. n is an issue or a PR number.
   assign(n: number, on: boolean): Promise<void>
@@ -22,7 +23,10 @@ export interface Tracker {
   findPr(branch: string): Promise<PrState | null>
   openPr(branch: string, base: string, title: string, body: string, labels: string[]): Promise<Pr>
   prState(pr: number): Promise<PrState>
+  // Ends the draft of an old draft PR. New PRs open as normal PRs.
   prReady(pr: number): Promise<void>
+  // True when a review approves the commit sha.
+  prApproved(pr: number, sha: string): Promise<boolean>
   prComment(pr: number, body: string): Promise<void>
   approvePr(pr: number, body: string): Promise<void>
   // sha: GitHub refuses the merge when the PR head is not this commit.

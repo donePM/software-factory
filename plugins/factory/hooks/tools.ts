@@ -37,9 +37,13 @@ function issueOf(input: { issue?: unknown }): number {
 // Runs a tool with a tracker that also updates the project board. Board problems come back as warnings.
 async function boarded(ctx: Ctx, run: (t: Tracker) => Promise<unknown>): Promise<unknown> {
   const cfg = await loadConfig(ctx)
-  const { tracker, warnings } = withBoard(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
-  const out = await run(tracker)
-  return warnings.length === 0 ? out : { ...(out as object), warnings }
+  const { tracker, warnings, save } = withBoard(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+  // The tool can write job.md after a label change: save the looked up board ids after it ends.
+  const out = await run(tracker).finally(save)
+  if (warnings.length === 0) return out
+  // The tool can have its own warnings: keep them.
+  const own = (out as { warnings?: unknown }).warnings
+  return { ...(out as object), warnings: [...(Array.isArray(own) ? own as string[] : []), ...warnings] }
 }
 
 const numberTool = (name: string, description: string, run: (ctx: Ctx, t: Tracker, n: number) => Promise<unknown>): ToolDef => ({

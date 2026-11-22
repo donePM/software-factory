@@ -83,6 +83,8 @@ expected load in the repo (one user with a script, or many users at once).
    `revert`. A breaking change has `!` and a `BREAKING CHANGE:` footer. Each
    commit has the footer `Refs: #<issue>`, with the issue from `job.md`. A bad
    commit is a `blocker`.
+   A commit body that ends in the middle of a sentence, or that contains `...`
+   or `…` in place of text, is a `should`.
 
 ## Lean rules
 - Each finding needs a concrete case: "this input leads to this wrong result".

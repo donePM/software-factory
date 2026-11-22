@@ -42,16 +42,37 @@ test('ready backlog without a run shows /factory:run', () => {
 test('needs-human without a PR shows the answer hint', () => {
   const text = statusText('o/r', Q({ waiting: [{ number: 8, state: 'needs-human' }], slots: 2 }), {}, 2)
   const l = lineWith(text, '#8')
-  expect(l).toContain('answer in the issue, then /factory:run')
+  expect(l).toContain('answer in the issue. Then run /factory:run')
   expect(l).not.toContain('/factory:merge')
 })
 
 test('needs-human with a PR and no cause shows run, not merge; needs-info shows the author hint', () => {
   const text = statusText('o/r', Q({ waiting: [{ number: 9, state: 'needs-human' }, { number: 10, state: 'needs-info' }], slots: 2 }), { 9: 77 }, 2)
-  expect(lineWith(text, '#9')).toContain('answer in the issue, then /factory:run 9')
+  expect(lineWith(text, '#9')).toContain('answer in the issue. Then run /factory:run 9')
   expect(lineWith(text, '#9')).not.toContain('/factory:merge')
   expect(lineWith(text, '#9')).toContain('https://github.com/o/r/pull/77')
   expect(lineWith(text, '#10')).toContain('author answers in the issue')
+})
+
+test('needs-human rows give one step in each sentence', () => {
+  const waiting = [1, 2, 3].map(number => ({ number, state: 'needs-human' as const }))
+  const causes = { 1: { reason: 'Approver escalated: API?', merge: true }, 2: { reason: 'Builder blocked.', merge: false } }
+  const text = statusText('o/r', Q({ waiting, slots: 2 }), { 1: 71 }, 2, {}, causes)
+  expect(lineWith(text, '#1')).toBe('  #1  needs you: Approver escalated: API? · decide. Then run /factory:merge 1 (https://github.com/o/r/pull/71)')
+  expect(lineWith(text, '#2')).toBe('  #2  needs you: Builder blocked. · fix the cause. Then run /factory:run 2')
+  expect(lineWith(text, '#3')).toBe('  #3  needs you: answer in the issue. Then run /factory:run 3')
+  expect(text).not.toContain(', then ')
+})
+
+test('a round limit row names maxRounds and /factory:run', () => {
+  const waiting = [{ number: 4, state: 'needs-human' as const }, { number: 5, state: 'needs-human' as const }]
+  const reason = 'Round 3 reached the round limit of 3.'
+  const causes = { 4: { reason, merge: false }, 5: { reason, merge: false } }
+  const text = statusText('o/r', Q({ waiting, slots: 2 }), { 5: 75 }, 2, {}, causes)
+  expect(lineWith(text, '#4')).toBe(`  #4  needs you: ${reason} · increase maxRounds in .factory/config.json. Then run /factory:run 4`)
+  expect(lineWith(text, '#5')).toBe(`  #5  needs you: ${reason} · increase maxRounds in .factory/config.json. Then run /factory:run 5 (https://github.com/o/r/pull/75)`)
+  expect(text).not.toContain('fix the cause')
+  expect(text).not.toContain('/factory:merge')
 })
 
 test('statusFor asks for a PR only for approved and needs-human tickets', async () => {
@@ -60,10 +81,14 @@ test('statusFor asks for a PR only for approved and needs-human tickets', async 
     state: 'open', createdAt: '2026-01-01T00:00:00Z', url: `u/${n}`, comments: [],
   })
   const branches: string[] = []
+  let reads = 0
   const tr = {
     repo: 'o/r',
     login: async () => 'op',
-    backlog: async () => [T(1, 'factory:build'), T(2, 'factory:approved'), T(3, 'factory:needs-human'), T(4, 'factory:needs-human')],
+    backlog: async () => {
+      reads++
+      return [T(1, 'factory:build'), T(2, 'factory:approved'), T(3, 'factory:needs-human'), T(4, 'factory:needs-human')]
+    },
     get: async (n: number) => T(n, 'x'),
     findPr: async (b: string) => {
       branches.push(b)
@@ -76,6 +101,7 @@ test('statusFor asks for a PR only for approved and needs-human tickets', async 
   expect(ctx.calls.filter(c => c[0] === 'gh' && c[1] === 'project')).toEqual([])
   expect(text).not.toContain('Board differs from labels')
   expect(branches).toEqual(['factory/2', 'factory/3', 'factory/4'])
+  expect(reads).toBe(1)
   expect(text).toContain('Factory · o/r  1/2 slots')
   expect(lineWith(text, '#2')).toContain('/factory:merge 2')
   expect(lineWith(text, '#4')).toContain('answer in the issue')
@@ -140,7 +166,7 @@ test('needs-human rows fit the cause', () => {
   expect(noPr).toContain('/factory:run 3')
   expect(noPr).not.toContain('/pull/')
   const none = lineWith(text, '#4')
-  expect(none).toContain('answer in the issue, then /factory:run 4')
+  expect(none).toContain('answer in the issue. Then run /factory:run 4')
   expect(none).toContain('https://github.com/o/r/pull/74')
   expect(none).not.toContain('/factory:merge')
 })
@@ -167,7 +193,7 @@ test('statusFor shows the stop reason of a needs-human ticket', async () => {
   expect(lineWith(text, '#2')).toContain('Builder blocked.')
   expect(lineWith(text, '#2')).toContain('/factory:run 2')
   expect(lineWith(text, '#2')).not.toContain('/factory:merge')
-  expect(lineWith(text, '#3')).toContain('answer in the issue, then /factory:run 3')
+  expect(lineWith(text, '#3')).toContain('answer in the issue. Then run /factory:run 3')
   expect(lineWith(text, '#1')).toContain('/factory:merge 1')
 })
 
@@ -188,4 +214,21 @@ test('statusFor shows the board differences', async () => {
   expect(lines.slice(-3)).toEqual(['', 'Board differs from labels', '  #1 board says Review, label says build: move the card to Build'])
   const same = await statusFor(fakeCtx({ replies: [itemList([{ url: 'https://github.com/o/r/issues/1', factory: 'Build' }])] }), tr, cfg)
   expect(same).not.toContain('Board differs from labels')
+})
+
+test('statusFor shows the round limit step', async () => {
+  const T = (n: number, comments: Comment[] = []): Ticket => ({
+    kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', 'factory:needs-human'],
+    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: `u/${n}`, comments,
+  })
+  const stop = C(1, 'op', 'Factory stopped: Round 3 reached the round limit of 3.', '2026-01-02T00:00:00Z')
+  const tr = {
+    repo: 'o/r',
+    login: async () => 'op',
+    backlog: async () => [T(2)],
+    get: async (n: number) => T(n, [stop]),
+    findPr: async () => null,
+  } as unknown as Tracker
+  const text = await statusFor(fakeCtx(), tr, { ...defaultConfig('u', 'main', []), concurrency: 2 })
+  expect(lineWith(text, '#2')).toBe('  #2 t2  needs you: Round 3 reached the round limit of 3. · increase maxRounds in .factory/config.json. Then run /factory:run 2')
 })

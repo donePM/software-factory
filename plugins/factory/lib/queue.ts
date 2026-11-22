@@ -93,6 +93,8 @@ export async function queue(ctx: Ctx, tr: Tracker, cfg: Config, issue?: number):
   const open = new Map<number, boolean>()
   const isOpen = async (n: number, self: number): Promise<boolean> => {
     if (n === self) return true
+    // A backlog ticket is open: no call.
+    if (tickets.some(t => t.number === n && t.state === 'open')) return true
     let v = open.get(n)
     if (v === undefined) {
       // Fail closed: a dependency that cannot be read counts as open.

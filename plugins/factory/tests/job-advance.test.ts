@@ -37,7 +37,7 @@ const ESCALATE = 'DECISION: ESCALATE\n\n## Summary\nUnsure.\n\n## Question\nPubl
 
 type Run = { ctx: ReturnType<typeof fakeCtx>; t: ReturnType<typeof tracker> }
 
-function tracker(labels: string[], author = 'alice', initial: Comment[] = [], head = 'factory/7') {
+function tracker(labels: string[], author = 'alice', initial: Comment[] = [], head = 'factory/7', draft = false, readyError?: string) {
   const log: string[] = []
   const comments: { name: string; body: string }[] = []
   const posts: string[] = []
@@ -69,14 +69,17 @@ function tracker(labels: string[], author = 'alice', initial: Comment[] = [], he
       prs.push({ branch, base, title, body, labels: l })
       return { number: 12, url: 'u/pull/12' }
     },
-    prState: async () => ({ headRefName: head }),
-    prReady: async (pr: number) => { log.push(`ready ${pr}`) },
+    prState: async () => ({ headRefName: head, isDraft: draft }),
+    prReady: async (pr: number) => {
+      log.push(`ready ${pr}`)
+      if (readyError !== undefined) throw new Error(readyError)
+    },
     prComment: async (_pr: number, body: string) => { prComments.push(body) },
   }
   return t as unknown as Tracker & typeof t
 }
 
-function setup(state: string, over: Partial<Job> = {}, files: Record<string, string> = {}, o: { maxRounds?: number; replies?: Reply[]; author?: string; tamper?: Partial<Job>; head?: string } = {}): Run {
+function setup(state: string, over: Partial<Job> = {}, files: Record<string, string> = {}, o: { maxRounds?: number; replies?: Reply[]; author?: string; tamper?: Partial<Job>; head?: string; draft?: boolean; readyError?: string } = {}): Run {
   forgetGates()
   const job = { ...J, ...over }
   const opComment = (): Comment => ({ id: 1, author: 'op', body: withMarker('intake', intakeComment(job, INTAKE)), createdAt: '2026-02-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z' })
@@ -101,7 +104,7 @@ function setup(state: string, over: Partial<Job> = {}, files: Record<string, str
     },
     replies,
   })
-  return { ctx, t: tracker([`factory:${state}`], o.author, state === 'intake' ? [] : [opComment()], o.head) }
+  return { ctx, t: tracker([`factory:${state}`], o.author, state === 'intake' ? [] : [opComment()], o.head, o.draft, o.readyError) }
 }
 
 const count = (ctx: Run['ctx'], ...prefix: string[]): number =>
@@ -347,7 +350,8 @@ test('approved needs every review PASS and decision APPROVE', async () => {
   const { ctx, t } = inReview(files)
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'approved' })
   expect(r.state).toBe('approved')
-  expect(t.log).toContain('ready 12')
+  expect(t.log).not.toContain('ready 12') // a PR that is not a draft needs no call
+  expect(r.warnings).toBeUndefined()
   expect(t.comments.map(c => c.name)).toEqual(['round-1', 'decision'])
   expect(t.comments[1]!.body).toBe(`Round: 1\n\n${APPROVE}`)
   expect(t.states).toEqual(['approved'])
@@ -394,9 +398,36 @@ test('escalate sets needs-human and asks on the PR', async () => {
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'needs-human' })
   expect(r.state).toBe('needs-human')
   expect(t.prComments).toEqual(['Public API?'])
-  expect(t.log).toContain('ready 12') // a draft PR cannot merge, and the human may merge an escalated job
+  expect(t.log).not.toContain('ready 12')
   expect(t.comments.map(c => c.name)).toEqual(['round-1', 'decision'])
   expect(t.states).toEqual(['needs-human'])
+})
+
+test('approved and needs-human end an old draft PR', async () => {
+  const pass = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS') }
+  const a = inReview({ ...pass, [`${DIR}/decision.md`]: APPROVE }, { draft: true })
+  await jobAdvance(a.ctx, a.t, { issue: 7, to: 'approved' })
+  expect(a.t.log).toContain('ready 12') // a draft PR cannot merge, and the human may merge an escalated job
+  const b = inReview({ ...pass, [`${DIR}/round-1/review-security.md`]: rv('CHANGES', 'x'), [`${DIR}/decision.md`]: ESCALATE }, { draft: true })
+  await jobAdvance(b.ctx, b.t, { issue: 7, to: 'needs-human' })
+  expect(b.t.log).toContain('ready 12')
+})
+
+test('a failed draft end is a warning and the job still moves', async () => {
+  const pass = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS') }
+  const a = inReview({ ...pass, [`${DIR}/decision.md`]: APPROVE }, { draft: true, readyError: 'GraphQL: API rate limit already exceeded' })
+  const r = await jobAdvance(a.ctx, a.t, { issue: 7, to: 'approved' })
+  expect(r.state).toBe('approved')
+  expect(a.t.states).toEqual(['approved'])
+  expect(r.warnings).toHaveLength(1)
+  expect(r.warnings![0]).toContain('PR #12 is still a draft')
+  expect(r.warnings![0]).toContain('rate limit')
+  expect(r.warnings![0]).toContain('Fix: ')
+  const b = inReview({ ...pass, [`${DIR}/round-1/review-security.md`]: rv('CHANGES', 'x'), [`${DIR}/decision.md`]: ESCALATE }, { draft: true, readyError: 'boom' })
+  const e = await jobAdvance(b.ctx, b.t, { issue: 7, to: 'needs-human' })
+  expect(e.state).toBe('needs-human')
+  expect(b.t.prComments).toEqual(['Public API?'])
+  expect(e.warnings![0]).toContain('boom')
 })
 
 test('changes start the next round', async () => {
@@ -564,15 +595,37 @@ test('job_advance sets the option of the new state on the board', async () => {
   expect(warnings).toEqual([])
 })
 
+test('the tool saves the board ids in job.md, and the next transition makes one board call', async () => {
+  const raw = (state: string) => ({ number: 7, title: 'Add thing', body: 'b', labels: [{ name: 'factory' }, { name: `factory:${state}` }], user: { login: 'alice' }, created_at: '2026-01-01T00:00:00Z', html_url: 'https://github.com/o/r/issues/7', state: 'open', assignees: [] })
+  const files = {
+    '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/o/r', 'main', []), ...ON }),
+    [`${DIR}/job.md`]: renderJob({ ...J, round: 1 }),
+  }
+  const replies = (state: string) => [
+    { argv: ['gh', 'api', 'repos/o/r/issues/7'], result: { stdout: JSON.stringify(raw(state)) } },
+    { argv: ['gh', 'api', 'user'], result: { stdout: 'op' } },
+    ...boardReplies,
+    { argv: [] },
+  ]
+  const first = fakeCtx({ files, replies: replies('build') })
+  expect('isError' in await invoke(advDef(), first, { issue: 7, to: 'needs-human', reason: 'stuck' })).toBe(false)
+  expect(boardCalls(first.calls)).toEqual(['gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit'])
+  expect((await readJob(first, 7)).board?.item).toBe('I1')
+  const next = fakeCtx({ files: first.files, replies: replies('review') })
+  expect('isError' in await invoke(advDef(), next, { issue: 7, to: 'needs-human', reason: 'stuck' })).toBe(false)
+  expect(boardCalls(next.calls)).toEqual(['gh project item-edit'])
+  expect(next.calls).toContainEqual(edit('Waiting'))
+})
+
 test('a failed project call leaves the transition done and returns a warning', async () => {
-  const raw = { number: 7, title: 'Add thing', body: 'b', labels: [{ name: 'factory' }, { name: 'factory:build' }], author: { login: 'alice' }, createdAt: '2026-01-01T00:00:00Z', url: 'https://github.com/o/r/issues/7', state: 'OPEN' }
+  const raw = { number: 7, title: 'Add thing', body: 'b', labels: [{ name: 'factory' }, { name: 'factory:build' }], user: { login: 'alice' }, created_at: '2026-01-01T00:00:00Z', html_url: 'https://github.com/o/r/issues/7', state: 'open', assignees: [] }
   const ctx = fakeCtx({
     files: {
       '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/o/r', 'main', []), ...ON }),
       [`${DIR}/job.md`]: renderJob({ ...J, round: 1 }),
     },
     replies: [
-      { argv: ['gh', 'issue', 'view'], result: { stdout: JSON.stringify(raw) } },
+      { argv: ['gh', 'api', 'repos/o/r/issues/7'], result: { stdout: JSON.stringify(raw) } },
       { argv: ['gh', 'api', 'user'], result: { stdout: 'op' } },
       { argv: ['gh', 'project', 'item-edit'], result: { exitCode: 1, stderr: 'item-edit refused' } },
       ...boardReplies,
@@ -581,7 +634,7 @@ test('a failed project call leaves the transition done and returns a warning', a
   })
   const out = await invoke(advDef(), ctx, { issue: 7, to: 'needs-human', reason: 'stuck' })
   expect('isError' in out).toBe(false)
-  expect(ctx.calls).toContainEqual(['gh', 'issue', 'edit', '7', '-R', 'o/r', '--add-label', 'factory:needs-human', '--remove-label', 'factory:build'])
+  expect(ctx.calls).toContainEqual(['gh', 'api', '-X', 'PUT', 'repos/o/r/issues/7/labels', '--input', '-'])
   const r = JSON.parse(out.result) as { state: string; warnings: string[] }
   expect(r.state).toBe('needs-human')
   expect(r.warnings).toHaveLength(1)

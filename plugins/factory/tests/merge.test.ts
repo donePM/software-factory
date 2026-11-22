@@ -32,7 +32,7 @@ const WT8 = '/repo/.factory/worktrees/8'
 const J8: Job = { ...J, issue: 8, title: 'Other', jobDir: DIR8, worktree: WT8, branch: 'factory/8', pr: 10 }
 
 type Other = { n: number; labels: string[]; pr?: Partial<PrState> | null; job?: Partial<Job> }
-type Opts = { job?: Partial<Job>; labels?: string[]; pr?: Partial<PrState>; author?: string; approved?: boolean; closed?: boolean; noMerge?: boolean; prs?: PrState[]; reads?: Partial<PrState>[]; others?: Other[] }
+type Opts = { job?: Partial<Job>; labels?: string[]; pr?: Partial<PrState>; author?: string; approved?: boolean; closed?: boolean; noMerge?: boolean; prs?: PrState[]; reads?: Partial<PrState>[]; others?: Other[]; stuckLabels?: boolean }
 
 function tracker(o: Opts = {}) {
   const log: string[] = []
@@ -59,7 +59,7 @@ function tracker(o: Opts = {}) {
   const ticketOf = (n: number): Ticket => (n === 9 ? prTicket : others.get(n)?.ticket ?? { ...issue, state: closed ? 'closed' : 'open' })
   const pr = (): PrState => ({
     number: 9, state: merged ? 'MERGED' : 'OPEN', isDraft: false, title: 'feat(x): y', body: 'Closes #7\n', author: o.author ?? 'bob',
-    headRefName: 'factory/7', headRefOid: HEAD, reviewDecision: o.approved === true ? 'APPROVED' : '', mergeCommit: merged ? MERGE : null, ...o.pr,
+    headRefName: 'factory/7', headRefOid: HEAD, mergeCommit: merged ? MERGE : null, ...o.pr,
   })
   const t = {
     log, states, posts, reviews, merges, upserts, assigns,
@@ -77,6 +77,7 @@ function tracker(o: Opts = {}) {
         return
       }
       states.push(to)
+      if (!o.stuckLabels) issue.labels = ['factory', `factory:${to}`]
     },
     upsertComment: async (n: number, name: MarkerName, body: string): Promise<Comment> => {
       const c: Comment = { id: 2, author: 'op', body: withMarker(name, body), createdAt: at, updatedAt: at }
@@ -101,6 +102,7 @@ function tracker(o: Opts = {}) {
     },
     prState: async () => ({ ...pr(), ...o.reads?.shift() }),
     approvePr: async (_pr: number, body: string) => { reviews.push(body) },
+    prApproved: async (p: number, sha: string) => { log.push(`approved? ${p} ${sha}`); return o.approved === true },
     prReady: async (p: number) => { log.push(`ready ${p}`) },
     merge: async (p: number, subject: string, sha: string) => {
       log.push(`merge ${p}`)
@@ -257,6 +259,17 @@ test('merge sets the Done option on the board', async () => {
   expect(warnings).toEqual([])
 })
 
+test('merge goes on when the board hits the GraphQL rate limit', async () => {
+  const limit: Reply = { argv: ['gh', 'project'], result: { exitCode: 1, stderr: 'GraphQL: API rate limit already exceeded for user ID 1.' } }
+  const { ctx, t } = setup({}, [limit])
+  const { tracker, warnings } = onBoard(ctx, t)
+  const r = await merge(ctx, tracker, 7)
+  expect(r).toMatchObject({ pr: 9, alreadyMerged: false, state: 'done' })
+  expect(t.merges).toHaveLength(1)
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]).toContain('rate limit')
+})
+
 const CONFLICT: Reply ={ argv: ['git', '-C', WT, 'merge', '--no-edit'], result: { exitCode: 1, stderr: 'CONFLICT' } }
 const MERGE_HEAD = ['git', '-C', WT, 'rev-parse', '-q', '--verify', 'MERGE_HEAD']
 
@@ -305,6 +318,13 @@ test('a sync conflict starts a new build round', async () => {
   expect(t.posts[0]?.startsWith('Factory stopped:')).toBe(false)
   expect(t.merges).toEqual([])
   expect(count(ctx.calls, 'git', '-C', WT, 'push')).toBe(0)
+})
+
+test('the sync comment gives one step in each sentence', async () => {
+  const { ctx, t } = setup({}, [CONFLICT])
+  await merge(ctx, t, 7).catch(() => undefined)
+  expect(t.posts[0]).toContain('Round 2 starts. The builder merges origin/main. Then the reviews run again.')
+  expect(t.posts[0]).not.toContain(', then ')
 })
 
 test('the merge fixes give one step in each sentence', async () => {
@@ -482,6 +502,7 @@ test('merge approves when no approval is recorded, and not when one is', async (
   await merge(b.ctx, b.t, 7)
   expect(b.t.reviews).toEqual([])
   expect(b.t.upserts.some(u => u.name === 'approval')).toBe(false)
+  expect(b.t.log).toContain(`approved? 9 ${HEAD}`)
 })
 
 test('approve refuses a job with no reviewed commit', async () => {
@@ -503,6 +524,28 @@ test('merge refuses a job with no reviewed commit', async () => {
   await rejects(merge(ctx, t, 7), 'not-reviewed')
   expect(count(ctx.calls, 'git', '-C', WT, 'merge')).toBe(0)
   expect(t.merges).toEqual([])
+})
+
+const LIMIT = 'Factory stopped: Round 3 reached the round limit of 3.'
+const atLimit = async (t: Tracker): Promise<void> => {
+  (await t.get(7)).comments.push({ id: 3, author: 'op', body: LIMIT, createdAt: at, updatedAt: at })
+}
+
+test('not-reviewed at the round limit names maxRounds', async () => {
+  for (const run of [approve, merge]) {
+    const { ctx, t } = setup({ labels: ['factory:needs-human'], job: { reviewed: null } })
+    await atLimit(t)
+    const fix = 'The job reached the round limit. Increase maxRounds in .factory/config.json. Then run /factory:run 7.'
+    await expect(run(ctx, t, 7)).rejects.toMatchObject({ code: 'not-reviewed', fix })
+  }
+})
+
+test('not-reviewed without the round limit keeps the old fix', async () => {
+  for (const run of [approve, merge]) {
+    const { ctx, t } = setup({ labels: ['factory:needs-human'], job: { reviewed: null } })
+    const fix = 'Commits came after the reviews, or no review ran. The job must go back to build for a new review.'
+    await expect(run(ctx, t, 7)).rejects.toMatchObject({ code: 'not-reviewed', fix })
+  }
 })
 
 const TREE = 'f'.repeat(40)
@@ -545,6 +588,25 @@ test('merge sets done, closes the issue and cleans up', async () => {
   expect(r.cleanup.removed).toContain(DIR)
 })
 
+test('merge returns the state that the issue has after the merge', async () => {
+  const { ctx, t } = setup()
+  const r = await merge(ctx, t, 7)
+  expect(r.state).toBe('done')
+})
+
+test('merge returns the state read back, not the state it set', async () => {
+  const { ctx, t } = setup({ stuckLabels: true })
+  const r = await merge(ctx, t, 7)
+  expect(t.states).toEqual(['done'])
+  expect(r.state).toBe('approved')
+})
+
+test('merge of a PR merged on GitHub returns the state done', async () => {
+  const { ctx, t } = setup({ labels: ['factory:approved'], pr: { state: 'MERGED', mergeCommit: MERGE } })
+  const r = await merge(ctx, t, 7)
+  expect(r.state).toBe('done')
+})
+
 test('merge reports the merge commit, not the branch head', async () => {
   const { ctx, t } = setup()
   const r = await merge(ctx, t, 7)
@@ -577,6 +639,16 @@ test('merge readies a draft PR before the merge', async () => {
   await merge(ctx, t, 7)
   expect(t.log.indexOf('ready 9')).toBeGreaterThan(-1)
   expect(t.log.indexOf('ready 9')).toBeLessThan(t.log.indexOf('merge 9'))
+})
+
+test('merge stops with a fix when a draft PR cannot leave draft', async () => {
+  const { ctx, t } = setup({ labels: ['factory:needs-human'], pr: { isDraft: true } })
+  t.prReady = async (p: number) => { t.log.push(`ready ${p}`); throw new Error('GraphQL: API rate limit already exceeded') }
+  const err = await merge(ctx, t, 7).catch(e => e)
+  expect(err).toMatchObject({ code: 'draft-pr' })
+  expect(err.message).toContain('rate limit')
+  expect(err.fix).toContain('Ready for review')
+  expect(t.merges).toEqual([])
 })
 
 test('merge does not ready a PR that is not a draft', async () => {

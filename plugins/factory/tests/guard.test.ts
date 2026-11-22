@@ -6,6 +6,7 @@ for (const cmd of [
   'gh pr list', 'cd /w && gh issue comment 3 --body x', '/opt/homebrew/bin/gh api user', 'echo hi; gh pr merge 9',
   'git push origin HEAD', 'cd /w && git -C /w push --force', 'git commit -m x && git push',
   'bash -c "git push origin HEAD"', "sh -c 'gh pr list'", 'git commit -m "docs: x" && git push', 'git -C "/Users/me/Application Support/w" push',
+  'rtk gh pr list', 'rtk git push origin HEAD',
 ]) {
   test(`reachesGitHub finds: ${cmd}`, () => {
     expect(reachesGitHub(cmd)).toBe(true)
@@ -13,7 +14,7 @@ for (const cmd of [
 }
 
 for (const cmd of [
-  'git status', 'git log --oneline', 'npm run test', 'grep -rn high .', 'git commit -m "fix: x"', 'ls ghost',
+  'git status', 'git log --oneline', 'npm run test', 'grep -rn high .', 'git commit -m "fix: x"', 'ls ghost', 'rtk git status',
   // Seen in the E2E: a commit message that names push is not a push.
   'git commit --allow-empty -m "docs: explain push rules"', "git commit -m 'feat(api): add push notifications'",
 ]) {
@@ -80,6 +81,34 @@ test('other Bash calls pass', async ($, on) => {
   await $.tool.call({ tool: 'Bash', command: 'gh pr list' })
   await $.tool.call({ tool: 'Bash', command: 'gh pr list', agentId: 'o1' })
   expect(ran).toEqual(['git status', 'gh pr list', 'gh pr list'])
+})
+
+// A user hook that wraps each Bash command, as `rtk` does.
+function rewriteHook(on: On): string[] {
+  const seen: string[] = []
+  on('classic.PreToolUse', async (_$, e) => {
+    const command = String((e as { command?: unknown }).command)
+    seen.push(command)
+    return { updatedInput: { command: `rtk ${command}` } }
+  })
+  return seen
+}
+
+test('a PreToolUse rewrite does not reach the guard', async ($, on) => {
+  host(on)
+  const seen = rewriteHook(on)
+  const r = await $.tool.call({ tool: 'Bash', command: 'git status', agentId: 'f1' })
+  expect(String((r as { deny?: string }).deny ?? '')).not.toContain('no GitHub access')
+  expect(seen).toEqual(['git status'])
+})
+
+test('the guard denies gh before a PreToolUse rewrite', async ($, on) => {
+  const ran = host(on)
+  const seen = rewriteHook(on)
+  const r = await $.tool.call({ tool: 'Bash', command: 'gh pr list', agentId: 'f1' })
+  expect((r as { deny?: string }).deny).toContain('no GitHub access')
+  expect(seen).toEqual([])
+  expect(ran).toEqual([])
 })
 
 // A fake core for command.run, so that the mod hook can call next(e).

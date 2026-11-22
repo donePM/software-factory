@@ -7,6 +7,7 @@ import { intakeComment, jobAdvance, jobSync, reviewedOf, verifyJob } from './job
 import { branchName, writeJob } from './jobfile.ts'
 import { stateOf } from './labels.ts'
 import { findMarked } from './markers.ts'
+import { atRoundLimit, causeOf } from './status.ts'
 import type { Tracker } from './tracker.ts'
 import type { Ctx, PrState, State, Ticket } from './types.ts'
 
@@ -38,8 +39,13 @@ export async function resolvePair(_ctx: Ctx, t: Tracker, n: number): Promise<{ i
 // The approval names the reviewed commit: a later round needs a new approval.
 const approvalBody = (login: string, sha: string): string => `Approved by @${login} for merge. Reviewed commit: ${sha}.`
 
-const notReviewed = (why: string): FactoryError =>
-  new FactoryError('not-reviewed', why, 'Commits came after the reviews, or no review ran. The job must go back to build for a new review.')
+const REVIEW_FIX = 'Commits came after the reviews, or no review ran. The job must go back to build for a new review.'
+const notReviewed = (why: string, fix = REVIEW_FIX): FactoryError => new FactoryError('not-reviewed', why, fix)
+
+// At the round limit, build refuses a new round. So the fix names the step that works.
+const reviewFix = async (t: Tracker, ticket: Ticket): Promise<string> => atRoundLimit(causeOf(ticket.comments, await t.login()))
+  ? `The job reached the round limit. Increase maxRounds in .factory/config.json. Then run /factory:run ${ticket.number}.`
+  : REVIEW_FIX
 
 // GitHub does not allow a review on your own PR, so the approval then becomes a marker comment.
 async function record(t: Tracker, issue: number, pr: PrState, sha: string): Promise<'review' | 'comment'> {
@@ -54,15 +60,15 @@ async function record(t: Tracker, issue: number, pr: PrState, sha: string): Prom
 
 // HEAD must be the reviewed commit, or a chain of sync merges on top of it that earlier merge runs made.
 // Each sync merges the commit under it (first parent) and a base commit, with the tree that git makes from the two.
-async function checkReviewed(ctx: Ctx, wt: string, reviewed: string | null, origin: string): Promise<string> {
-  if (reviewed === null) throw notReviewed('the job has no reviewed commit')
+async function checkReviewed(ctx: Ctx, wt: string, reviewed: string | null, origin: string, fix = REVIEW_FIX): Promise<string> {
+  if (reviewed === null) throw notReviewed('the job has no reviewed commit', fix)
   const head = await must(ctx, ['git', '-C', wt, 'rev-parse', 'HEAD'])
   for (let c = head; c !== reviewed;) {
     const [, first, second, ...rest] = (await must(ctx, ['git', '-C', wt, 'rev-list', '--parents', '-n', '1', c])).split(/\s+/)
     const clean = first !== undefined && second !== undefined && rest.length === 0
       && (await ctx.run(['git', '-C', wt, 'merge-base', '--is-ancestor', second, origin])).exitCode === 0
       && await sameTree(ctx, wt, c, first, second)
-    if (!clean) throw notReviewed(`HEAD ${head} is not the reviewed commit ${reviewed}`)
+    if (!clean) throw notReviewed(`HEAD ${head} is not the reviewed commit ${reviewed}`, fix)
     c = first
   }
   return reviewed
@@ -95,7 +101,7 @@ async function toBuild(ctx: Ctx, t: Tracker, issue: number, from: State, origin:
   if (next.state !== 'build') return next
   const reason = conflictReason(origin, branch)
   await ctx.fs.write(`${next.roundDir}/sync.md`, `Merge ${origin} into ${branch}: the merge has a conflict. Resolve the conflict.\n`)
-  await t.comment(issue, `The sync with the base branch has a conflict: ${reason} Round ${next.round} starts. The builder merges ${origin}, then the reviews run again.`)
+  await t.comment(issue, `The sync with the base branch has a conflict: ${reason} Round ${next.round} starts. The builder merges ${origin}. Then the reviews run again.`)
   return next
 }
 
@@ -152,18 +158,19 @@ export async function approve(ctx: Ctx, t: Tracker, n: number): Promise<{ issue:
   const { issue, pr } = await resolvePair(ctx, t, n)
   const { ticket } = await finishedState(t, issue, 'approve')
   const reviewed = reviewedOf(ticket, await t.login())
-  if (reviewed === null) throw notReviewed('the job has no reviewed commit')
+  if (reviewed === null) throw notReviewed('the job has no reviewed commit', await reviewFix(t, ticket))
   return { issue, pr: pr.number, how: await record(t, issue, pr, reviewed) }
 }
 
-export type MergeResult = { issue: number; pr: number; head: string; mergeCommit: string | null; alreadyMerged: boolean; cleanup: CleanupReport; syncs: Sync[] }
+export type MergeResult = { issue: number; pr: number; head: string; mergeCommit: string | null; alreadyMerged: boolean; cleanup: CleanupReport; syncs: Sync[]; state: ReturnType<typeof stateOf> }
 
 export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResult> {
   const { issue, pr: found } = await resolvePair(ctx, t, n)
   // A human merged the PR on GitHub: only the housekeeping is left.
   if (found.state === 'MERGED') {
     const cleanup = await finishMerged(ctx, t, await t.get(issue))
-    return { issue, pr: found.number, head: found.headRefOid, mergeCommit: found.mergeCommit, alreadyMerged: true, cleanup, syncs: [] }
+    const state = stateOf((await t.get(issue)).labels)
+    return { issue, pr: found.number, head: found.headRefOid, mergeCommit: found.mergeCommit, alreadyMerged: true, cleanup, syncs: [], state }
   }
   const cfg = await loadConfig(ctx)
   const base = cfg.baseBranch
@@ -177,7 +184,7 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   const wt = job.worktree
 
   await must(ctx, ['git', '-C', wt, 'fetch', 'origin', base])
-  const reviewed = await checkReviewed(ctx, wt, job.reviewed, origin)
+  const reviewed = await checkReviewed(ctx, wt, job.reviewed, origin, await reviewFix(t, ticket))
   if (!(await syncBase(ctx, wt, issue, base))) {
     const reason = conflictReason(origin, job.branch)
     const next = await toBuild(ctx, t, issue, state, origin, job.branch)
@@ -211,10 +218,16 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   }
   const login = await t.login()
   const marker = findMarked((await t.get(issue)).comments, 'approval', login)
-  const recorded = pr.reviewDecision === 'APPROVED' || marker?.body.includes(`Reviewed commit: ${reviewed}.`) === true
+  const recorded = marker?.body.includes(`Reviewed commit: ${reviewed}.`) === true || await t.prApproved(pr.number, sha)
   if (!recorded) await record(t, issue, pr, reviewed)
 
-  if (pr.isDraft) await t.prReady(pr.number) // GitHub does not merge a draft
+  // GitHub does not merge a draft.
+  if (pr.isDraft) {
+    await t.prReady(pr.number).catch((e: unknown) => {
+      throw new FactoryError('draft-pr', `PR #${pr.number} is a draft and did not leave draft: ${e instanceof Error ? e.message : String(e)}`,
+        'Click "Ready for review" on the PR. Then merge again.')
+    })
+  }
   await t.merge(pr.number, `${pr.title} (#${pr.number})`, sha)
   const after = await t.prState(pr.number)
   if (after.state !== 'MERGED') {
@@ -222,8 +235,9 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   }
   await t.setState(issue, 'done')
   await followState(t, [issue, pr.number], 'done')
-  if ((await t.get(issue)).state !== 'closed') await t.close(issue, 'done')
+  const done = await t.get(issue)
+  if (done.state !== 'closed') await t.close(issue, 'done')
   // shortcut: no retry when GitHub gives no merge commit, upgrade when a real run shows null.
   const cleanup = await cleanupJob(ctx, t, issue, 'done')
-  return { issue, pr: pr.number, head: sha, mergeCommit: after.mergeCommit, alreadyMerged: false, cleanup, syncs: await syncOthers(ctx, t, issue, base) }
+  return { issue, pr: pr.number, head: sha, mergeCommit: after.mergeCommit, alreadyMerged: false, cleanup, syncs: await syncOthers(ctx, t, issue, base), state: stateOf(done.labels) }
 }

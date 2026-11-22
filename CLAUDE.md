@@ -109,7 +109,8 @@ This loads the branch code in that process only.
 - The gate runs from the plugin and config of the main checkout, never from the
   branch. A diff in `protectedPaths` fails it.
 - No local merge. The human approves, always: merge only through the `merge`
-  tool (`gh pr merge --merge`). `git branch -d` only after the merge; never
+  tool (REST `PUT /repos/{owner}/{repo}/pulls/{n}/merge`, `merge_method: merge`).
+  The factory opens every PR as a normal PR, never as a draft. `git branch -d` only after the merge; never
   `branch -D`. `worktree remove --force` only when nothing but untracked files
   is left.
 - Conventional Commits 1.0.0 for every commit, builder commit, PR title, and

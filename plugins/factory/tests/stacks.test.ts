@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { StackRef } from '../lib/config.ts'
 import { doctor } from '../lib/doctor.ts'
 import { setup } from '../lib/setup.ts'
-import { claudePlugin, typesSource } from '../lib/stacks/claude-plugin.ts'
+import { claudePlugin, TYPES_MISSING_EXIT, typesSource } from '../lib/stacks/claude-plugin.ts'
 import { detectAll, resolveSteps } from '../lib/stacks/index.ts'
 import type { Detection } from '../lib/stacks/types.ts'
 import { pluginBasic } from './fixtures/claude-plugin-basic.ts'
@@ -62,10 +62,12 @@ test('typecheck copies the engine types before tsc', async () => {
   expect(t!.argv[2]!.endsWith(`&& tsc -p ${P}`)).toBe(true)
 })
 
-test('typesSource fails with a hint when the engine types are missing', () => {
+test('typesSource exits 69 with the fix when the engine types are missing', () => {
   const s = typesSource(P)
-  expect(s).toContain('engine types not found: open the plugin-authoring skill once in this Claude Code version')
-  expect(s).toContain('exit 1')
+  expect(TYPES_MISSING_EXIT).toBe(69)
+  expect(s).toContain('engine types not found: Restart Claude Code so that the session runs the installed CLI version. Then open the plugin-authoring skill once.')
+  expect(s).toContain('exit 69;')
+  expect(s).not.toContain('exit 1')
   expect(s).toContain(`mkdir -p ${P}/.claude-plugin/types/claude-code`)
 })
 
@@ -112,7 +114,7 @@ test('requires checks the bundled engine types for a plugin with tsconfig', () =
   expect(r.versionArgs[0]).toBe('-c')
   expect(r.versionArgs[1]).toContain('bundled-skills/$(claude --version')
   expect(r.versionArgs[1]).toContain('plugin-authoring/types/claude-code.d.ts')
-  expect(r.fix).toBe('open the plugin-authoring skill once in this Claude Code version')
+  expect(r.fix).toBe('Restart Claude Code so that the session runs the installed CLI version. Then open the plugin-authoring skill once.')
 })
 
 const base: Reply[] = [
@@ -131,12 +133,12 @@ test('doctor reports a missing tsc for a plugin stack', async () => {
   expect(c.fix).toBe('brew install typescript')
 })
 
-test('doctor reports missing engine types', async () => {
+test('doctor reports missing engine types with the restart fix', async () => {
   const replies = [...base, { argv: ['tsc', '--version'], result: { stdout: 'Version 7' } }]
   const checks = await doctor(fakeCtx({ replies }), [{ id: 'claude-plugin', path: P }])
   const c = checks.find(x => x.check === 'engine types')!
   expect(c.ok).toBe(false)
-  expect(c.fix).toBe('open the plugin-authoring skill once in this Claude Code version')
+  expect(c.fix).toBe('Restart Claude Code so that the session runs the installed CLI version. Then open the plugin-authoring skill once.')
 })
 
 test('doctor skips detections that the config does not list', async () => {
@@ -156,8 +158,8 @@ test('setup writes the detected stacks into a new config', async () => {
     { argv: ['sh', '-c'] },
     { argv: ['git', 'symbolic-ref', 'refs/remotes/origin/HEAD'], result: { stdout: 'refs/remotes/origin/main' } },
     { argv: ['gh', 'api', 'repos/a/b'], result: { stdout: repoJson } },
-    { argv: ['gh', 'label', 'create'] },
-    { argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } },
+    { argv: ['gh', 'api', 'repos/a/b/labels?per_page=100'] },
+    { argv: ['gh', 'api', '-X', 'POST'] },
     { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
     { argv: ['gh', 'api', '-X', 'PATCH'] },
   ]
