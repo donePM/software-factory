@@ -4,7 +4,7 @@ import type { Comment, Ticket } from './types.ts'
 export const filterComments = (t: Ticket, operator: string): Comment[] =>
   t.comments.filter((c) => (c.author === t.author || c.author === operator) && !isMarkerComment(c))
 
-const quote = (text: string): string =>
+export const quote = (text: string): string =>
   text.split(/\r\n|\r|\n/).map((l) => (l === '' ? '>' : `> ${l}`)).join('\n')
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim()

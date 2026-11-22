@@ -75,18 +75,21 @@ This loads the branch code in that process only.
 - `plugins/factory/agents/*.md`: `intake`, `spec-writer`, `builder`, the
   `code|security|ux|ui` reviewers, `approver`, `gate-runner`, `merger`,
   `documenter`, and `planner`. The planner reads `<planDir>/idea.md` and writes
-  `<planDir>/product.md` with ordered slices. No skill starts it yet.
+  `<planDir>/product.md` with ordered slices. `/factory:plan <idea>` starts it.
+  The `plan_create` tool writes `idea.md`, and `plan_feedback` adds a `## Feedback K`
+  section. Only "start" creates the slice issues through `issue_create`.
   With `docs.target: wiki`, the merge sets `docs`. The documenter
   writes `docs.md`. `job_advance` with `to: done` pushes the wiki page, posts
   the `<!-- factory:docs -->` comment with the link and the `docs.md` text, and sets `done`.
   It also pushes the pages in `docs/wiki/` of the job worktree, for example `Home.md`.
   Models and tools are set in their frontmatter; reviewer models come from
   `## Route` in `job.md`.
-- Skills (`/factory:setup|add|run|status|approve|merge`) are thin entry points.
+- Skills (`/factory:setup|add|plan|run|status|approve|merge`) are thin entry points.
   Each passes `${CLAUDE_PLUGIN_ROOT}`.
 - Local working copy: `.factory/jobs/<n>/` (`job.md`, `issue.md`, `intake.md`,
   `spec.md`, `round-N/`, `decision.md`, `docs.md`) and `.factory/worktrees/<n>/`. Both are
-  deleted when the job ends. `.factory/config.json` is versioned.
+  deleted when the job ends. `.factory/plans/<n>/` (`idea.md`, `product.md`)
+  holds one plan of `/factory:plan`. It stays. `.factory/config.json` is versioned.
 
 ## Invariants (keep them when editing)
 
