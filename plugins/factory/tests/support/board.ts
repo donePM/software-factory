@@ -13,6 +13,11 @@ export const boardReplies: Reply[] = [
   { argv: ['gh', 'project', 'item-edit'] },
 ]
 
+export const itemList = (items: { url: string; factory?: string }[]): Reply => ({
+  argv: ['gh', 'project', 'item-list'],
+  result: json({ items: items.map((i, n) => ({ id: `I${n}`, content: { number: n, url: i.url }, ...(i.factory === undefined ? {} : { factory: i.factory }) })) }),
+})
+
 // Records each label change in ctx.calls as ['setState', n, to], so that a test can check the order.
 export function onBoard(ctx: Ctx & { calls: string[][] }, t: Tracker, cfg: Parameters<typeof withBoard>[2] = ON) {
   const rec: Tracker = {
