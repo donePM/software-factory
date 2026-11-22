@@ -186,6 +186,13 @@ test('a rejected status line call does not reject', async () => {
   expect(await ctx.status?.('x')).toBeUndefined()
 })
 
+test('a status line call that returns void still sets the line', async () => {
+  const lines: (string | undefined)[] = []
+  const ctx = await makeCtx({ session: { root: async () => '/repo' }, ui: { status: (text: string | undefined) => void lines.push(text) } })
+  ctx.status?.('x')
+  expect(lines).toEqual(['x'])
+})
+
 test('a failed status line leaves the tool result unchanged', async () => {
   const status = TOOLS.find(t => t.name === 'status')!
   const want = await invoke(status, fakeCtx({ files: files({ enabled: false, number: 3 }), replies: backlogReplies() }), {})

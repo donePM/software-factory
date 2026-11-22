@@ -256,7 +256,7 @@ export async function makeCtx($: any): Promise<Ctx> {
     root,
     now: () => new Date(),
     sleep: ms => $.clock.sleep(ms),
-    status: text => $.ui.status(text).catch(() => undefined),
+    status: text => void Promise.resolve($.ui.status(text)).catch(() => undefined),
     run: (argv, opts) =>
       $.process.run(argv, {
         ...opts,
