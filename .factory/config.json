@@ -63,5 +63,8 @@
   "project": {
     "enabled": true,
     "number": 2
+  },
+  "docs": {
+    "target": "wiki"
   }
 }
