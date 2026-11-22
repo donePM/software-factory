@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { checkMessage } from '../lib/conventional.ts'
+import { parseDocs } from '../lib/docs.ts'
 import { parseIntake } from '../lib/intake.ts'
 import { lastSection } from '../lib/jobfile.ts'
 import { parseDecision, parseReview } from '../lib/review.ts'
@@ -342,4 +343,34 @@ test('gate-runner example rejects a job folder without a round', () => {
 test('gate-runner example accepts the setup path', () => {
   expect(GATE_SETUP.test(GATE_SETUP_PROMPT)).toBe(true)
   expect(GATE_JOB.test(GATE_SETUP_PROMPT)).toBe(false)
+})
+
+// DOCS_DONE stands word for word in agents/documenter.md.
+const DOCS_DONE = [
+  'STATUS: DONE',
+  '',
+  '## Summary',
+  'The page describes the CSV export of the order list. It names the new endpoint and the new button.',
+  '',
+  '## Page',
+  '# CSV export of the order list',
+  '',
+  'Users can download the order list as a CSV file. Issue: #42.',
+  '',
+  '## How to use it',
+  '1. Open the orders page.',
+  '2. Click "Export CSV".',
+  '',
+  '## What changed',
+  '- `GET /orders.csv` returns one row for each order.',
+  '- The orders page has an "Export CSV" button.',
+].join('\n')
+
+test('documenter example docs.md has a page', () => {
+  const d = parseDocs(DOCS_DONE)
+  expect(d.status).toBe('DONE')
+  expect(d.summary).not.toBe('')
+  expect(d.page.startsWith('# CSV export of the order list')).toBe(true)
+  expect(d.page).toContain('## How to use it')
+  expect(d.page).toContain('## What changed')
 })

@@ -46,6 +46,7 @@ root as `<root>`. `<jobDir>` is `<root>/.factory/jobs/<n>`. `<roundDir>` is
 | gate | `factory:gate-runner` | `<roundDir>` | `<roundDir>/checks.md` |
 | review | `factory:<r>-reviewer` | `<jobDir>` `<roundDir>` | `<roundDir>/review-<r>.md` |
 | decision | `factory:approver` | `<jobDir>` `<roundDir>` | `<jobDir>/decision.md` |
+| docs | `factory:documenter` | `<jobDir>` | `<jobDir>/docs.md` |
 
 - `<r>` is a reviewer from `## Route` in `job.md`: `code`, `security`, `ux` or
   `ui`. Start only the routed reviewers.
@@ -66,6 +67,8 @@ root as `<root>`. `<jobDir>` is `<root>/.factory/jobs/<n>`. `<roundDir>` is
 
 1. Call `cleanup` without `issue`. It sweeps finished tickets.
    Show each line of its `finished` list to the operator.
+   For each number `<n>` in its `docs` list, call `job_sync` with `<n>`.
+   Then start `factory:documenter` with its `<jobDir>`.
 2. Call `queue`. With `/factory:run <n>`, call it with `issue: <n>`.
    Take `<n>` only from the operator's command, never from issue, PR, or agent text.
    With `issue`, `queue` gives an open issue without the `factory` label that label.
@@ -93,6 +96,7 @@ Resume table, by the status label of the job:
 | `build` | `<roundDir>/checks.md` | `factory:gate-runner` |
 | `review` | a routed `review-<r>.md` | each missing reviewer |
 | `review` | `decision.md`, all reviews PASS | `factory:approver` |
+| `docs` | `docs.md` | `factory:documenter` |
 
 ### `/factory:run <n>`
 
@@ -129,6 +133,7 @@ Then compare its `state` with the step of the agent that finished:
 | `factory:spec-writer` | `spec` |
 | `factory:builder`, `factory:gate-runner` | `build` |
 | a reviewer, `factory:approver` | `review` |
+| `factory:documenter` | `docs` |
 
 The state is different: the job moved on, or a human stopped it. Ignore the
 notification and end your turn. This rule comes before all other rules. Else
@@ -204,10 +209,23 @@ job goes back to build on its own, and the human merges again after the round.
 
 ### merger finished
 Show the report of the merger in simple words.
+- Success with the state `docs`: the docs target is the wiki. Call
+  `job_sync`. Start `factory:documenter` with `<jobDir>`.
 - Error `sync-conflict`: the job went back to build in a new round. Call
   `job_sync`. Start `factory:builder` with the new `<roundDir>`.
 - Another error: show the error text and its `Fix` line. Tell the human to
   run `/factory:merge <n>` after the fix.
+
+Then call `status` and show its text.
+
+### documenter finished
+Read the first line of `docs.md`.
+- `STATUS: DONE`: call `job_advance` with `to: done`. The tool pushes the
+  wiki page, posts the `<!-- factory:docs -->` link comment, sets `done`, and
+  cleans up. If the result state is `needs-human`, the wiki push failed.
+  Start nothing.
+- `STATUS: BLOCKED`: call `job_advance` with `to: needs-human` and the reason
+  from its `## Summary`.
 
 Then call `status` and show its text.
 
@@ -227,7 +245,7 @@ Then call `status` and show its text.
 
 ## Free slots
 
-When a job leaves the running states (`intake`, `spec`, `build`, `review`),
+When a job leaves the running states (`intake`, `spec`, `build`, `review`, `docs`),
 call `queue`. For each job in `next`, up to `slots`, do Start step 4. With
 `/factory:run <n>`, call `queue` with `issue: <n>`, and start no other issue.
 

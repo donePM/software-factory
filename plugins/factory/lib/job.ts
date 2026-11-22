@@ -2,6 +2,8 @@ import { type Config, loadConfig } from './config.ts'
 import { checkMessage, typeOf } from './conventional.ts'
 import { type CleanupReport, cleanupJob } from './cleanup.ts'
 import { FactoryError, must, mkdirp, rmrf } from './exec.ts'
+import { parseDocs } from './docs.ts'
+import { WIKI_TIMEOUT_MS } from './doctor.ts'
 import { countAttempts } from './gate.ts'
 import { followState } from './assignee.ts'
 import { gateJob, passedAt } from './gatejob.ts'
@@ -321,7 +323,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
   if (from === 'conflict') throw new FactoryError('label-conflict', `#${n} has several status labels`, 'Remove all but one status label.')
   // A late notification must not move a job that left the step it reports on.
   if (input.from !== undefined && from !== input.from) throw new FactoryError('state-moved', `#${n} is ${from ?? 'not a job'}, not ${input.from}`, 'Ignore this notification.')
-  if (!SUPPORTED.includes(to)) throw new FactoryError('unsupported-target', `job_advance cannot move to ${to}`, 'Use the merge tool to move a job to done.')
+  if (!SUPPORTED.includes(to) && !(to === 'done' && from === 'docs')) throw new FactoryError('unsupported-target', `job_advance cannot move to ${to}`, 'Use the merge tool to move a job to done.')
   assertTransition(from, to)
   const dir = jobDir(ctx.root, n)
   if (!(await ctx.fs.exists(`${dir}/job.md`))) throw new FactoryError('no-job', `${dir}/job.md does not exist`, 'Run job_create first.')
@@ -371,6 +373,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
     return result('rejected', { cleanup: await cleanupJob(ctx, t, n, 'rejected') })
   }
 
+  if (to === 'done') return advanceDocs(ctx, t, job, ticket)
   if (to === 'build') return advanceBuild(ctx, t, job, from, await specMoved(t, ticket, job))
   if (to === 'review') return advanceReview(ctx, t, job)
   if (to === 'needs-human' && from !== 'review') throw new FactoryError('reason-required', 'A move to needs-human outside review needs a reason.', 'Give a reason.')
@@ -517,4 +520,41 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   await moveJob(t, job, to)
   const autoMerge = to === 'approved' && (await loadConfig(ctx)).merge.auto === true
   return done(job, to, { ...(warnings.length === 0 ? {} : { warnings }), ...(autoMerge ? { autoMerge } : {}) })
+}
+
+// The wiki repo uses the git login of the operator. The page name is fixed, so agent text cannot pick a path.
+async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, page: string): Promise<void> {
+  const git = async (args: string[]): Promise<string> => {
+    // A missing wiki repo of a private repo can ask for a user name, so git must not prompt.
+    const r = await ctx.run(['git', ...args], { env: { GIT_TERMINAL_PROMPT: '0' }, timeoutMs: WIKI_TIMEOUT_MS })
+    if (r.exitCode !== 0) throw new Error((r.stderr || r.stdout).trim() || `git exited with ${r.exitCode}`)
+    return r.stdout
+  }
+  await rmrf(ctx, wiki) // a clone from a failed run blocks a new clone
+  await git(['clone', '--depth', '1', `https://github.com/${repo}.wiki.git`, wiki])
+  await ctx.fs.write(`${wiki}/Issue-${n}.md`, `${page}\n`)
+  if ((await git(['-C', wiki, 'status', '--porcelain'])).trim() === '') return
+  await git(['-C', wiki, 'add', '--', `Issue-${n}.md`])
+  await git(['-C', wiki, 'commit', '-m', `docs(wiki): document #${n}`, '-m', `Refs: #${n}`])
+  await git(['-C', wiki, 'push', 'origin', 'HEAD'])
+}
+
+// The PR is merged already: a failed push stops the job, and the merge stays.
+async function advanceDocs(ctx: Ctx, t: Tracker, job: Job, ticket: Ticket): Promise<AdvanceResult> {
+  const n = job.issue
+  const docs = parseDocs(await readRequired(ctx, `${job.jobDir}/docs.md`, 'docs-not-done', 'The documenter must write docs.md.'))
+  if (docs.status !== 'DONE' || docs.page === '') {
+    throw new FactoryError('docs-not-done', 'docs.md must start with "STATUS: DONE" and have a non-empty "## Page"', 'The documenter must finish first.')
+  }
+  try {
+    await publishWiki(ctx, t.repo, n, `${job.jobDir}/wiki`, docs.page)
+  } catch (e) {
+    await t.comment(n, `Factory stopped: the wiki push failed: ${e instanceof Error ? e.message : String(e)}`)
+    await moveJob(t, job, 'needs-human')
+    return done(job, 'needs-human')
+  }
+  await t.upsertComment(n, 'docs', `Docs: https://github.com/${t.repo}/wiki/Issue-${n}`)
+  await moveJob(t, job, 'done')
+  if (ticket.state !== 'closed') await t.close(n, 'done')
+  return done(job, 'done', { cleanup: await cleanupJob(ctx, t, n, 'done') })
 }

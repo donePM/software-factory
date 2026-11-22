@@ -7,7 +7,8 @@ import type { Ctx, Ticket } from './types.ts'
 
 export type Kept = { path: string; reason: string; command: string }
 export type CleanupReport = { removed: string[]; kept: Kept[] }
-export type SweepReport = CleanupReport & { finished: string[] }
+// docs: the numbers of the tickets in docs after the sweep, for the documenter.
+export type SweepReport = CleanupReport & { finished: string[]; docs: number[] }
 
 const ISSUE = /^[1-9][0-9]*$/
 
@@ -70,10 +71,18 @@ export async function cleanupJob(ctx: Ctx, _t: Tracker, n: number, _end: 'done' 
   return report
 }
 
-// Call only after GitHub reports the PR on factory/<n> as merged.
+export const wikiTarget = async (ctx: Ctx): Promise<boolean> => (await loadConfig(ctx)).docs?.target === 'wiki'
+
+// Call only after GitHub reports the PR on factory/<n> as merged. With a wiki target the job goes to docs and keeps its files.
 export async function finishMerged(ctx: Ctx, t: Tracker, ticket: Ticket): Promise<CleanupReport> {
   const n = ticket.number
-  if (stateOf(ticket.labels) !== 'done') await t.setState(n, 'done', { prMerged: true })
+  const state = stateOf(ticket.labels)
+  if (state === 'docs') return { removed: [], kept: [] }
+  if (state !== 'done' && (await wikiTarget(ctx))) {
+    await t.setState(n, 'docs', { prMerged: true })
+    return { removed: [], kept: [] }
+  }
+  if (state !== 'done') await t.setState(n, 'done', { prMerged: true })
   if (ticket.state !== 'closed') await t.close(n, 'done')
   return cleanupJob(ctx, t, n, 'done')
 }
@@ -84,7 +93,7 @@ async function folders(ctx: Ctx, name: 'jobs' | 'worktrees'): Promise<number[]> 
 }
 
 export async function sweep(ctx: Ctx, t: Tracker): Promise<SweepReport> {
-  const report: SweepReport = { removed: [], kept: [], finished: [] }
+  const report: SweepReport = { removed: [], kept: [], finished: [], docs: [] }
   const add = (r: CleanupReport): void => {
     report.removed.push(...r.removed)
     report.kept.push(...r.kept)
@@ -105,13 +114,21 @@ export async function sweep(ctx: Ctx, t: Tracker): Promise<SweepReport> {
   for (const [n, ticket] of tickets) {
     try {
       const state = stateOf(ticket.labels)
+      // A docs job waits for the documenter, also when the issue is closed.
+      // shortcut: only tickets with a job folder or in the backlog show up, upgrade with the docs.md rebuild in job_sync.
+      if (state === 'docs') {
+        report.docs.push(n)
+        continue
+      }
       // shortcut: one PR lookup per ticket, upgrade to one merged-PR list call when the backlog makes cleanup slow.
       if (state !== null && state !== 'conflict' && state !== 'done' && state !== 'rejected') {
         const branch = branchName(n)
         const pr = await t.findPr(branch)
         if (pr?.state === 'MERGED' && pr.headRefName === branch) {
           add(await finishMerged(ctx, t, ticket))
-          report.finished.push(`#${n}: PR merged on GitHub, set to done`)
+          const next = (await wikiTarget(ctx)) ? 'docs' : 'done'
+          if (next === 'docs') report.docs.push(n)
+          report.finished.push(`#${n}: PR merged on GitHub, set to ${next}`)
           continue
         }
       }
