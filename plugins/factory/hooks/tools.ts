@@ -249,13 +249,14 @@ async function gateTool(ctx: Ctx, input: { issue?: unknown; round?: string }): P
 const DEFAULT_TIMEOUT_MS = 120000
 const MAX_TIMEOUT_MS = 600000
 
-// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep and fs.
+// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep, ui.status and fs.
 export async function makeCtx($: any): Promise<Ctx> {
   const root: string = await $.session.root()
   return {
     root,
     now: () => new Date(),
     sleep: ms => $.clock.sleep(ms),
+    status: text => $.ui.status(text),
     run: (argv, opts) =>
       $.process.run(argv, {
         ...opts,
