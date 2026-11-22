@@ -848,7 +848,7 @@ test('code-reviewer gives a dots finding only when the raw commit shows it', () 
 
 test('builder checks its commit body raw with git cat-file', () => {
   expect(oneLine(BUILDER_COMMIT_CHECK)).toContain('`git cat-file commit HEAD`')
-  expect(BUILDER_COMMIT_CHECK).not.toContain('git log -1 --format=%B')
+  expect(oneLine(BUILDER_COMMIT_CHECK)).not.toContain('git log -1 --format=%B')
 })
 
 test('code-reviewer commit check keeps the blocker and should levels', () => {
