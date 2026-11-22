@@ -17,6 +17,7 @@ Follow `${CLAUDE_PLUGIN_ROOT}/ste.md` for all text to the user.
    - The `config` preview: tracker URL, base branch, concurrency.
    - The detected stacks. The list can be empty for now.
    - Each `standard` entry with `ok: false`. These are repo settings that differ from the factory standard.
+   - `enableWiki: true` as a repo change: setup turns on the GitHub wiki of the repo.
 4. Ask with `AskUserQuestion`. Put the recommended answer first and add "(recommended)" to it. Ask whether to apply the setup. Ask about concurrency only if the user wants to change it. The default is 4.
    - When the preview has `askProject: true` and the user did not type `/factory:setup project`, also ask about the board.
      The question: "Show the factory tickets on a Kanban board in GitHub Projects? The board needs the `project` token scope. This scope gives write access to all your GitHub projects, not only this one."
@@ -33,7 +34,8 @@ Follow `${CLAUDE_PLUGIN_ROOT}/ste.md` for all text to the user.
    - When you asked for the language in step 4, pass the answer as `language`, for example `language: "Deutsch"`. Pass `language: "English"` for "English (recommended)". With no answer, pass no `language`.
    - On a `language must be a short single-line name` error, ask for the language again. Use only letters, spaces, `(`, `)` and `-`.
    - When you asked for the docs target in step 4, pass `docs: "docs"` for "docs/ folder", `docs: "wiki"` for "GitHub wiki". For "Ask later", pass no `docs`.
-   - When the report has `wiki` with `ok: false`, show its `detail` and its `fix`. The user must do these steps in the browser or in a terminal. Then they run `/factory:setup` again. The setup stays valid.
+   - When the report has `enableWiki: true`, tell the user that setup turned on the GitHub wiki of the repo.
+   - When the report has `wiki` with `ok: false`, show its `detail` and its `fix`. The user must do these steps in the browser. Then they run `/factory:setup` again. The setup stays valid.
    - When the report has `project`, show its `url`, the count in `added`, each step of `viewSteps`, and each entry of `warnings`.
    - A warning with `gh auth refresh -s project` means that the token scope is missing. Tell the user to type `! gh auth refresh -s project` in this session. Then they run `/factory:setup` again.
    - Otherwise, only mention the board in one sentence: `/factory:setup project` shows the tickets on a Kanban board in GitHub Projects.

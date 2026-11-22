@@ -1,5 +1,5 @@
 import { type SweepReport, sweep } from './cleanup.ts'
-import { type Check, doctor, wikiCheck } from './doctor.ts'
+import { type Check, doctor, first, wikiCheck, wikiOn } from './doctor.ts'
 import { type Config, configPath, defaultConfig, LANGUAGE_ERROR, loadConfig, migrate, planMigration, validLanguage, writeConfig } from './config.ts'
 import { FactoryError } from './exec.ts'
 import { detectAll } from './stacks/index.ts'
@@ -34,6 +34,7 @@ export type SetupReport = {
   askProject: boolean
   askLanguage: boolean
   askDocs: boolean
+  enableWiki: boolean
   wiki?: Check
   project?: ProjectReport
 }
@@ -56,7 +57,7 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   const stacks: Config['stacks'] = (await detectAll(ctx, ctx.root).catch(() => [])) // doctor reports a failed detection
     .map(d => ({ id: d.stack, path: d.path }))
   const checks = await doctor(ctx, stacks)
-  const empty = { created: false, migrated: [], standard: [], labels: 0, gitignore: false, sweep: { removed: [], kept: [], finished: [], docs: [] } }
+  const empty = { created: false, enableWiki: false, migrated: [], standard: [], labels: 0, gitignore: false, sweep: { removed: [], kept: [], finished: [], docs: [] } }
   if (checks.some(c => !c.ok)) {
     const failed = checks.filter(c => !c.ok)
     const reason = `checks failed: ${failed.map(c => c.check).join(', ')}`
@@ -87,9 +88,11 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   if (input.language !== undefined) cfg.language = input.language
   if (input.docs === 'docs') cfg.docs = { target: 'docs', path: cfg.docs?.path ?? 'docs/' }
   if (input.docs === 'wiki') cfg.docs = { target: 'wiki' }
+  const repo = repoFromUrl(cfg.tracker.url)
+  const enableWiki = cfg.docs?.target === 'wiki' && (await wikiOn(ctx, repo)) === false
   if (!input.apply) {
-    const standard = await githubTracker(ctx, repoFromUrl(cfg.tracker.url)).applyStandard(false)
-    return { checks, config: cfg, applied: false, ...empty, migrated, standard, labels: labelSet().length, next: ['Run setup again with apply true.'], askProject, askLanguage, askDocs }
+    const standard = await githubTracker(ctx, repo).applyStandard(false)
+    return { checks, config: cfg, applied: false, ...empty, migrated, standard, labels: labelSet().length, next: ['Run setup again with apply true.'], askProject, askLanguage, askDocs, enableWiki }
   }
 
   const created = !exists
@@ -98,15 +101,18 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   if (!(await ctx.fs.exists(ignorePath)) || (await ctx.fs.read(ignorePath)) !== GITIGNORE) {
     await ctx.fs.write(ignorePath, GITIGNORE)
   }
-  const tracker = githubTracker(ctx, repoFromUrl(cfg.tracker.url))
+  const tracker = githubTracker(ctx, repo)
   const labels = labelSet()
   await tracker.ensureLabels(labels)
   const standard = await tracker.applyStandard(true)
   const swept = await sweep(ctx, tracker)
   const next = ['Commit .factory/config.json (chore(factory): add factory config).', 'Run the gate once on the base branch.']
-  const wiki = cfg.docs?.target === 'wiki' ? await wikiCheck(ctx, repoFromUrl(cfg.tracker.url)) : undefined
+  const edit = enableWiki ? await ctx.run(['gh', 'repo', 'edit', repo, '--enable-wiki']) : undefined
+  const wiki = edit !== undefined && edit.exitCode !== 0
+    ? { check: 'wiki', ok: false, detail: `gh repo edit failed: ${first(edit.stderr)}`, fix: `You need admin rights to turn on the wiki. Open https://github.com/${repo}/settings and turn on Wikis. Then run setup again.` }
+    : cfg.docs?.target === 'wiki' ? await wikiCheck(ctx, repo) : undefined
   if (wiki !== undefined && !wiki.ok && wiki.fix !== undefined) next.push(wiki.fix)
-  const report = { checks, config: cfg, applied: true, created, migrated, standard, labels: labels.length, gitignore: true, sweep: swept, next, askProject, askLanguage, askDocs, wiki }
+  const report = { checks, config: cfg, applied: true, created, migrated, standard, labels: labels.length, gitignore: true, sweep: swept, next, askProject, askLanguage, askDocs, enableWiki: edit?.exitCode === 0, wiki }
   if (cfg.project?.enabled !== true) return report
   const project = await connectProject(ctx, tracker, cfg.project.number)
   if (project.number !== undefined && project.number !== cfg.project.number) {

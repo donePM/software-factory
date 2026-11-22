@@ -161,6 +161,7 @@ test('setup writes the detected stacks into a new config', async () => {
     { argv: ['gh', 'api', 'repos/a/b/labels?per_page=100'] },
     { argv: ['gh', 'api', '-X', 'POST'] },
     { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
+    { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:docs&state=closed&per_page=100'] },
     { argv: ['gh', 'api', '-X', 'PATCH'] },
     { argv: ['gh', 'api', '-X', 'GET', 'search/issues'] },
   ]
