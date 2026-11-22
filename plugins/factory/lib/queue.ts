@@ -75,7 +75,7 @@ async function closedCards(ctx: Ctx, tr: Tracker, number: number, tickets: Ticke
       const t = await tr.get(Number(n))
       if (t.state !== 'closed' || stateOf(t.labels) !== null) continue
       board ??= loadBoard(ctx, tr.repo.split('/')[0]!, number)
-      await setOption(ctx, await board, card.item, t.stateReason === 'not_planned' ? 'Rejected' : 'Done')
+      await setOption(ctx, await board, card.id, t.stateReason === 'not_planned' ? 'Rejected' : 'Done')
     } catch (e) {
       warnings.push(`#${n}: ${messageOf(e)} Fix: Move the card by hand on the board, or wait for the next queue.`)
     }

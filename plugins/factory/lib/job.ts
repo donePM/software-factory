@@ -490,7 +490,7 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   if (to === 'approved') {
     const head = await must(ctx, ['git', '-C', job.worktree, 'rev-parse', 'HEAD'])
     if (head !== job.reviewed) {
-      throw new FactoryError('head-moved', `HEAD ${head} is not the reviewed commit ${job.reviewed ?? 'none'}`, 'Commits came after the reviews. Call job_advance with to: needs-human and this error as reason.')
+      throw new FactoryError('head-moved', `HEAD ${head} is not the reviewed commit ${job.reviewed ?? 'none'}`, `Commits came after the reviews. Call job_advance with to: needs-human and this error as reason. Then a human comments in the issue and runs /factory:run ${n}.`)
     }
   }
   await t.upsertComment(n, `round-${job.round}`, await roundSummary(ctx, job, roundDir))
