@@ -113,6 +113,9 @@ const BUILD_TABLE = [
 const BUILDER_COMMIT = [
   'feat(orders): add the CSV export endpoint',
   '',
+  'Users can download the order list as a CSV file.',
+  'The endpoint returns one row for each order.',
+  '',
   'Refs: #42',
 ].join('\n')
 
@@ -259,6 +262,13 @@ test('builder example marks the regression AC', () => {
 test('builder example commit is conventional', () => {
   expect(checkMessage(BUILDER_COMMIT)).toBeNull()
   expect(BUILDER_COMMIT).toMatch(/\nRefs: #\d+$/)
+})
+
+test('builder example commit body ends in a full sentence', () => {
+  const body = BUILDER_COMMIT.split('\n').slice(2, -2)
+  expect(body.length).toBeGreaterThan(0)
+  expect(body.at(-1) ?? '').toMatch(/\.$/)
+  for (const l of body) expect(l).not.toMatch(/\.\.\.|…/)
 })
 
 const FINDING = /^\S+:\d+: .+ Fix: .+$/
