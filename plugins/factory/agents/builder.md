@@ -140,6 +140,9 @@ For each part of the spec, take the first option that fully works:
   This covers code comments, docstrings, commit bodies, and docs.
   Use short sentences (at most 20 words), one instruction per sentence, the
   active voice, simple common words, and one term for one thing.
+- Text for people in the factory plugin follows `plugins/factory/ste.md`.
+  This covers text in a skill, in `pipeline.md`, and strings in `lib/` or `hooks/`
+  (error texts, `Fix:` lines, tool results, comment and PR bodies).
 
 The next rule covers `build.md`.
 Read the **Language** line in the `## Job` section of `<jobDir>/job.md`.

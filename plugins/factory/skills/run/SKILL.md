@@ -8,6 +8,7 @@ Plugin root: `${CLAUDE_PLUGIN_ROOT}`
 Issue: $ARGUMENTS
 
 Use plain words. The user may not be a developer.
+Follow `${CLAUDE_PLUGIN_ROOT}/ste.md` for all text to the user.
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/pipeline.md`. Follow it exactly. You are the main session.
 2. With an issue number above, run only that issue. It must be open, ready, running, or `needs-human` (with or without a PR).

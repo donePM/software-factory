@@ -6,6 +6,7 @@ disable-model-invocation: true
 Plugin root: `${CLAUDE_PLUGIN_ROOT}`
 
 You guide the user through setup. Use plain words. The user may not be a developer.
+Follow `${CLAUDE_PLUGIN_ROOT}/ste.md` for all text to the user.
 
 1. Call the tool `mcp__factory__setup` with `apply: false`. This writes nothing.
 2. Read the `checks`. For each check with `ok: false`, explain the problem in one or two simple sentences. Then give its `fix`.
