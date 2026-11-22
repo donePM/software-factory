@@ -84,7 +84,7 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 |---|---|
 | `/factory:setup` | Checks the tools, writes the config and the labels, runs a first gate check |
 | `/factory:add <todos> [--park]` | Turns free text into issues, one per piece of work, after you confirm. `--park` leaves off the `factory` label |
-| `/factory:plan <idea>` | Plans a product idea in slices and shows the plan. Answer "change" to give feedback, or "start" to create one issue for each slice |
+| `/factory:plan <idea> [--park]` | Plans a product idea in slices and shows the plan. Answer "change" to give feedback, or "start" to create one issue for each slice without a possible duplicate. `--park` creates the issues without the `factory` label |
 | `/factory:audit [part]` | Audits the repo, or the folder `part`, and shows the numbered findings. Pick findings, for example "2 and 5" or "all must fix". Each picked finding without a duplicate becomes one issue |
 | `/factory:run [n]` | Starts the ready issues (or only issue `n`) and drives them to `approved` or `needs-human`. An open issue `n` without the `factory` label gets the label and starts |
 | `/factory:status` | Shows free slots and the ready, running, and waiting jobs, with the next command for each |
