@@ -22,6 +22,15 @@ test('parseReview reads verdict and findings', () => {
   expect(parseReview('VERDICT: PASS\n\n## Summary\nFine.\n')).toEqual({ verdict: 'PASS', findings: [] })
 })
 
+test('parseReview marks a finding that needs a spec change', () => {
+  const text = 'VERDICT: CHANGES\n\n## Findings\n1. [blocker] spec: spec.md:12: AC-1 tests a constant. Fix: move AC-1 to Not tested.\n2. [should] spec: AC-2 is vague.\n3. [nit] spec: wording.\n'
+  expect(parseReview(text).findings).toEqual([
+    { severity: 'blocker', text: 'spec.md:12: AC-1 tests a constant. Fix: move AC-1 to Not tested.', spec: true },
+    { severity: 'should', text: 'AC-2 is vague.', spec: true },
+    { severity: 'nit', text: 'spec: wording.' },
+  ])
+})
+
 test('parseReview rejects a missing verdict line', () => {
   expect(() => parseReview('## Summary\nFine.\n')).toThrow()
   expect(() => parseReview('\nVERDICT: PASS\n')).toThrow()

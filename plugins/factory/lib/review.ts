@@ -1,7 +1,7 @@
 import { FactoryError } from './exec.ts'
 import { lastSection } from './jobfile.ts'
 
-export type Finding = { severity: 'blocker' | 'should' | 'nit'; text: string }
+export type Finding = { severity: 'blocker' | 'should' | 'nit'; text: string; spec?: true }
 
 const bad = (code: string, m: string): FactoryError => new FactoryError(code, m)
 const firstLine = (text: string): string => (text.split(/\r\n|\r|\n/, 1)[0] ?? '').trimEnd()
@@ -13,7 +13,10 @@ export function parseReview(text: string): { verdict: 'PASS' | 'CHANGES'; findin
   const findings: Finding[] = []
   for (const line of (lastSection(text, 'Findings') ?? '').split(/\r\n|\r|\n/)) {
     const f = /^\d+\.\s+\[(blocker|should|nit)\]\s+(.+?)\s*$/.exec(line)
-    if (f) findings.push({ severity: f[1] as Finding['severity'], text: f[2]! })
+    if (!f) continue
+    const severity = f[1] as Finding['severity']
+    const spec = severity !== 'nit' ? /^spec:\s+(.+)$/.exec(f[2]!) : null
+    findings.push(spec ? { severity, text: spec[1]!, spec: true } : { severity, text: f[2]! })
   }
   if (verdict === 'CHANGES' && !findings.some(f => f.severity !== 'nit')) {
     throw bad('bad-review', 'changes without blocker or should')
