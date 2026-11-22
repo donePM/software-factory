@@ -115,7 +115,6 @@ export async function sweep(ctx: Ctx, t: Tracker): Promise<SweepReport> {
     try {
       const state = stateOf(ticket.labels)
       // A docs job waits for the documenter, also when the issue is closed.
-      // shortcut: only tickets with a job folder or in the backlog show up, upgrade with the docs.md rebuild in job_sync.
       if (state === 'docs') {
         report.docs.push(n)
         continue
@@ -136,6 +135,11 @@ export async function sweep(ctx: Ctx, t: Tracker): Promise<SweepReport> {
     } catch (e) {
       failed(n, e)
     }
+  }
+  // The search also finds closed docs jobs with no job folder.
+  // shortcut: one search page of 50 hits, upgrade when more than 50 jobs wait in docs.
+  for (const r of await t.searchIssues('label:"factory:docs"')) {
+    if (stateOf(r.labels) === 'docs' && !report.docs.includes(r.number)) report.docs.push(r.number)
   }
   await ctx.run(['git', 'worktree', 'prune'])
   await ctx.run(['git', 'fetch', '--prune', 'origin'])

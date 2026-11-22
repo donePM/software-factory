@@ -850,7 +850,7 @@ test('a docs job publishes the wiki page and finishes', async () => {
   expect(ctx.calls).toContainEqual(['git', '-C', WIKI, 'add', '--', 'Issue-7.md'])
   expect(at(ctx, CLONE)).toBeLessThan(at(ctx, COMMIT))
   expect(at(ctx, COMMIT)).toBeLessThan(at(ctx, PUSH))
-  expect(t.comments).toEqual([{ name: 'docs', body: 'Docs: https://github.com/a/b/wiki/Issue-7' }])
+  expect(t.comments).toEqual([{ name: 'docs', body: `Docs: https://github.com/a/b/wiki/Issue-7\n\n${DOCS}` }])
   expect(t.states).toEqual(['done'])
   expect(t.log).toContain('close done')
   expect(ctx.calls).toContainEqual(['rm', '-rf', DIR])

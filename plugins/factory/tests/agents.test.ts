@@ -374,3 +374,17 @@ test('documenter example docs.md has a page', () => {
   expect(d.page).toContain('## How to use it')
   expect(d.page).toContain('## What changed')
 })
+
+// START_STEP_1 stands word for word in pipeline.md, step 1 of `## Start`.
+const START_STEP_1 = [
+  '1. Call `cleanup` without `issue`. It sweeps finished tickets.',
+  '   Show each line of its `finished` list to the operator.',
+  '   For each number `<n>` in its `docs` list, call `job_sync` with `<n>`.',
+  '   If its `rebuilt` list has `docs.md`, follow "documenter finished".',
+  '   Else start `factory:documenter` with its `<jobDir>`.',
+].join('\n')
+
+test('pipeline finishes a docs job with a rebuilt docs.md', () => {
+  expect(START_STEP_1).toContain('If its `rebuilt` list has `docs.md`, follow "documenter finished".')
+  expect(START_STEP_1).toContain('Else start `factory:documenter` with its `<jobDir>`.')
+})
