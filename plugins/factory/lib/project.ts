@@ -81,6 +81,7 @@ export async function connectProject(ctx: Ctx, tracker: Tracker, number: number 
     // shortcut: setup does not add missing options to an existing field, upgrade when operators ask for it.
     const missing = FACTORY_OPTIONS.filter(o => !board.options.has(o))
     if (missing.length > 0) report.warnings.push(`The field ${FIELD} has no option ${missing.join(', ')}. Add the options in the project settings.`)
+    // shortcut: two calls per ticket in series are slow for many tickets, upgrade to a batch when setup takes too long.
     for (const t of await tracker.backlog()) {
       const state = stateOf(t.labels)
       try {
