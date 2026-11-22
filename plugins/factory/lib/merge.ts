@@ -3,7 +3,7 @@ import { loadConfig } from './config.ts'
 import { type CleanupReport, cleanupJob, finishMerged } from './cleanup.ts'
 import { FactoryError, must } from './exec.ts'
 import { gateJob } from './gatejob.ts'
-import { intakeComment, jobSync, reviewedOf, verifyJob } from './job.ts'
+import { intakeComment, jobAdvance, jobSync, reviewedOf, verifyJob } from './job.ts'
 import { branchName, writeJob } from './jobfile.ts'
 import { stateOf } from './labels.ts'
 import { findMarked } from './markers.ts'
@@ -121,12 +121,14 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
     }
     await ctx.run(['git', '-C', wt, 'merge', '--abort'])
     const reason = `merging ${origin} into ${job.branch} has a conflict.`
-    await t.comment(issue, `Factory stopped: ${reason} The job needs a new build: the builder merges ${origin}, then the reviews run again.`)
-    if (state === 'approved') {
-      await t.setState(issue, 'needs-human')
-      await followState(t, [issue, found.number], 'needs-human')
+    // jobAdvance counts the round, applies the round limit, and sets the label and the assignees.
+    const next = await jobAdvance(ctx, t, { issue, to: 'build', from: state })
+    if (next.state !== 'build') {
+      throw new FactoryError('sync-conflict-limit', `${reason} ${next.note ?? ''}`.trim(), 'The job is needs-human. A human decides how to go on.')
     }
-    throw new FactoryError('sync-conflict', reason, `The factory undid the merge, so the worktree has no conflict now. Send the job back to build: the builder merges ${origin}, then the reviews run again.`)
+    await ctx.fs.write(`${next.roundDir}/sync.md`, `Merge ${origin} into ${job.branch}: the merge has a conflict. Resolve the conflict.\n`)
+    await t.comment(issue, `The sync with the base branch has a conflict: ${reason} Round ${next.round} starts. The builder merges ${origin}, then the reviews run again.`)
+    throw new FactoryError('sync-conflict', reason, `The factory undid the merge and started round ${next.round}. Follow pipeline.md as /factory:run ${issue}: the builder merges ${origin}, then the reviews run again.`)
   }
 
   const head = async (): Promise<string> => must(ctx, ['git', '-C', wt, 'rev-parse', 'HEAD'])
