@@ -25,12 +25,12 @@ async function checkBase(ctx: Ctx, wt: string, base: string, branch: string): Pr
 async function mergeBase(ctx: Ctx, wt: string, baseBranch: string): Promise<string> {
   const fetched = await ctx.run(['git', '-C', wt, 'fetch', 'origin', baseBranch])
   if (fetched.exitCode !== 0) {
-    throw new FactoryError('fetch-failed', `git fetch origin ${baseBranch} failed: ${fetched.stderr.trim()}`, 'Check the network and the remote, then run the gate again.')
+    throw new FactoryError('fetch-failed', `git fetch origin ${baseBranch} failed: ${fetched.stderr.trim()}`, 'Check the network and the origin remote. Then run the gate again.')
   }
   const r = await ctx.run(['git', '-C', wt, 'merge-base', 'HEAD', `origin/${baseBranch}`])
   const sha = r.stdout.trim()
   if (r.exitCode !== 0 || !SHA40.test(sha)) {
-    throw new FactoryError('bad-job-base', `no merge base of HEAD and origin/${baseBranch}`, `Merge origin/${baseBranch} into the job branch, then run the gate again.`)
+    throw new FactoryError('bad-job-base', `no merge base of HEAD and origin/${baseBranch}`, `Merge origin/${baseBranch} into the job branch. Then run the gate again.`)
   }
   return sha
 }

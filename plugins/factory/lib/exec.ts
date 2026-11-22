@@ -38,7 +38,7 @@ export async function rmrf(ctx: Ctx, path: string): Promise<void> {
   const base = normalize(`${ctx.root}/.factory`)
   const target = normalize(path)
   if (!target.startsWith(`${base}/`)) {
-    throw new FactoryError('unsafe-path', `refusing to delete ${path}`, `Only paths below ${base}/ may be deleted.`)
+    throw new FactoryError('unsafe-path', `refusing to delete ${path}`, `The factory deletes only paths below ${base}/.`)
   }
   await must(ctx, ['rm', '-rf', target])
 }

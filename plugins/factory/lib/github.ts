@@ -91,7 +91,7 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
       const from = stateOf(ticket.labels)
       if (from === 'conflict') {
         const found = ticket.labels.filter(l => l.startsWith('factory:') && l !== 'factory:pr')
-        await t.comment(n, `Factory stopped: this issue has more than one status label (${found.join(', ')}). Remove all but one, then ask the factory to continue.`)
+        await t.comment(n, `Factory stopped: this issue has more than one status label (${found.join(', ')}). Remove all status labels but one. Then ask the factory to continue.`)
         throw new FactoryError('label-conflict', `#${n} has several status labels: ${found.join(', ')}`, 'Remove all but one status label.')
       }
       assertTransition(from, to, opts)

@@ -134,6 +134,13 @@ test('setState rejects an issue with two status labels', async () => {
   expect(posts[0]!.stdin).toContain('factory:build')
 })
 
+test('the label conflict comment gives one step in each sentence', async () => {
+  const ctx = spyCtx([...writes, ...getReplies(['factory', 'factory:spec', 'factory:build'])])
+  await githubTracker(ctx, 'a/b').setState(5, 'review').catch(() => undefined)
+  const posts = ctx.stdins.filter(s => s.argv[0] === 'gh' && (s.argv.includes('POST') || s.argv[1] === 'issue' && s.argv[2] === 'comment'))
+  expect(posts.map(p => p.stdin)).toEqual(['Factory stopped: this issue has more than one status label (factory:spec, factory:build). Remove all status labels but one. Then ask the factory to continue.'])
+})
+
 test('setState needs-human to needs-human edits no label', async () => {
   const ctx = spyCtx([...writes, ...getReplies(['factory', 'factory:needs-human'])])
   await githubTracker(ctx, 'a/b').setState(5, 'needs-human')

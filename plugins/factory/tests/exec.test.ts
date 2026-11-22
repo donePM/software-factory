@@ -23,6 +23,11 @@ test('rmrf refuses a path outside .factory', async () => {
   expect(ctx.calls).toEqual([])
 })
 
+test('rmrf names the safe folder in the active voice', async () => {
+  const err = await rmrf(fakeCtx({ root: '/repo' }), '/repo/src').catch(e => e)
+  expect(err.fix).toBe('The factory deletes only paths below /repo/.factory/.')
+})
+
 test('rmrf removes a path under .factory', async () => {
   const ctx = fakeCtx({ root: '/repo', replies: [{ argv: ['rm'] }] })
   await rmrf(ctx, '/repo/.factory/jobs/7')

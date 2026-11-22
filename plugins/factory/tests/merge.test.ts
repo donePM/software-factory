@@ -280,6 +280,12 @@ test('a failed sync without MERGE_HEAD is not a conflict', async () => {
   expect(t.merges).toEqual([])
 })
 
+test('a failed sync gives one step in each sentence', async () => {
+  const fail: Reply = { argv: ['git', '-C', WT, 'merge', '--no-edit'], result: { exitCode: 128, stderr: 'fatal: Unable to create index.lock' } }
+  const { ctx, t } = setup({}, [fail, { argv: MERGE_HEAD, result: { exitCode: 1 } }])
+  await expect(merge(ctx, t, 7)).rejects.toMatchObject({ code: 'sync-failed', fix: 'Fix the git problem in the worktree. Then merge again. The label did not change.' })
+})
+
 test('a sync conflict starts a new build round', async () => {
   const { ctx, t } = setup({}, [CONFLICT])
   const err = (await merge(ctx, t, 7).catch((e: unknown) => e)) as { code: string; fix: string }
@@ -299,6 +305,15 @@ test('a sync conflict starts a new build round', async () => {
   expect(t.posts[0]?.startsWith('Factory stopped:')).toBe(false)
   expect(t.merges).toEqual([])
   expect(count(ctx.calls, 'git', '-C', WT, 'push')).toBe(0)
+})
+
+test('the merge fixes give one step in each sentence', async () => {
+  const conflict = setup({}, [CONFLICT])
+  await expect(merge(conflict.ctx, conflict.t, 7)).rejects.toMatchObject({ code: 'sync-conflict', fix: 'The factory undid the merge and started round 2. Follow pipeline.md as /factory:run 7. The builder merges origin/main. Then the reviews run again.' })
+  const gate = setup({}, [{ argv: ['vp', 'lint'], result: { exitCode: 1 } }])
+  await expect(merge(gate.ctx, gate.t, 7)).rejects.toMatchObject({ code: 'gate-failed', fix: `Fix the failures. Then merge again. See ${DIR}/merge/checks.md.` })
+  const open = setup({ noMerge: true })
+  await expect(merge(open.ctx, open.t, 7)).rejects.toMatchObject({ code: 'merge-failed', fix: 'Check the PR on GitHub. Then merge again.' })
 })
 
 test('a sync conflict from needs-human starts a new build round', async () => {

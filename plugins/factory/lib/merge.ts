@@ -82,7 +82,7 @@ async function syncBase(ctx: Ctx, wt: string, issue: number, base: string): Prom
   // Only a stopped merge leaves MERGE_HEAD. Other failures (lock, disk, bad ref) are no conflict.
   const conflict = (await ctx.run(['git', '-C', wt, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0
   if (!conflict) {
-    throw new FactoryError('sync-failed', `git merge ${origin} failed in ${wt}: ${(sync.stderr || sync.stdout).trim()}`, 'Fix the git problem in the worktree, then merge again. The label did not change.')
+    throw new FactoryError('sync-failed', `git merge ${origin} failed in ${wt}: ${(sync.stderr || sync.stdout).trim()}`, 'Fix the git problem in the worktree. Then merge again. The label did not change.')
   }
   await ctx.run(['git', '-C', wt, 'merge', '--abort'])
   return false
@@ -184,7 +184,7 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
     if (next.state !== 'build') {
       throw new FactoryError('sync-conflict-limit', `${reason} ${next.note ?? ''}`.trim(), 'The job is needs-human. A human decides how to go on.')
     }
-    throw new FactoryError('sync-conflict', reason, `The factory undid the merge and started round ${next.round}. Follow pipeline.md as /factory:run ${issue}: the builder merges ${origin}, then the reviews run again.`)
+    throw new FactoryError('sync-conflict', reason, `The factory undid the merge and started round ${next.round}. Follow pipeline.md as /factory:run ${issue}. The builder merges ${origin}. Then the reviews run again.`)
   }
 
   const head = async (): Promise<string> => must(ctx, ['git', '-C', wt, 'rev-parse', 'HEAD'])
@@ -196,7 +196,7 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   await t.upsertComment(issue, 'intake', intakeComment(job, intake))
 
   const gate = await gateJob(ctx, issue, 'merge')
-  if (gate.verdict !== 'PASS') throw new FactoryError('gate-failed', gate.report, `Fix the failures, then merge again. See ${job.jobDir}/merge/checks.md.`)
+  if (gate.verdict !== 'PASS') throw new FactoryError('gate-failed', gate.report, `Fix the failures. Then merge again. See ${job.jobDir}/merge/checks.md.`)
   if ((await head()) !== sha) throw new FactoryError('gate-not-green', 'HEAD moved during the gate', 'Merge again.')
   await must(ctx, ['git', '-C', wt, 'push', 'origin', `${sha}:refs/heads/${job.branch}`])
 
@@ -218,7 +218,7 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   await t.merge(pr.number, `${pr.title} (#${pr.number})`, sha)
   const after = await t.prState(pr.number)
   if (after.state !== 'MERGED') {
-    throw new FactoryError('merge-failed', `PR #${pr.number} is not merged`, 'Check the PR on GitHub, then merge again.')
+    throw new FactoryError('merge-failed', `PR #${pr.number} is not merged`, 'Check the PR on GitHub. Then merge again.')
   }
   await t.setState(issue, 'done')
   await followState(t, [issue, pr.number], 'done')
