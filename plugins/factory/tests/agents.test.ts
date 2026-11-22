@@ -317,3 +317,27 @@ test('decision example ESCALATE parses with a question', () => {
   expect(d.summary).not.toBe('')
   expect(d.question ?? '').not.toBe('')
 })
+
+// These examples also stand word for word in agents/gate-runner.md and pipeline.md (the gate-runner spawn prompt).
+const GATE_PROMPT = '/repo/.factory/jobs/42/round-2'
+const GATE_BAD_PROMPT = '/repo/.factory/jobs/64'
+const GATE_SETUP_PROMPT = '/repo/.factory/gate/setup'
+
+const GATE_JOB = /^\/.+\/\.factory\/jobs\/(\d+)\/round-(\d+)$/
+const GATE_SETUP = /^\/.+\/\.factory\/gate\/setup$/
+
+test('gate-runner example prompt names a round folder', () => {
+  const m = GATE_JOB.exec(GATE_PROMPT)
+  expect(m?.[1]).toBe('42')
+  expect(`round-${m?.[2]}`).toBe('round-2')
+})
+
+test('gate-runner example rejects a job folder without a round', () => {
+  expect(GATE_JOB.test(GATE_BAD_PROMPT)).toBe(false)
+  expect(GATE_SETUP.test(GATE_BAD_PROMPT)).toBe(false)
+})
+
+test('gate-runner example accepts the setup path', () => {
+  expect(GATE_SETUP.test(GATE_SETUP_PROMPT)).toBe(true)
+  expect(GATE_JOB.test(GATE_SETUP_PROMPT)).toBe(false)
+})
