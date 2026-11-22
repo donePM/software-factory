@@ -87,6 +87,9 @@ Resume table, by the status label of the job:
 Run only issue `<n>`. Skip step 4 for other issues.
 - `<n>` is in `next`: do step 4 for it.
 - `<n>` is running: do step 3 for it.
+  A `sync-conflict` of `/factory:merge` sets the job to `build` in a new round.
+  The round has `sync.md`, so the builder merges the base branch first.
+  <!-- shortcut: only the merge session starts this round, upgrade when a run session must watch for new rounds -->
 - `<n>` is `needs-human`, with or without a PR: the human fixed the cause or
   answered in the issue. Call `job_sync`, then `job_advance` with `to: build`.
   Start `factory:builder` with the new `<roundDir>`. The builder reads
@@ -165,7 +168,8 @@ Read the first line of `decision.md`.
 - `DECISION: ESCALATE`: call `job_advance` with `to: needs-human`.
 
 Then call `status` and show its text. Tell the human to review the PR and run
-`/factory:merge <n>`. Do not merge.
+`/factory:merge <n>`. Do not merge. On a conflict with the base branch, the
+job goes back to build on its own, and the human merges again after the round.
 
 ### Errors
 - An agent from the table, other than `factory:gate-runner`, finished
