@@ -175,6 +175,13 @@ test('queue calls get only for needs-info tickets and dependencies', async () =>
   expect(tr.gets).toEqual([])
 })
 
+test('queue reads a dependency from the backlog without a call', async () => {
+  const tr = tracker([T(1, [], { body: 'Depends on #3, #4' }), T(2, [], { body: 'Depends on #3' }), T(3)], [T(4, [], { state: 'closed' })])
+  const q = await queue(ctx, tr, cfg)
+  expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[1, [3]], [2, [3]]])
+  expect(tr.gets).toEqual([4])
+})
+
 test('queue puts a ticket with two status labels into conflicts', async () => {
   const q = await queue(ctx, tracker([T(1, ['factory:spec', 'factory:build']), T(2)]), cfg)
   expect(q.conflicts).toEqual([1])
