@@ -117,6 +117,17 @@ test('withBoard turns a GraphQL rate limit into a warning and keeps the label ch
   expect(warnings[0]).toContain('Fix: Wait')
 })
 
+test('withBoard explains unknown owner type and keeps the label change', async () => {
+  const ctx = fakeCtx({ replies: [{ argv: ['gh', 'project', 'view'], result: { exitCode: 1, stderr: 'unknown owner type' } }] })
+  const { tracker, warnings } = onBoard(ctx, fake())
+  await tracker.setState(7, 'spec')
+  expect(boardCalls(ctx.calls)).toEqual(['setState 7 spec', 'gh project view'])
+  expect(warnings).toHaveLength(1)
+  for (const part of ['#7: ', 'unknown owner type', 'owner "o"', 'probable', 'rate limit', 'Fix: Wait', 'job_advance']) {
+    expect(warnings[0]).toContain(part)
+  }
+})
+
 test('no gh project call with the project off', async () => {
   for (const cfg of [{ project: { enabled: false, number: 3 } }, {}]) {
     const ctx = fakeCtx({ replies: boardReplies })
@@ -267,4 +278,13 @@ test('a rate-limited board write with cached ids keeps the ids', async () => {
   expect(warnings).toHaveLength(1)
   expect(warnings[0]).toContain(FIX)
   expect(warnings[0]).not.toContain('Delete the ## Board section')
+})
+
+test('boardDrift explains unknown owner type', async () => {
+  const ctx = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-list'], result: { exitCode: 1, stderr: 'Unknown owner type' } }] })
+  const lines = await boardDrift(ctx, fake(), ON, [T(63)])
+  expect(lines).toHaveLength(1)
+  expect(lines[0]).toMatch(/^board check failed: /)
+  expect(lines[0]).toContain('could not resolve the owner "o"')
+  expect(lines[0]).toContain('probable')
 })
