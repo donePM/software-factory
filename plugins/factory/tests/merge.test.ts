@@ -32,7 +32,7 @@ const WT8 = '/repo/.factory/worktrees/8'
 const J8: Job = { ...J, issue: 8, title: 'Other', jobDir: DIR8, worktree: WT8, branch: 'factory/8', pr: 10 }
 
 type Other = { n: number; labels: string[]; pr?: Partial<PrState> | null; job?: Partial<Job> }
-type Opts = { job?: Partial<Job>; labels?: string[]; pr?: Partial<PrState>; author?: string; approved?: boolean; closed?: boolean; noMerge?: boolean; prs?: PrState[]; reads?: Partial<PrState>[]; others?: Other[] }
+type Opts = { job?: Partial<Job>; labels?: string[]; pr?: Partial<PrState>; author?: string; approved?: boolean; closed?: boolean; noMerge?: boolean; prs?: PrState[]; reads?: Partial<PrState>[]; others?: Other[]; stuckLabels?: boolean }
 
 function tracker(o: Opts = {}) {
   const log: string[] = []
@@ -77,6 +77,7 @@ function tracker(o: Opts = {}) {
         return
       }
       states.push(to)
+      if (!o.stuckLabels) issue.labels = ['factory', `factory:${to}`]
     },
     upsertComment: async (n: number, name: MarkerName, body: string): Promise<Comment> => {
       const c: Comment = { id: 2, author: 'op', body: withMarker(name, body), createdAt: at, updatedAt: at }
@@ -543,6 +544,25 @@ test('merge sets done, closes the issue and cleans up', async () => {
   expect(t.log).toContain('close done')
   expect(ctx.calls).toContainEqual(['rm', '-rf', DIR])
   expect(r.cleanup.removed).toContain(DIR)
+})
+
+test('merge returns the state that the issue has after the merge', async () => {
+  const { ctx, t } = setup()
+  const r = await merge(ctx, t, 7)
+  expect(r.state).toBe('done')
+})
+
+test('merge returns the state read back, not the state it set', async () => {
+  const { ctx, t } = setup({ stuckLabels: true })
+  const r = await merge(ctx, t, 7)
+  expect(t.states).toEqual(['done'])
+  expect(r.state).toBe('approved')
+})
+
+test('merge of a PR merged on GitHub returns the state done', async () => {
+  const { ctx, t } = setup({ labels: ['factory:approved'], pr: { state: 'MERGED', mergeCommit: MERGE } })
+  const r = await merge(ctx, t, 7)
+  expect(r.state).toBe('done')
 })
 
 test('merge reports the merge commit, not the branch head', async () => {
