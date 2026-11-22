@@ -83,3 +83,6 @@ The `documenter` agent writes one page into `docs.md`.
 It also pushes the pages in `docs/wiki/` of the repo, for example this page.
 Then it posts the link comment, sets `done`, and cleans up.
 A failed wiki push sets `needs-human`. The merge stays.
+`/factory:status` shows the closed job.
+Fix the cause. Then run `/factory:run` without an issue number.
+The sweep sets `docs` again, and the documenter runs again.

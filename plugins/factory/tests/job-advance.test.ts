@@ -562,7 +562,7 @@ test('needs-human without a reason is only for a review decision', async () => {
 
 test('unsupported targets and illegal moves are refused', async () => {
   const a = inBuild()
-  await expect(jobAdvance(a.ctx, a.t, { issue: 7, to: 'done' })).rejects.toMatchObject({ code: 'unsupported-target', fix: 'Use the merge tool to move a job to done.' })
+  await expect(jobAdvance(a.ctx, a.t, { issue: 7, to: 'done' })).rejects.toMatchObject({ code: 'unsupported-target', fix: 'Use the merge tool for an open PR. For a merged PR, run /factory:run without an issue number.' })
   const b = inBuild()
   await rejects(jobAdvance(b.ctx, b.t, { issue: 7, to: 'rejected' }), 'illegal-transition')
 })
@@ -911,7 +911,7 @@ test('a failed wiki push moves a docs job to needs-human', async () => {
     const { ctx, t } = inDocs(DOCS, [...replies])
     const r = await jobAdvance(ctx, t, { issue: 7, to: 'done' })
     expect(r.state).toBe('needs-human')
-    expect(t.posts).toEqual([`Factory stopped: the wiki push failed: ${error}`])
+    expect(t.posts).toEqual([`Factory stopped: the wiki push failed: ${error}\n\nFix the cause. Then run /factory:run without an issue number.`])
     expect(t.states).toEqual(['needs-human'])
     expect(t.comments).toEqual([])
     expect(t.log).toEqual([])

@@ -125,6 +125,8 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
    `<jobDir>/docs.md`. The factory pushes it as the wiki page `Issue-<n>` and
    posts the link in a `<!-- factory:docs -->` comment. Then it sets `done`
    and cleans up. A failed wiki push sets `needs-human`. The merge stays.
+   `/factory:status` shows the closed job. Fix the cause. Then run
+   `/factory:run` without an issue number. The sweep sets `docs` again.
 
 The factory account is assignee of the issue and the PR in `intake`, `spec`, `build`, and `review`, and not in wait or end states.
 

@@ -237,6 +237,7 @@ test('tool queue returns the queue', async () => {
     replies: [
       { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'], result: { stdout: JSON.stringify(issue) } },
       { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:docs&state=closed&per_page=100'] },
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:needs-human&state=closed&per_page=100'] },
     ],
   })
   const q = (await def.handler(c, {})) as { ready: { number: number }[]; slots: number }
@@ -253,6 +254,7 @@ test('tool queue counts a closed docs job against the slots', async () => {
     replies: [
       { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'], result: { stdout: JSON.stringify(issue) } },
       { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:docs&state=closed&per_page=100'], result: { stdout: JSON.stringify(docs) } },
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:needs-human&state=closed&per_page=100'] },
     ],
   })
   const q = (await def.handler(c, {})) as { running: { number: number; state: string }[]; slots: number }
@@ -456,6 +458,7 @@ test('tool queue takes an issue', async () => {
       { argv: ['gh', 'api', '-X', 'POST'] },
       { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
       { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:docs&state=closed&per_page=100'] },
+      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:needs-human&state=closed&per_page=100'] },
     ],
   })
   const q = (await def.handler(c, { issue: 9 })) as { next: { number: number }[] }

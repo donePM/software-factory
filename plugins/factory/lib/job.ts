@@ -323,7 +323,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
   if (from === 'conflict') throw new FactoryError('label-conflict', `#${n} has several status labels`, 'Remove all but one status label.')
   // A late notification must not move a job that left the step it reports on.
   if (input.from !== undefined && from !== input.from) throw new FactoryError('state-moved', `#${n} is ${from ?? 'not a job'}, not ${input.from}`, 'Ignore this notification.')
-  if (!SUPPORTED.includes(to) && !(to === 'done' && from === 'docs')) throw new FactoryError('unsupported-target', `job_advance cannot move to ${to}`, 'Use the merge tool to move a job to done.')
+  if (!SUPPORTED.includes(to) && !(to === 'done' && from === 'docs')) throw new FactoryError('unsupported-target', `job_advance cannot move to ${to}`, 'Use the merge tool for an open PR. For a merged PR, run /factory:run without an issue number.')
   assertTransition(from, to)
   const dir = jobDir(ctx.root, n)
   if (!(await ctx.fs.exists(`${dir}/job.md`))) throw new FactoryError('no-job', `${dir}/job.md does not exist`, 'Run job_create first.')
@@ -553,7 +553,7 @@ async function advanceDocs(ctx: Ctx, t: Tracker, job: Job, ticket: Ticket): Prom
   try {
     await publishWiki(ctx, t.repo, n, `${job.jobDir}/wiki`, docs.page, `${job.worktree}/docs/wiki`)
   } catch (e) {
-    await t.comment(n, `Factory stopped: the wiki push failed: ${e instanceof Error ? e.message : String(e)}`)
+    await t.comment(n, `Factory stopped: the wiki push failed: ${e instanceof Error ? e.message : String(e)}\n\nFix the cause. Then run /factory:run without an issue number.`)
     await moveJob(t, job, 'needs-human')
     return done(job, 'needs-human')
   }

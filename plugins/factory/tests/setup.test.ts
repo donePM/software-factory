@@ -22,6 +22,7 @@ const replies = (head = 'refs/remotes/origin/main'): Reply[] => [
   { argv: ['gh', 'api', '-X', 'POST'] },
   { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
   { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:docs&state=closed&per_page=100'] },
+  { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:needs-human&state=closed&per_page=100'] },
   { argv: ['gh', 'api', '-X', 'PATCH'] },
 ]
 const labelCreates = (calls: string[][]) => calls.filter(c => c[3] === 'POST' && c[4] === 'repos/a/b/labels').length
