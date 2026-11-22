@@ -67,6 +67,10 @@ The first line is machine-readable: `VERDICT: PASS|CHANGES`. Write exactly
 - `## Findings`: a numbered list. Each line is
   `N. [blocker|should|nit] <file>:<line>: problem. Fix: …`. Write `- none`
   when you have no findings.
+  When the builder cannot fix a finding without a change to `spec.md`, mark it
+  with `spec:`. The line is
+  `N. [blocker|should] spec: <file>:<line>: problem. Fix: <the spec change>`.
+  Then the factory stops at `needs-human` and starts no new build round.
 - `## Checked`: what you checked and found correct, one line for each item.
 
 Write `VERDICT: CHANGES` only for a `blocker` or a `should`. Nits never block.

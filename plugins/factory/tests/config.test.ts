@@ -114,3 +114,11 @@ test('validateConfig checks the language', () => {
     expect(validateConfig({ ...c, language })).toEqual(['language must be a short single-line name'])
   }
 })
+
+test('validateConfig checks merge.auto', () => {
+  const c = defaultConfig(url, 'main', [])
+  expect(validateConfig(c)).toEqual([])
+  expect(validateConfig({ ...c, merge: { method: 'merge', auto: true } })).toEqual([])
+  expect(validateConfig({ ...c, merge: { method: 'merge', auto: false } })).toEqual([])
+  for (const auto of ['yes', 1]) expect(validateConfig({ ...c, merge: { method: 'merge', auto } })).toEqual(['merge.auto must be a boolean'])
+})
