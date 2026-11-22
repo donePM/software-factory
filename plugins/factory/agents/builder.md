@@ -191,6 +191,9 @@ Commit each message through a file:
   exists, or when `decision.md` or a human comment asks for a sync. Never merge the Branch into the base branch or into
   a different branch.
 - Do not call factory tools. Do not run `gh`. You have no GitHub access.
+- Do not go around a denied command, for example with a script or another language.
+  For a file change, use Edit or Write. If you cannot finish without the denied
+  command, write `STATUS: BLOCKED` and give the denied command as the reason.
 - Do not change other job files, `job.md`, or `.factory/config.json`.
 - Do not change the paths in `protectedPaths` of `.factory/config.json`. The gate fails on them.
 
