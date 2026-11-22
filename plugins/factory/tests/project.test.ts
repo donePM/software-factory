@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { readJob, renderJob, type BoardIds, type Job } from '../lib/jobfile.ts'
 import { STATUS } from '../lib/labels.ts'
-import { addToBacklog, boardDrift, FACTORY_OPTIONS, optionFor, withBoard } from '../lib/project.ts'
+import { addToBacklog, boardDrift, connectProject, FACTORY_OPTIONS, optionFor, withBoard } from '../lib/project.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import type { State, Ticket } from '../lib/types.ts'
 import { boardCalls, boardReplies, edit, itemList, ON, onBoard, optionId } from './support/board.ts'
@@ -219,4 +219,52 @@ test('addToBacklog turns board failures into warnings and skips an off board', a
   const none = fakeCtx({ replies: boardReplies })
   expect(await addToBacklog(none, fake(), { project: { enabled: true } }, [7])).toEqual(['project.number is missing. Run /factory:setup project.'])
   expect(none.calls).toEqual([])
+})
+
+const RATE = { exitCode: 1, stderr: 'GraphQL: API rate limit already exceeded for user ID 1.' }
+const FIX = ' Fix: Wait at least 5 minutes. Then call the tool again. Do not retry at once.'
+
+test('boardDrift gives a rate limit a Fix line', async () => {
+  const ctx = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-list'], result: RATE }] })
+  const lines = await boardDrift(ctx, fake(), ON, [T(63)])
+  expect(lines).toHaveLength(1)
+  expect(lines[0]?.startsWith('board check failed: ')).toBe(true)
+  expect(lines[0]).toContain(FIX)
+})
+
+test('addToBacklog stops at a rate limit and gives a Fix line', async () => {
+  const ctx = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-add'], result: RATE }, ...boardReplies] })
+  const warnings = await addToBacklog(ctx, fake(), ON, [7, 8, 9])
+  expect(boardCalls(ctx.calls)).toEqual(['gh project view', 'gh project field-list', 'gh project item-add'])
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]?.startsWith('#7: ')).toBe(true)
+  expect(warnings[0]).toContain(FIX)
+  const view = fakeCtx({ replies: [{ argv: ['gh', 'project', 'view'], result: RATE }] })
+  const failed = await addToBacklog(view, fake(), ON, [7])
+  expect(failed).toHaveLength(1)
+  expect(failed[0]).toContain(FIX)
+})
+
+test('connectProject gives a rate limit a Fix line', async () => {
+  const scope = { argv: ['gh', 'auth', 'status'], result: { stdout: "Logged in to github.com account octo\n- Token scopes: 'project', 'repo'" } }
+  const tr = { ...fake(), backlog: async () => [T(7)] } as unknown as Tracker
+  const ctx = fakeCtx({ replies: [scope, { argv: ['gh', 'project', 'view'], result: RATE }] })
+  const report = await connectProject(ctx, tr, 3)
+  expect(report.warnings).toHaveLength(1)
+  expect(report.warnings[0]).toContain(FIX)
+  const add = fakeCtx({ replies: [scope, { argv: ['gh', 'project', 'item-add'], result: RATE }, ...boardReplies] })
+  const r = await connectProject(add, tr, 3)
+  expect(r.warnings).toHaveLength(1)
+  expect(r.warnings[0]?.startsWith('#7: ')).toBe(true)
+  expect(r.warnings[0]).toContain(FIX)
+})
+
+test('a rate-limited board write with cached ids keeps the ids', async () => {
+  const ctx = fakeCtx({ files: withJob(IDS), replies: [{ argv: ['gh', 'project', 'item-edit'], result: RATE }, ...boardReplies] })
+  const { tracker, warnings } = onBoard(ctx, fake(false, 'intake'))
+  await tracker.setState(7, 'spec')
+  expect(boardCalls(ctx.calls)).toEqual(['setState 7 spec', 'gh project item-edit'])
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]).toContain(FIX)
+  expect(warnings[0]).not.toContain('Delete the ## Board section')
 })

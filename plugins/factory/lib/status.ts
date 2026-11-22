@@ -1,7 +1,8 @@
 import type { Config } from './config.ts'
 import { branchName } from './jobfile.ts'
 import { findMarked, stripMarker } from './markers.ts'
-import { boardDrift } from './project.ts'
+import { boardDrift, listCards } from './project.ts'
+import type { CardReader, Cards } from './project.ts'
 import { queue } from './queue.ts'
 import type { Queue } from './queue.ts'
 import type { Tracker } from './tracker.ts'
@@ -75,10 +76,12 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
 // One gh call per waiting ticket that can have a PR, and one more per needs-human ticket for its cause.
 // A failed lookup leaves the PR or the cause out. With the project on, one more call reads the board.
 export async function statusFor(ctx: Ctx, base: Tracker, cfg: Config): Promise<string> {
-  // The queue and the board check share one backlog read.
+  // The queue and the board check share one backlog read and one card read.
   const backlog = base.backlog()
   const tr: Tracker = { ...base, backlog: () => backlog }
-  const q = await queue(ctx, tr, cfg)
+  let cards: Promise<Cards> | undefined
+  const read: CardReader = (owner, n) => (cards ??= listCards(ctx, owner, n))
+  const q = await queue(ctx, tr, cfg, undefined, read)
   const titles: Record<number, string> = {}
   const tickets = await backlog
   for (const t of tickets) titles[t.number] = t.title
@@ -93,5 +96,5 @@ export async function statusFor(ctx: Ctx, base: Tracker, cfg: Config): Promise<s
     const cause = ticket === null ? undefined : causeOf(ticket.comments, await tr.login())
     if (cause !== undefined) causes[w.number] = cause
   }
-  return statusText(tr.repo, q, prs, cfg.concurrency, titles, causes, await boardDrift(ctx, tr, cfg, tickets))
+  return statusText(tr.repo, q, prs, cfg.concurrency, titles, causes, await boardDrift(ctx, tr, cfg, tickets, read))
 }

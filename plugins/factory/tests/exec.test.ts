@@ -32,6 +32,16 @@ test('must names a GitHub rate limit and tells the operator to wait', async () =
   expect((await must(git, ['git', 'push']).catch(e => e)).code).toBe('command-failed')
 })
 
+test('the rate-limit fix names the secondary rate limit and the wait', async () => {
+  const ctx = fakeCtx({ replies: [{ argv: ['gh'], result: { exitCode: 1, stderr: 'GraphQL: API rate limit already exceeded for user ID 1.' } }] })
+  const err = await must(ctx, ['gh', 'project', 'item-list']).catch(e => e)
+  expect(err.fix).toContain('secondary rate limit')
+  expect(err.fix).toContain('gh api rate_limit does not show it')
+  expect(err.fix).toContain('Wait at least 5 minutes.')
+  expect(err.fix).toContain('Then call the tool again.')
+  expect(err.fix).toContain('Do not retry at once.')
+})
+
 test('rmrf refuses a path outside .factory', async () => {
   const ctx = fakeCtx({ root: '/repo' })
   const err = await rmrf(ctx, '/repo/src').catch(e => e)
