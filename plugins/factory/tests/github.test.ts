@@ -31,6 +31,7 @@ const getReplies = (labels: string[], comments: unknown[] = [], n = 5): Reply[] 
 ]
 const BACKLOG_ARGV = ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100', '--paginate', '--jq', '.[]']
 const DOCS_ARGV = ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:docs&state=closed&per_page=100', '--paginate', '--jq', '.[]']
+const HUMAN_ARGV = ['gh', 'api', 'repos/a/b/issues?labels=factory,factory:needs-human&state=closed&per_page=100', '--paginate', '--jq', '.[]']
 // Each gh call that is not a REST call is GraphQL.
 const graphql = (calls: string[][]): string[][] => calls.filter(c => c[0] === 'gh' && (c[1] !== 'api' || c[2] === 'graphql'))
 
@@ -40,9 +41,9 @@ test('repoFromUrl handles https, .git and ssh', () => {
   expect(repoFromUrl('git@github.com:a/b.git')).toBe('a/b')
 })
 
-test('backlog is two REST calls and drops pull requests', async () => {
+test('backlog is three REST calls and drops pull requests', async () => {
   const pr = issueJson(['factory'], 8, { pull_request: { url: 'x' } })
-  const ctx = spyCtx([{ argv: BACKLOG_ARGV.slice(0, 3), result: { stdout: `${issueJson(['factory', 'factory:spec'])}\n${pr}\n${issueJson(['factory'], 6, { body: null })}` } }, { argv: DOCS_ARGV.slice(0, 3) }])
+  const ctx = spyCtx([{ argv: BACKLOG_ARGV.slice(0, 3), result: { stdout: `${issueJson(['factory', 'factory:spec'])}\n${pr}\n${issueJson(['factory'], 6, { body: null })}` } }, { argv: DOCS_ARGV.slice(0, 3) }, { argv: HUMAN_ARGV.slice(0, 3) }])
   const [t, u, ...rest] = await githubTracker(ctx, 'a/b').backlog()
   expect(t).toEqual({
     kind: 'issue', number: 5, title: 'T', body: 'B', author: 'alice', labels: ['factory', 'factory:spec'],
@@ -50,7 +51,7 @@ test('backlog is two REST calls and drops pull requests', async () => {
   })
   expect(u?.body).toBe('')
   expect(rest).toEqual([])
-  expect(ctx.calls).toEqual([BACKLOG_ARGV, DOCS_ARGV])
+  expect(ctx.calls).toEqual([BACKLOG_ARGV, DOCS_ARGV, HUMAN_ARGV])
 })
 
 test('backlog also reads closed issues in the docs state', async () => {
@@ -59,10 +60,24 @@ test('backlog also reads closed issues in the docs state', async () => {
   const ctx = spyCtx([
     { argv: BACKLOG_ARGV.slice(0, 3), result: { stdout: issueJson(['factory']) } },
     { argv: DOCS_ARGV.slice(0, 3), result: { stdout: `${closed}\n${pr}` } },
+    { argv: HUMAN_ARGV.slice(0, 3) },
   ])
   const list = await githubTracker(ctx, 'a/b').backlog()
   expect(list.map(t => [t.number, t.state])).toEqual([[5, 'open'], [7, 'closed']])
-  expect(ctx.calls).toEqual([BACKLOG_ARGV, DOCS_ARGV])
+  expect(ctx.calls).toEqual([BACKLOG_ARGV, DOCS_ARGV, HUMAN_ARGV])
+})
+
+test('backlog also reads closed issues in the needs-human state', async () => {
+  const closed = issueJson(['factory', 'factory:needs-human'], 7, { state: 'closed' })
+  const pr = issueJson(['factory', 'factory:needs-human'], 9, { state: 'closed', pull_request: { url: 'x' } })
+  const ctx = spyCtx([
+    { argv: BACKLOG_ARGV.slice(0, 3), result: { stdout: issueJson(['factory']) } },
+    { argv: DOCS_ARGV.slice(0, 3) },
+    { argv: HUMAN_ARGV.slice(0, 3), result: { stdout: `${closed}\n${pr}` } },
+  ])
+  const list = await githubTracker(ctx, 'a/b').backlog()
+  expect(list.map(t => [t.number, t.state, t.labels.at(-1)])).toEqual([[5, 'open', 'factory'], [7, 'closed', 'factory:needs-human']])
+  expect(ctx.calls).toEqual([BACKLOG_ARGV, DOCS_ARGV, HUMAN_ARGV])
 })
 
 test('backlog reads the Priority field value', async () => {
@@ -70,11 +85,11 @@ test('backlog reads the Priority field value', async () => {
     { number: 5, issue_field_values: [{ issue_field_id: 29998494, data_type: 'single_select', value: 'High', single_select_option: { name: 'High' } }] },
     { number: 6, issue_field_values: [] },
   ]
-  const ctx = spyCtx([{ argv: BACKLOG_ARGV.slice(0, 3), result: { stdout: fields.map(f => issueJson(['factory'], f.number, f)).join('\n') } }, { argv: DOCS_ARGV.slice(0, 3) }])
+  const ctx = spyCtx([{ argv: BACKLOG_ARGV.slice(0, 3), result: { stdout: fields.map(f => issueJson(['factory'], f.number, f)).join('\n') } }, { argv: DOCS_ARGV.slice(0, 3) }, { argv: HUMAN_ARGV.slice(0, 3) }])
   const [a, b] = await githubTracker(ctx, 'a/b').backlog()
   expect(a?.priority).toBe('High')
   expect(b).not.toHaveProperty('priority')
-  expect(ctx.calls).toEqual([BACKLOG_ARGV, DOCS_ARGV])
+  expect(ctx.calls).toEqual([BACKLOG_ARGV, DOCS_ARGV, HUMAN_ARGV])
 })
 
 test('get filters nothing but loads comments', async () => {

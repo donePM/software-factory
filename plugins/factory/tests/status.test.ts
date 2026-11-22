@@ -51,6 +51,7 @@ test('statusFor lists a closed docs job under Running', async () => {
     replies: [
       { argv: ['gh', 'api', 'repos/o/r/issues?labels=factory&state=open&per_page=100'], result: { stdout: raw(1, ['factory'], 'open') } },
       { argv: ['gh', 'api', 'repos/o/r/issues?labels=factory,factory:docs&state=closed&per_page=100'], result: { stdout: raw(87, ['factory', 'factory:docs'], 'closed') } },
+      { argv: ['gh', 'api', 'repos/o/r/issues?labels=factory,factory:needs-human&state=closed&per_page=100'] },
     ],
   })
   const text = await statusFor(ctx, githubTracker(ctx, 'o/r'), { ...defaultConfig('u', 'main', []), concurrency: 2 })
@@ -349,4 +350,24 @@ test('statusFor shows the round limit step', async () => {
   } as unknown as Tracker
   const text = await statusFor(fakeCtx(), tr, { ...defaultConfig('u', 'main', []), concurrency: 2 })
   expect(lineWith(text, '#2')).toBe('  #2 t2  needs you: Round 3 reached the round limit of 3. · increase maxRounds in .factory/config.json. Then run /factory:run 2')
+})
+
+test('statusFor lists a closed needs-human job with the run step', async () => {
+  const stop = C(1, 'op', 'Factory stopped: the wiki push failed: fatal: no login\n\nFix the cause. Then run /factory:run without an issue number.', '2026-01-02T00:00:00Z')
+  const T = (n: number, state: 'open' | 'closed', comments: Comment[]): Ticket => ({
+    kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', 'factory:needs-human'],
+    state, createdAt: '2026-01-01T00:00:00Z', url: `u/${n}`, comments,
+  })
+  const tickets = [T(87, 'closed', [stop]), T(9, 'open', [C(2, 'op', 'Factory stopped: Builder blocked.', '2026-01-02T00:00:00Z')])]
+  const tr = {
+    repo: 'o/r',
+    login: async () => 'op',
+    backlog: async () => tickets,
+    get: async (n: number) => tickets.find(t => t.number === n)!,
+    findPr: async (b: string) => (b === 'factory/87' ? { number: 135 } : null),
+  } as unknown as Tracker
+  const text = await statusFor(fakeCtx(), tr, { ...defaultConfig('u', 'main', []), concurrency: 2 })
+  expect(text).toContain('Waiting for you')
+  expect(lineWith(text, '#87')).toBe('  #87 t87  needs you: the wiki push failed: fatal: no login · fix the cause. Then run /factory:run (https://github.com/o/r/pull/135)')
+  expect(lineWith(text, '#9 ')).toBe('  #9 t9  needs you: Builder blocked. · fix the cause. Then run /factory:run 9')
 })
