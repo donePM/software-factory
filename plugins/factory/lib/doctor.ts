@@ -51,18 +51,28 @@ export function lacksScope(text: string, scope: string): boolean {
   return scopes !== undefined && !scopes.split(',').map(s => s.trim().replace(/^'|'$/g, '')).includes(scope)
 }
 
-async function auth(ctx: Ctx): Promise<Check> {
+type Auth = { check: Check; text: string; login: string }
+
+async function auth(ctx: Ctx): Promise<Auth> {
   const r = await ctx.run(['gh', 'auth', 'status'])
   const text = `${r.stdout}\n${r.stderr}`
-  if (r.exitCode !== 0) {
-    if (/not logged in/i.test(text)) return { check: 'gh auth', ok: false, detail: 'gh is not logged in', fix: LOGIN }
-    return { check: 'gh auth', ok: false, detail: `gh auth status failed: ${first(text)}`, fix: 'Wait a moment, then run setup again.' }
-  }
   const login = /account (\S+)/.exec(text)?.[1] ?? 'unknown'
-  if (lacksScope(text, 'repo')) {
-    return { check: 'gh auth', ok: false, detail: `${login} has no repo scope`, fix: 'gh auth refresh -s repo' }
+  const out = (check: Check): Auth => ({ check, text, login })
+  if (r.exitCode !== 0) {
+    if (/not logged in/i.test(text)) return out({ check: 'gh auth', ok: false, detail: 'gh is not logged in', fix: LOGIN })
+    return out({ check: 'gh auth', ok: false, detail: `gh auth status failed: ${first(text)}`, fix: 'Wait a moment, then run setup again.' })
   }
-  return { check: 'gh auth', ok: true, detail: `logged in as ${login}` }
+  if (lacksScope(text, 'repo')) {
+    return out({ check: 'gh auth', ok: false, detail: `${login} has no repo scope`, fix: 'gh auth refresh -s repo' })
+  }
+  return out({ check: 'gh auth', ok: true, detail: `logged in as ${login}` })
+}
+
+function projectScope({ text, login }: Auth): Check {
+  if (lacksScope(text, 'project')) {
+    return { check: 'project scope', ok: false, detail: `${login} has no project scope`, fix: 'gh auth refresh -s project' }
+  }
+  return { check: 'project scope', ok: true, detail: `${login} has the project scope` }
 }
 
 async function origin(ctx: Ctx): Promise<Check> {
@@ -78,12 +88,16 @@ async function origin(ctx: Ctx): Promise<Check> {
   }
 }
 
-export async function doctor(ctx: Ctx, stacks: StackRef[]): Promise<Check[]> {
+export async function doctor(ctx: Ctx, stacks: StackRef[], project = false): Promise<Check[]> {
   const git = await tool(ctx, 'git')
   if (!git.ok) return [git]
   const gh = await tool(ctx, 'gh')
   const checks = [git, gh]
-  if (gh.ok) checks.push(await auth(ctx))
+  if (gh.ok) {
+    const a = await auth(ctx)
+    checks.push(a.check)
+    if (project && a.check.ok) checks.push(projectScope(a))
+  }
   checks.push(await origin(ctx))
   checks.push(...(await stackChecks(ctx, stacks)))
   return checks

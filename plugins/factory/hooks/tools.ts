@@ -10,6 +10,7 @@ import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
 import { STATUS, stateOf } from '../lib/labels.ts'
 import { githubTracker, repoFromUrl } from '../lib/github.ts'
 import { approve, merge } from '../lib/merge.ts'
+import { withBoard } from '../lib/project.ts'
 import { guardBash, guardMain } from '../lib/guard.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
@@ -33,6 +34,14 @@ function issueOf(input: { issue?: unknown }): number {
   return n
 }
 
+// Runs a tool with a tracker that also updates the project board. Board problems come back as warnings.
+async function boarded(ctx: Ctx, run: (t: Tracker) => Promise<unknown>): Promise<unknown> {
+  const cfg = await loadConfig(ctx)
+  const { tracker, warnings } = withBoard(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+  const out = await run(tracker)
+  return warnings.length === 0 ? out : { ...(out as object), warnings }
+}
+
 const numberTool = (name: string, description: string, run: (ctx: Ctx, t: Tracker, n: number) => Promise<unknown>): ToolDef => ({
   name,
   description,
@@ -42,8 +51,7 @@ const numberTool = (name: string, description: string, run: (ctx: Ctx, t: Tracke
     if (typeof n !== 'number' || !Number.isInteger(n) || n < 1) {
       throw new FactoryError('bad-input', `number must be a positive integer, got ${JSON.stringify(n)}`)
     }
-    const t = githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url))
-    return run(ctx, t, n)
+    return boarded(ctx, t => run(ctx, t, n))
   },
 })
 
@@ -53,8 +61,7 @@ const issueTool = (name: string, description: string, run: (ctx: Ctx, t: Tracker
   inputSchema: { type: 'object', properties: { issue: { type: 'integer', minimum: 1 } }, required: ['issue'], additionalProperties: false },
   handler: async (ctx, input) => {
     const n = issueOf(input)
-    const t = githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url))
-    return run(ctx, t, n)
+    return boarded(ctx, t => run(ctx, t, n))
   },
 })
 
@@ -67,9 +74,10 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'doctor',
-    description: 'Check that git, gh, the GitHub login and the origin remote are ready. Returns checks with fixes.',
+    description: 'Check that git, gh, the GitHub login and the origin remote are ready. With the project board on, it also checks the project token scope. Returns checks with fixes.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    handler: ctx => doctor(ctx, []),
+    // doctor runs before setup, so a missing or outdated config turns the project check off.
+    handler: async ctx => doctor(ctx, [], (await loadConfig(ctx).catch(() => undefined))?.project?.enabled === true),
   },
   {
     name: 'setup',
@@ -172,9 +180,9 @@ export const TOOLS: ToolDef[] = [
       'Remove the worktree, the merged branch and the job folder of a finished ticket. Keeps unsaved work and reports it. Without issue it sweeps every finished ticket.',
     inputSchema: { type: 'object', properties: { issue: { type: 'integer', minimum: 1 } }, additionalProperties: false },
     handler: async (ctx, input) => {
-      const t = githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url))
-      if (input.issue === undefined) return sweep(ctx, t)
+      if (input.issue === undefined) return boarded(ctx, t => sweep(ctx, t))
       const n = issueOf(input)
+      const t = githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url))
       const ticket = await t.get(n)
       const state = stateOf(ticket.labels)
       if (ticket.state !== 'closed' && state !== 'done' && state !== 'rejected') {
@@ -204,8 +212,7 @@ export const TOOLS: ToolDef[] = [
       if (input.from !== undefined && (typeof input.from !== 'string' || !(STATUS as string[]).includes(input.from))) {
         throw new FactoryError('bad-input', `from must be one of ${STATUS.join(', ')}, got ${JSON.stringify(input.from)}`)
       }
-      const t = githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url))
-      return jobAdvance(ctx, t, { issue, to: input.to as State, ...(input.reason === undefined ? {} : { reason: input.reason }), ...(input.from === undefined ? {} : { from: input.from as State }) })
+      return boarded(ctx, t => jobAdvance(ctx, t, { issue, to: input.to as State, ...(input.reason === undefined ? {} : { reason: input.reason }), ...(input.from === undefined ? {} : { from: input.from as State }) }))
     },
   },
 ]

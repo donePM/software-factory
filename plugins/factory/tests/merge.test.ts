@@ -9,6 +9,7 @@ import { withMarker, type MarkerName } from '../lib/markers.ts'
 import { assertTransition } from '../lib/transitions.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import type { Comment, PrState, State, Ticket } from '../lib/types.ts'
+import { boardCalls, boardReplies, edit, onBoard } from './support/board.ts'
 import { fakeCtx, type Reply } from './support/host.ts'
 
 const SHA = 'a'.repeat(40)
@@ -210,7 +211,16 @@ test('merge of a PR merged on GitHub sets done and cleans up', async () => {
   expect(t.log).not.toContain('close done')
 })
 
-const CONFLICT: Reply = { argv: ['git', '-C', WT, 'merge', '--no-edit'], result: { exitCode: 1, stderr: 'CONFLICT' } }
+test('merge sets the Done option on the board', async () => {
+  const { ctx, t } = setup({ labels: ['factory:approved'], pr: { state: 'MERGED', mergeCommit: MERGE } }, boardReplies)
+  const { tracker, warnings } = onBoard(ctx, t)
+  await merge(ctx, tracker, 7)
+  expect(boardCalls(ctx.calls)).toEqual(['setState 7 done', 'gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit'])
+  expect(ctx.calls).toContainEqual(edit('Done'))
+  expect(warnings).toEqual([])
+})
+
+const CONFLICT: Reply ={ argv: ['git', '-C', WT, 'merge', '--no-edit'], result: { exitCode: 1, stderr: 'CONFLICT' } }
 const MERGE_HEAD = ['git', '-C', WT, 'rev-parse', '-q', '--verify', 'MERGE_HEAD']
 
 test('a sync conflict says that the merge was undone', async () => {
