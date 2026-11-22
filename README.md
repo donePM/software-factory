@@ -68,6 +68,8 @@ remote, the tools of your stack), helps you install what is missing, creates
 the labels and `.factory/config.json`, and runs a first gate check. You can run
 it again at any time: it repairs what is missing and migrates an old config.
 
+The [setup guide](docs/setup.md) explains each step, from install to the first ticket.
+
 **Updates** come through the marketplace:
 `/plugin marketplace update software-factory`.
 
@@ -140,17 +142,10 @@ comments from the issue author and from you reach them.
 
 ## Kanban board (optional)
 
-Run `/factory:setup project` to show the tickets on a board in GitHub Projects.
-Setup creates a project, or uses the one in `project.number` in `.factory/config.json`.
-It adds the single-select field `Factory` with one option for each state.
-Then it adds each open factory ticket with its current state.
-GitHub cannot create the board view from the command line, so setup shows the clicks.
-Commit `.factory/config.json` after this step, because it now holds `project.number`.
-
-The board is a mirror only. The labels stay the truth.
-The board needs the `project` token scope. To add it, run `gh auth refresh -s project`.
-This scope gives write access to all your projects, not only this one.
-When you turn `project.enabled` off, the project stays.
+`/factory:setup` asks one time whether to show the tickets on a board in GitHub Projects.
+The default answer is no. Run `/factory:setup project` to turn the board on later.
+The board needs the `project` token scope, which gives write access to all your projects.
+The [setup guide](docs/setup.md#5-the-project-board-optional) shows the scope, the board view, and how to turn it off.
 
 ## Safety notes
 
