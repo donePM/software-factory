@@ -22,6 +22,7 @@ export type SetupReport = {
   gitignore: boolean
   sweep: SweepReport
   next: string[]
+  askProject: boolean
   project?: ProjectReport
 }
 
@@ -46,7 +47,7 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   if (checks.some(c => !c.ok)) {
     const failed = checks.filter(c => !c.ok)
     const reason = `checks failed: ${failed.map(c => c.check).join(', ')}`
-    return { checks, applied: false, reason, ...empty, next: failed.map(c => c.fix ?? c.detail) }
+    return { checks, applied: false, reason, ...empty, next: failed.map(c => c.fix ?? c.detail), askProject: false }
   }
 
   const path = configPath(ctx.root)
@@ -64,12 +65,13 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
     migrated = plan.applied
   }
   const stored = JSON.stringify(cfg)
+  const askProject = !exists || cfg.project === undefined
   if (input.concurrency !== undefined) cfg.concurrency = input.concurrency
   if (input.baseBranch !== undefined) cfg.baseBranch = input.baseBranch
-  if (input.project === true) cfg.project = { ...cfg.project, enabled: true }
+  if (input.project !== undefined) cfg.project = { ...cfg.project, enabled: input.project }
   if (!input.apply) {
     const standard = await githubTracker(ctx, repoFromUrl(cfg.tracker.url)).applyStandard(false)
-    return { checks, config: cfg, applied: false, ...empty, migrated, standard, labels: labelSet().length, next: ['Run setup again with apply true.'] }
+    return { checks, config: cfg, applied: false, ...empty, migrated, standard, labels: labelSet().length, next: ['Run setup again with apply true.'], askProject }
   }
 
   const created = !exists
@@ -84,7 +86,7 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   const standard = await tracker.applyStandard(true)
   const swept = await sweep(ctx, tracker)
   const next = ['Commit .factory/config.json (chore(factory): add factory config).', 'Run the gate once on the base branch.']
-  const report = { checks, config: cfg, applied: true, created, migrated, standard, labels: labels.length, gitignore: true, sweep: swept, next }
+  const report = { checks, config: cfg, applied: true, created, migrated, standard, labels: labels.length, gitignore: true, sweep: swept, next, askProject }
   if (cfg.project?.enabled !== true) return report
   const project = await connectProject(ctx, tracker, cfg.project.number)
   if (project.number !== undefined && project.number !== cfg.project.number) {

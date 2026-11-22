@@ -17,9 +17,14 @@ You guide the user through setup. Use plain words. The user may not be a develop
    - The detected stacks. The list can be empty for now.
    - Each `standard` entry with `ok: false`. These are repo settings that differ from the factory standard.
 4. Ask with `AskUserQuestion`. Put the recommended answer first and add "(recommended)" to it. Ask whether to apply the setup. Ask about concurrency only if the user wants to change it. The default is 4.
+   - When the preview has `askProject: true` and the user did not type `/factory:setup project`, also ask about the board.
+     The question: "Show the factory tickets on a Kanban board in GitHub Projects? The board needs the `project` token scope. This scope gives write access to all your GitHub projects, not only this one."
+     The answers: "No (recommended)" first, then "Yes".
 5. Call `mcp__factory__setup` with `apply: true`, plus `baseBranch` or `concurrency` if the user chose them. Tell the user what was created.
    - When the user typed `/factory:setup project`, pass `project: true` in steps 1 and 5.
+   - When you asked about the board in step 4, pass the answer in step 5: `project: true` for "Yes", `project: false` for "No".
    - When the report has `project`, show its `url`, the count in `added`, each step of `viewSteps`, and each entry of `warnings`.
+   - A warning with `gh auth refresh -s project` means that the token scope is missing. Tell the user to type `! gh auth refresh -s project` in this session. Then they run `/factory:setup` again.
    - Otherwise, only mention the board in one sentence: `/factory:setup project` shows the tickets on a Kanban board in GitHub Projects.
 6. Start the first gate check. Never run it in this session.
    - Spawn the agent `factory:gate-runner` with `run_in_background: true`.
