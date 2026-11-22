@@ -164,6 +164,31 @@ test('a missing tool without a requires entry says install <cmd>', async () => {
   expect(r.report).toContain('install sh')
 })
 
+const tsPlugin = (exitCode: number): ReturnType<typeof fakeCtx> =>
+  make({
+    stacks: [{ id: 'claude-plugin', path: 'p' }],
+    ls: 'p/.claude-plugin/plugin.json\np/tsconfig.json\n',
+    replies: [{ argv: ['sh', '-c'], result: { exitCode, stderr: 'engine types not found' } }],
+  })
+
+test('a missing engine types file is a host problem', async () => {
+  const r = await runGate(tsPlugin(69), { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('FAIL')
+  expect(r.host).toEqual([
+    'typecheck (claude-plugin): engine types not found. Restart Claude Code so that the session runs the installed CLI version. Then open the plugin-authoring skill once.',
+  ])
+  expect(r.report).toContain(`## Host problem\n- ${r.host[0]}`)
+})
+
+test('a tsc error is not a host problem', async () => {
+  for (const code of [1, 2]) {
+    const r = await runGate(tsPlugin(code), { worktree: WT, round: 'setup' })
+    expect(r.verdict).toBe('FAIL')
+    expect(r.host).toEqual([])
+    expect(r.report).not.toContain('## Host problem')
+  }
+})
+
 test('gate appends each run to checks.log as an attempt', async () => {
   const ctx = make({ replies: [{ argv: ['vp', 'lint'], result: { exitCode: 1, stdout: 'LINT-OUT' } }] })
   await runGate(ctx, { worktree: WT, round: 'setup' })

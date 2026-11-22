@@ -70,10 +70,13 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
 
 // One gh call per waiting ticket that can have a PR, and one more per needs-human ticket for its cause.
 // A failed lookup leaves the PR or the cause out. With the project on, one more call reads the board.
-export async function statusFor(ctx: Ctx, tr: Tracker, cfg: Config): Promise<string> {
+export async function statusFor(ctx: Ctx, base: Tracker, cfg: Config): Promise<string> {
+  // The queue and the board check share one backlog read.
+  const backlog = base.backlog()
+  const tr: Tracker = { ...base, backlog: () => backlog }
   const q = await queue(ctx, tr, cfg)
   const titles: Record<number, string> = {}
-  const tickets = await tr.backlog()
+  const tickets = await backlog
   for (const t of tickets) titles[t.number] = t.title
   const prs: Record<number, number> = {}
   const causes: Record<number, Cause> = {}

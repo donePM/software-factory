@@ -212,10 +212,16 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   }
   const login = await t.login()
   const marker = findMarked((await t.get(issue)).comments, 'approval', login)
-  const recorded = pr.reviewDecision === 'APPROVED' || marker?.body.includes(`Reviewed commit: ${reviewed}.`) === true
+  const recorded = marker?.body.includes(`Reviewed commit: ${reviewed}.`) === true || await t.prApproved(pr.number, sha)
   if (!recorded) await record(t, issue, pr, reviewed)
 
-  if (pr.isDraft) await t.prReady(pr.number) // GitHub does not merge a draft
+  // GitHub does not merge a draft.
+  if (pr.isDraft) {
+    await t.prReady(pr.number).catch((e: unknown) => {
+      throw new FactoryError('draft-pr', `PR #${pr.number} is a draft and did not leave draft: ${e instanceof Error ? e.message : String(e)}`,
+        'Click "Ready for review" on the PR. Then merge again.')
+    })
+  }
   await t.merge(pr.number, `${pr.title} (#${pr.number})`, sha)
   const after = await t.prState(pr.number)
   if (after.state !== 'MERGED') {

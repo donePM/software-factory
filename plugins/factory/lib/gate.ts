@@ -1,6 +1,7 @@
 import { loadConfig, type StackRef } from './config.ts'
 import { checkMessage } from './conventional.ts'
 import { FactoryError } from './exec.ts'
+import { TYPES_FIX, TYPES_MISSING_EXIT } from './stacks/claude-plugin.ts'
 import { detectAll, resolveSteps, STACKS } from './stacks/index.ts'
 import type { Detection, ReadFile, Step, StepName } from './stacks/types.ts'
 import type { Ctx } from './types.ts'
@@ -16,6 +17,8 @@ export type GateResult = {
   protected: string[]
   scriptsChanged: string[]
   missingStacks: string[]
+  // Problems of the host, not of the branch. The builder cannot fix them.
+  host: string[]
   report: string
 }
 
@@ -175,6 +178,9 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   const changedScripts = [...new Set([...(await scriptsChanged(ctx, wt, ds, read)), ...runnerFiles])]
 
   const red = steps.filter(s => s.exitCode !== 0)
+  const host = red
+    .filter(s => s.stack === 'claude-plugin' && s.name === 'typecheck' && s.exitCode === TYPES_MISSING_EXIT)
+    .map(s => `${s.name} (${s.stack}): engine types not found. ${TYPES_FIX}`)
   // A job gate needs the configured stacks: with none, a branch could drop a stack and its checks.
   const noStacks = input.jobDir !== undefined && refs.length === 0
   const verdict = red.length + commits.length + prot.length + dirty.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null || noStacks ? 'FAIL' : 'PASS'
@@ -184,6 +190,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   lines.push('| Step | Stack | Command | Exit | Duration |', '| --- | --- | --- | --- | --- |')
   for (const s of steps) lines.push(`| ${s.name} | ${s.stack} | \`${cell(s.argv.join(' '))}\` | ${s.exitCode} | ${s.ms} ms |`)
   for (const s of red.filter(x => x.exitCode === 127)) lines.push('', `Missing tool for ${s.name}: ${fixFor(s, ds, wt)}`)
+  if (host.length > 0) lines.push('', '## Host problem', ...host.map(h => `- ${h}`))
   if (commits.length > 0) {
     lines.push('', '## Commits')
     for (const c of commits) lines.push(`- ${c.sha.slice(0, 12)}: ${c.problem}`)
@@ -204,7 +211,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   await ctx.fs.write(`${dir}/checks.md`, report)
   await ctx.fs.write(logPath, `${old ?? ''}## Attempt ${k}\n\n${outputs.join('\n\n')}\n\n`)
 
-  const result: GateResult = { verdict, steps, badCommits: commits, protected: prot, scriptsChanged: changedScripts, missingStacks, report }
+  const result: GateResult = { verdict, steps, badCommits: commits, protected: prot, scriptsChanged: changedScripts, missingStacks, host, report }
   if (titleProblem !== null) result.title = titleProblem
   return result
 }

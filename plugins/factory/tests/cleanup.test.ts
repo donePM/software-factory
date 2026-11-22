@@ -219,9 +219,9 @@ test('tool cleanup is registered and refuses a ticket that is still running', as
 
 test('tool cleanup refuses an open ticket in a running state and removes nothing', async () => {
   const def = TOOLS.find(t => t.name === 'cleanup')!
-  const ticket = JSON.stringify({ number: 7, title: 't', body: '', labels: [{ name: 'factory' }, { name: 'factory:build' }], author: { login: 'a' }, createdAt: '2026-01-01T00:00:00Z', url: 'u', state: 'OPEN' })
+  const ticket = JSON.stringify({ number: 7, title: 't', body: '', labels: [{ name: 'factory' }, { name: 'factory:build' }], user: { login: 'a' }, created_at: '2026-01-01T00:00:00Z', html_url: 'u', state: 'open' })
   const ctx = ctxOf([
-    { argv: ['gh', 'issue', 'view'], result: { stdout: ticket } },
+    { argv: ['gh', 'api', 'repos/a/b/issues/7'], result: { stdout: ticket } },
     { argv: ['gh', 'api'], result: { stdout: '' } },
   ])
   const out = await invoke(def, ctx, { issue: 7 })
@@ -257,7 +257,7 @@ test('sweep records a failing setState as kept and continues', async () => {
 
 test('tool cleanup without an issue sweeps', async () => {
   const def = TOOLS.find(t => t.name === 'cleanup')!
-  const ctx = ctxOf([{ argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } }])
+  const ctx = ctxOf()
   const out = await invoke(def, ctx, {})
   expect(out).toEqual({ result: JSON.stringify({ removed: [], kept: [], finished: [] }, null, 2) })
   expect(ctx.calls).toContainEqual(['git', 'worktree', 'prune'])
