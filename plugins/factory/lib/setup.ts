@@ -53,7 +53,6 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
   let cfg: Config
   if (!exists) {
     cfg = defaultConfig(await originUrl(ctx), input.baseBranch ?? (await defaultBranch(ctx)), stacks)
-    if (input.concurrency !== undefined) cfg.concurrency = input.concurrency
   } else if (input.apply) {
     migrated = (await migrate(ctx, input.migrations)).applied
     cfg = await loadConfig(ctx)
@@ -62,13 +61,16 @@ export async function setup(ctx: Ctx, input: SetupInput): Promise<SetupReport> {
     cfg = plan.config
     migrated = plan.applied
   }
+  const stored = JSON.stringify(cfg)
+  if (input.concurrency !== undefined) cfg.concurrency = input.concurrency
+  if (input.baseBranch !== undefined) cfg.baseBranch = input.baseBranch
   if (!input.apply) {
     const standard = await githubTracker(ctx, repoFromUrl(cfg.tracker.url)).applyStandard(false)
     return { checks, config: cfg, applied: false, ...empty, migrated, standard, labels: labelSet().length, next: ['Run setup again with apply true.'] }
   }
 
   const created = !exists
-  if (created) await writeConfig(ctx, cfg)
+  if (created || JSON.stringify(cfg) !== stored) await writeConfig(ctx, cfg)
   const ignorePath = `${ctx.root}/.factory/.gitignore`
   if (!(await ctx.fs.exists(ignorePath)) || (await ctx.fs.read(ignorePath)) !== GITIGNORE) {
     await ctx.fs.write(ignorePath, GITIGNORE)

@@ -35,6 +35,10 @@ files stay in the main checkout, under `<jobDir>`.
 2. Find the install, format, lint, type check, and test commands of the repo
    (for example `package.json`, `composer.json`, `Makefile`). Run the install
    command if the repo has one.
+   A Claude plugin with a `tsconfig.json` type-checks against the engine types.
+   The factory writes them to `<plugin>/.claude-plugin/types/claude-code/index.d.ts`.
+   Use only that file. Never copy or write another types file there.
+   If the file is missing, name this under `## Risks` in `build.md`.
 3. Do this step only when `decision.md` or a human comment in `issue.md` asks for
    a sync with the base branch. Run
    `git merge --no-edit -m 'chore(factory): sync with <Base branch>' -m 'Refs: #<issue>' origin/<Base branch>`.
@@ -46,6 +50,10 @@ files stay in the main checkout, under `<jobDir>`.
    2. Run the test. It must fail. Keep the first assertion or error line of the
       output, for example `expected 200, got 404`. Do not keep a runner banner.
       A test that passes before the change does not prove the AC. Change it.
+      Exception: for an AC that spec.md marks `(regression)`, write or reuse the
+      named test. Run it before the change. It must pass. It must also pass
+      after the change. Its row is
+      `| AC-<n> | <test> | none (regression, green before) | pass |`.
    3. Write the minimum code that makes the test pass. Follow **Code style**.
    4. Run the test again until it passes. Then clean up the code and run it again.
    In round 2 and later, do the same for each finding, checks failure, or human
@@ -74,6 +82,7 @@ Added the CSV export endpoint, the export button on the orders page, and one REA
 | AC-1 | `tests/orders-export.test.ts` "returns one row per order" | expected 200, got 404 | pass |
 | AC-2 | `tests/orders-page.test.ts` "links to the CSV export" | no element with text "Export CSV" | pass |
 | AC-3 | none (Not tested in spec.md) | none | not tested |
+| AC-4 | `tests/orders-page.test.ts` "still lists the orders" | none (regression, green before) | pass |
 
 ## Commands
 - `npm test`: 42 passed, 0 failed

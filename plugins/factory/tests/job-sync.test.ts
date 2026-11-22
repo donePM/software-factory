@@ -8,6 +8,7 @@ import { assertTransition } from '../lib/transitions.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import type { Comment, State, Ticket } from '../lib/types.ts'
 import { TOOLS } from '../hooks/tools.ts'
+import { typesSource } from '../lib/stacks/claude-plugin.ts'
 import { fakeCtx, type Reply } from './support/host.ts'
 
 const SHA = 'a'.repeat(40)
@@ -388,4 +389,62 @@ test('jobSync returns the gate attempt count of the current round', async () => 
   expect((await jobSync(two, tracker(T(['factory:build'])), 7)).attempts).toBe(2)
   const none = fakeCtx({ files: { ...restoreFiles(), [WT]: '' } })
   expect((await jobSync(none, tracker(T(['factory:build'])), 7)).attempts).toBe(0)
+})
+
+const PLUGIN_CFG = {
+  '/repo/.factory/config.json': JSON.stringify(defaultConfig('u', 'main', [
+    { id: 'claude-plugin', path: 'plugins/p' }, { id: 'claude-plugin', path: '.' }, { id: 'node', path: 'web' },
+  ])),
+}
+const copyCall = (p: string): string[] => ['sh', '-c', typesSource(p)]
+// fakeCtx does not keep the run options, so this keeps the cwd of each sh call.
+function shCwds(ctx: ReturnType<typeof fakeCtx>): (string | undefined)[] {
+  const cwds: (string | undefined)[] = []
+  const run = ctx.run
+  ctx.run = async (argv, opts) => {
+    if (argv[0] === 'sh') cwds.push(opts?.cwd)
+    return run(argv, opts)
+  }
+  return cwds
+}
+
+test('jobCreate copies the engine types into the worktree', async () => {
+  const ctx = fakeCtx({ files: { ...PLUGIN_CFG, [`${WT}/plugins/p/tsconfig.json`]: '{}' }, replies: [...createReplies, { argv: ['sh'] }] })
+  const cwds = shCwds(ctx)
+  await jobCreate(ctx, tracker(T([])), 7)
+  const sh = ctx.calls.filter(c => c[0] === 'sh')
+  expect(sh).toEqual([copyCall('plugins/p')])
+  expect(cwds).toEqual([WT])
+  const add = ctx.calls.findIndex(c => c.includes('worktree'))
+  expect(ctx.calls.indexOf(sh[0]!)).toBeGreaterThan(add)
+})
+
+test('jobSync copies the engine types on each call', async () => {
+  const ctx = fakeCtx({ files: { ...restoreFiles(), ...PLUGIN_CFG, [WT]: '', [`${WT}/plugins/p/tsconfig.json`]: '{}' }, replies: [{ argv: ['sh'] }] })
+  const tr = tracker(T(['factory:build']))
+  await jobSync(ctx, tr, 7)
+  await jobSync(ctx, tr, 7)
+  expect(ctx.calls.filter(c => c[0] === 'sh')).toEqual([copyCall('plugins/p'), copyCall('plugins/p')])
+})
+
+test('the types copy skips a plugin without tsconfig', async () => {
+  const none = fakeCtx({ files: { ...restoreFiles(), ...PLUGIN_CFG, [WT]: '' } })
+  await jobSync(none, tracker(T(['factory:build'])), 7)
+  expect(none.calls.filter(c => c[0] === 'sh')).toEqual([])
+  const root = fakeCtx({ files: { ...restoreFiles(), ...PLUGIN_CFG, [WT]: '', [`${WT}/tsconfig.json`]: '{}' }, replies: [{ argv: ['sh'] }] })
+  await jobSync(root, tracker(T(['factory:build'])), 7)
+  expect(root.calls.filter(c => c[0] === 'sh')).toEqual([copyCall('.')])
+})
+
+test('a failed types copy does not stop the job', async () => {
+  const files = { ...PLUGIN_CFG, [`${WT}/plugins/p/tsconfig.json`]: '{}' }
+  const fail: Reply = { argv: ['sh'], result: { exitCode: 1, stderr: 'engine types not found' } }
+  const created = fakeCtx({ files, replies: [...createReplies, fail] })
+  await jobCreate(created, tracker(T([])), 7)
+  expect(created.files[`${DIR}/job.md`]).toContain('# Job #7')
+  expect(created.files[`${DIR}/issue.md`]).toContain('# Issue #7')
+  const synced = fakeCtx({ files: { ...restoreFiles(), ...files, [WT]: '' }, replies: [fail] })
+  const r = await jobSync(synced, tracker(T(['factory:build'])), 7)
+  expect(r.job.round).toBe(2)
+  expect(synced.calls.filter(c => c[0] === 'sh')).toEqual([copyCall('plugins/p')])
 })
