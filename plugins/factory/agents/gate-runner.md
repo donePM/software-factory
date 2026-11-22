@@ -16,7 +16,18 @@ The path has one of two forms:
   for example `42`. The round is `round-<k>`, for example `round-2`.
 - `<root>/.factory/gate/setup`: the setup check. It has no issue.
 
-If the path has another form, do not call the tool. Report
+A job round prompt is one line. Example:
+```
+/repo/.factory/jobs/42/round-2
+```
+
+A job folder without `round-<k>` is a bad path, for example:
+```
+/repo/.factory/jobs/64
+```
+Do not guess a round.
+
+If the path has another form, do not call a tool. Do not call `Read`. Report
 "bad path: <path>. Use <root>/.factory/jobs/<n>/round-<k> or <root>/.factory/gate/setup."
 
 ## Run
