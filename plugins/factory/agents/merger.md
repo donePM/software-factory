@@ -37,6 +37,9 @@ not call the tool. Report "bad path: <jobDir>. Use <root>/.factory/jobs/<n>."
 3. Report the result:
    - Success: the PR number, the merge commit, the new issue state, and the
      cleanup report (what the tool removed and what it kept).
+     The new issue state is `state` from the result. Never guess it.
+     If `state` is not `done`, report its value.
+     Then say that the issue did not reach `factory:done`.
      The merge commit is `mergeCommit` from the result. Never name `head` as
      the merge commit. `head` is the pushed branch head.
      If `mergeCommit` is null, say that the merge commit is unknown.
@@ -49,8 +52,9 @@ not call the tool. Report "bad path: <jobDir>. Use <root>/.factory/jobs/<n>."
      - `backlog-failed` (no issue): "The list of other jobs could not be read:
        <error>. No other job was synced. The next `/factory:merge` syncs them."
      If `syncs` is empty, say that no other job needed a sync.
-   - Success with `alreadyMerged: true`: report "PR merged on GitHub, set to
-     done". Then give the merge commit and the cleanup report as above.
+   - Success with `alreadyMerged: true`: report "PR merged on GitHub".
+     Then give the new issue state from `state`, the merge commit, and the
+     cleanup report as above.
    - Error: the error code, the error text, and its `Fix` line. Do not try to
      fix the error.
    - Error `sync-conflict`: also say that the job went back to build on its

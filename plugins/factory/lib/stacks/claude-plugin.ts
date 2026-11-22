@@ -1,7 +1,9 @@
 import type { Ctx } from '../types.ts'
 import type { Detection, ReadFile, Stack, Step, ToolReq } from './types.ts'
 
-const OPEN_SKILL = 'open the plugin-authoring skill once in this Claude Code version'
+export const TYPES_FIX = 'Restart Claude Code so that the session runs the installed CLI version. Then open the plugin-authoring skill once.'
+// EX_UNAVAILABLE of sysexits. tsc exits only with 0 to 4, so the gate can tell a host problem from a tsc error.
+export const TYPES_MISSING_EXIT = 69
 const TYPES_GLOB = '/private/tmp/claude-*/bundled-skills/$(claude --version | cut -d\' \' -f1)/*/plugin-authoring/types/claude-code.d.ts'
 
 // Quotes a path only when the shell would change it.
@@ -14,7 +16,7 @@ export function typesSource(p: string): string {
   const dir = q(rel(p, '.claude-plugin/types/claude-code'))
   return (
     `f=$(ls ${TYPES_GLOB} 2>/dev/null | head -1); ` +
-    `[ -n "$f" ] || { echo 'engine types not found: ${OPEN_SKILL}' >&2; exit 1; }; ` +
+    `[ -n "$f" ] || { echo 'engine types not found: ${TYPES_FIX}' >&2; exit ${TYPES_MISSING_EXIT}; }; ` +
     `mkdir -p ${dir} && cp "$f" ${dir}/index.d.ts`
   )
 }
@@ -49,7 +51,7 @@ export const claudePlugin: Stack = {
     const reqs: ToolReq[] = [{ cmd: 'claude', versionArgs: ['--version'], fix: 'Install Claude Code.' }]
     if (d.variant === 'plugin' && d.tools.includes('tsc')) {
       reqs.push({ cmd: 'tsc', versionArgs: ['--version'], fix: 'brew install typescript' })
-      reqs.push({ cmd: 'sh', versionArgs: ['-c', `ls ${TYPES_GLOB} >/dev/null 2>&1`], fix: OPEN_SKILL })
+      reqs.push({ cmd: 'sh', versionArgs: ['-c', `ls ${TYPES_GLOB} >/dev/null 2>&1`], fix: TYPES_FIX })
     }
     return reqs
   },
