@@ -333,7 +333,7 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
   if (from === 'conflict') throw new FactoryError('label-conflict', `#${n} has several status labels`, 'Remove all but one status label.')
   // A late notification must not move a job that left the step it reports on.
   if (input.from !== undefined && from !== input.from) throw new FactoryError('state-moved', `#${n} is ${from ?? 'not a job'}, not ${input.from}`, 'Ignore this notification.')
-  if (!SUPPORTED.includes(to) && !(to === 'done' && from === 'docs')) throw new FactoryError('unsupported-target', `job_advance cannot move to ${to}`, 'Use the merge tool to move a job to done.')
+  if (!SUPPORTED.includes(to) && !(to === 'done' && from === 'docs')) throw new FactoryError('unsupported-target', `job_advance cannot move to ${to}`, 'Use the merge tool for an open PR. For a merged PR, run /factory:run without an issue number.')
   assertTransition(from, to)
   const dir = jobDir(ctx.root, n)
   if (!(await ctx.fs.exists(`${dir}/job.md`))) throw new FactoryError('no-job', `${dir}/job.md does not exist`, 'Run job_create first.')
@@ -532,11 +532,14 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   return done(job, to, { ...(warnings.length === 0 ? {} : { warnings }), ...(autoMerge ? { autoMerge } : {}) })
 }
 
+// The merge closed the issue, and queue refuses a closed issue: the sweep of a plain run moves the job on.
+const RETRY = 'Then run /factory:run without an issue number.'
+
 // The wiki repo uses the gh login of the operator. Agent text cannot pick a path.
 async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, page: string, pages: string): Promise<void> {
   const fixes: Record<string, string> = {
-    clone: `Open https://github.com/${repo}/wiki and create the first page. Then run /factory:run ${n}.`,
-    push: `Run gh auth status. gh must be logged in with the repo scope and you need write access to ${repo}. Then run /factory:run ${n}.`,
+    clone: `Open https://github.com/${repo}/wiki and create the first page. ${RETRY}`,
+    push: `Run gh auth status. gh must be logged in with the repo scope and you need write access to ${repo}. ${RETRY}`,
   }
   const git = async (args: string[]): Promise<string> => {
     // A missing wiki repo of a private repo can ask for a user name, so git must not prompt.
@@ -570,7 +573,8 @@ async function advanceDocs(ctx: Ctx, t: Tracker, job: Job, ticket: Ticket): Prom
   try {
     await publishWiki(ctx, t.repo, n, `${job.jobDir}/wiki`, docs.page, `${job.worktree}/docs/wiki`)
   } catch (e) {
-    await t.comment(n, `Factory stopped: ${e instanceof Error ? e.message : String(e)}`)
+    const msg = e instanceof Error ? e.message : String(e)
+    await t.comment(n, `Factory stopped: ${msg}${msg.includes('\nFix: ') ? '' : `\n\nFix the cause. ${RETRY}`}`)
     await moveJob(t, job, 'needs-human')
     return done(job, 'needs-human')
   }

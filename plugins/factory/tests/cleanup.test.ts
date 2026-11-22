@@ -284,6 +284,16 @@ test('sweep moves a merged job to docs with a wiki target and keeps it', async (
   expect(t.log.filter(l => l.startsWith('state') || l.startsWith('close'))).toEqual(['state 9 docs prMerged'])
 })
 
+test('sweep moves a closed needs-human job with a merged PR back to docs', async () => {
+  const ctx = ctxOf([], { ...WIKI, [`${DIR}/job.md`]: 'x' })
+  const t = tracker({ closed: [7], labels: { 7: ['factory', 'factory:needs-human'] }, prs: { 7: { state: 'MERGED' } } })
+  const r = await sweep(ctx, t)
+  expect(t.log.filter(l => l.startsWith('state') || l.startsWith('close'))).toEqual(['state 7 docs prMerged'])
+  expect(has(ctx.calls, 'rm')).toBe(false)
+  expect(has(ctx.calls, 'git', 'worktree', 'remove')).toBe(false)
+  expect(r.docs).toEqual([7])
+})
+
 test('sweep finds a docs job with no job folder', async () => {
   const ctx = ctxOf([], { ...WIKI, '/repo/.factory/jobs/8/job.md': 'x' })
   const t = tracker({

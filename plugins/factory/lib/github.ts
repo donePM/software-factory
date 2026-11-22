@@ -92,10 +92,15 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
     async backlog() {
       // The list has the Priority field too. It also has PRs: drop them, as `gh issue list` did.
       // The merge closes the issue while the documenter runs, so closed docs jobs still take a slot.
-      // shortcut: no dedupe by number, upgrade when an issue that closes between the two calls shows up twice.
+      // shortcut: no dedupe by number, upgrade when an issue that closes between the calls shows up twice.
       const list = async (q: string): Promise<RawIssue[]> =>
         parseLines<RawIssue>(await gh(['api', `repos/${repo}/issues?${q}&per_page=100`, '--paginate', '--jq', '.[]']))
-      const rows = [...await list('labels=factory&state=open'), ...await list('labels=factory,factory:docs&state=closed')]
+      // A failed wiki push leaves a closed issue in needs-human: status must show it.
+      const rows = [
+        ...await list('labels=factory&state=open'),
+        ...await list('labels=factory,factory:docs&state=closed'),
+        ...await list('labels=factory,factory:needs-human&state=closed'),
+      ]
       return rows.map(r => toTicket(r, [])).filter(r => r.kind === 'issue')
     },
     async get(n) {

@@ -562,7 +562,7 @@ test('needs-human without a reason is only for a review decision', async () => {
 
 test('unsupported targets and illegal moves are refused', async () => {
   const a = inBuild()
-  await expect(jobAdvance(a.ctx, a.t, { issue: 7, to: 'done' })).rejects.toMatchObject({ code: 'unsupported-target', fix: 'Use the merge tool to move a job to done.' })
+  await expect(jobAdvance(a.ctx, a.t, { issue: 7, to: 'done' })).rejects.toMatchObject({ code: 'unsupported-target', fix: 'Use the merge tool for an open PR. For a merged PR, run /factory:run without an issue number.' })
   const b = inBuild()
   await rejects(jobAdvance(b.ctx, b.t, { issue: 7, to: 'rejected' }), 'illegal-transition')
 })
@@ -925,14 +925,15 @@ test('a docs job runs the wiki git calls with the gh credentials', async () => {
 })
 
 test('a failed wiki push moves a docs job to needs-human', async () => {
-  const PUSH_FIX = 'Fix: Run gh auth status. gh must be logged in with the repo scope and you need write access to a/b. Then run /factory:run 7.'
-  const CLONE_FIX = 'Fix: Open https://github.com/a/b/wiki and create the first page. Then run /factory:run 7.'
+  const PUSH_FIX = 'Fix: Run gh auth status. gh must be logged in with the repo scope and you need write access to a/b. Then run /factory:run without an issue number.'
+  const CLONE_FIX = 'Fix: Open https://github.com/a/b/wiki and create the first page. Then run /factory:run without an issue number.'
+  const OTHER_FIX = '\n\nFix the cause. Then run /factory:run without an issue number.'
   const cases: [Reply[], string][] = [
     [[CHANGED, { argv: PUSH, result: { exitCode: 1, stderr: 'remote: Permission denied\n' } }], `the wiki push failed: remote: Permission denied\n${PUSH_FIX}`],
     [[{ argv: CLONE, result: { exitCode: 128, stderr: 'fatal: repository not found\n' } }], `the wiki clone failed: fatal: repository not found\n${CLONE_FIX}`],
-    [[{ argv: STATUS, result: { exitCode: 128, stderr: 'fatal: not a repo\n' } }], 'the wiki status failed: fatal: not a repo'],
-    [[CHANGED, { argv: ADD, result: { exitCode: 128, stderr: 'fatal: bad path\n' } }], 'the wiki add failed: fatal: bad path'],
-    [[CHANGED, { argv: COMMIT, result: { exitCode: 1, stderr: 'fatal: no identity\n' } }], 'the wiki commit failed: fatal: no identity'],
+    [[{ argv: STATUS, result: { exitCode: 128, stderr: 'fatal: not a repo\n' } }], `the wiki status failed: fatal: not a repo${OTHER_FIX}`],
+    [[CHANGED, { argv: ADD, result: { exitCode: 128, stderr: 'fatal: bad path\n' } }], `the wiki add failed: fatal: bad path${OTHER_FIX}`],
+    [[CHANGED, { argv: COMMIT, result: { exitCode: 1, stderr: 'fatal: no identity\n' } }], `the wiki commit failed: fatal: no identity${OTHER_FIX}`],
   ]
   for (const [replies, error] of cases) {
     const { ctx, t } = inDocs(DOCS, [...replies])
