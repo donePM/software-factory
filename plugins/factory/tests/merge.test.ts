@@ -526,6 +526,28 @@ test('merge refuses a job with no reviewed commit', async () => {
   expect(t.merges).toEqual([])
 })
 
+const LIMIT = 'Factory stopped: Round 3 reached the round limit of 3.'
+const atLimit = async (t: Tracker): Promise<void> => {
+  (await t.get(7)).comments.push({ id: 3, author: 'op', body: LIMIT, createdAt: at, updatedAt: at })
+}
+
+test('not-reviewed at the round limit names maxRounds', async () => {
+  for (const run of [approve, merge]) {
+    const { ctx, t } = setup({ labels: ['factory:needs-human'], job: { reviewed: null } })
+    await atLimit(t)
+    const fix = 'The job reached the round limit. Increase maxRounds in .factory/config.json. Then run /factory:run 7.'
+    await expect(run(ctx, t, 7)).rejects.toMatchObject({ code: 'not-reviewed', fix })
+  }
+})
+
+test('not-reviewed without the round limit keeps the old fix', async () => {
+  for (const run of [approve, merge]) {
+    const { ctx, t } = setup({ labels: ['factory:needs-human'], job: { reviewed: null } })
+    const fix = 'Commits came after the reviews, or no review ran. The job must go back to build for a new review.'
+    await expect(run(ctx, t, 7)).rejects.toMatchObject({ code: 'not-reviewed', fix })
+  }
+})
+
 const TREE = 'f'.repeat(40)
 const moved = (parents: string, tree = TREE): Reply[] => [
   { argv: ['git', '-C', WT, 'rev-parse', 'HEAD'], result: { stdout: `${MOVED}\n` } },
