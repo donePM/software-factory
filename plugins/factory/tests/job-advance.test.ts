@@ -564,6 +564,28 @@ test('job_advance sets the option of the new state on the board', async () => {
   expect(warnings).toEqual([])
 })
 
+test('the tool saves the board ids in job.md, and the next transition makes one board call', async () => {
+  const raw = (state: string) => ({ number: 7, title: 'Add thing', body: 'b', labels: [{ name: 'factory' }, { name: `factory:${state}` }], user: { login: 'alice' }, created_at: '2026-01-01T00:00:00Z', html_url: 'https://github.com/o/r/issues/7', state: 'open', assignees: [] })
+  const files = {
+    '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/o/r', 'main', []), ...ON }),
+    [`${DIR}/job.md`]: renderJob({ ...J, round: 1 }),
+  }
+  const replies = (state: string) => [
+    { argv: ['gh', 'api', 'repos/o/r/issues/7'], result: { stdout: JSON.stringify(raw(state)) } },
+    { argv: ['gh', 'api', 'user'], result: { stdout: 'op' } },
+    ...boardReplies,
+    { argv: [] },
+  ]
+  const first = fakeCtx({ files, replies: replies('build') })
+  expect('isError' in await invoke(advDef(), first, { issue: 7, to: 'needs-human', reason: 'stuck' })).toBe(false)
+  expect(boardCalls(first.calls)).toEqual(['gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit'])
+  expect((await readJob(first, 7)).board?.item).toBe('I1')
+  const next = fakeCtx({ files: first.files, replies: replies('review') })
+  expect('isError' in await invoke(advDef(), next, { issue: 7, to: 'needs-human', reason: 'stuck' })).toBe(false)
+  expect(boardCalls(next.calls)).toEqual(['gh project item-edit'])
+  expect(next.calls).toContainEqual(edit('Waiting'))
+})
+
 test('a failed project call leaves the transition done and returns a warning', async () => {
   const raw = { number: 7, title: 'Add thing', body: 'b', labels: [{ name: 'factory' }, { name: 'factory:build' }], user: { login: 'alice' }, created_at: '2026-01-01T00:00:00Z', html_url: 'https://github.com/o/r/issues/7', state: 'open', assignees: [] }
   const ctx = fakeCtx({

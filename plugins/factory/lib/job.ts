@@ -107,6 +107,7 @@ export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
     reviewed: old?.reviewed ?? null,
     route: old?.route ?? {},
     language: old?.language ?? cfg.language ?? 'English',
+    ...(old?.board === undefined ? {} : { board: old.board }),
   }
   await writeJob(ctx, job)
   await ctx.fs.write(`${dir}/issue.md`, renderIssue(ticket, operator))
