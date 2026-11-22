@@ -26,8 +26,13 @@ const J: Job = {
   pr: 9, round: 1, specUpdated: null, reviewed: HEAD, route: { code: 'sonnet' },
 }
 const at = '2026-02-01T00:00:00Z'
+// A second job: #8 with PR #10.
+const DIR8 = '/repo/.factory/jobs/8'
+const WT8 = '/repo/.factory/worktrees/8'
+const J8: Job = { ...J, issue: 8, title: 'Other', jobDir: DIR8, worktree: WT8, branch: 'factory/8', pr: 10 }
 
-type Opts = { job?: Partial<Job>; labels?: string[]; pr?: Partial<PrState>; author?: string; approved?: boolean; closed?: boolean; noMerge?: boolean; prs?: PrState[]; reads?: Partial<PrState>[] }
+type Other = { n: number; labels: string[]; pr?: Partial<PrState> | null; job?: Partial<Job> }
+type Opts = { job?: Partial<Job>; labels?: string[]; pr?: Partial<PrState>; author?: string; approved?: boolean; closed?: boolean; noMerge?: boolean; prs?: PrState[]; reads?: Partial<PrState>[]; others?: Other[] }
 
 function tracker(o: Opts = {}) {
   const log: string[] = []
@@ -45,6 +50,13 @@ function tracker(o: Opts = {}) {
     state: 'open', createdAt: at, url: 'u/7', comments,
   }
   const prTicket: Ticket = { ...issue, number: 9, body: 'Closes #7\n', labels: ['factory:pr', 'type:feat'], comments: [] }
+  // The other jobs: each has its own labels and comments. events logs what the merge does to them.
+  const events: string[] = []
+  const others = new Map((o.others ?? []).map(x => [x.n, {
+    ...x,
+    ticket: { ...issue, number: x.n, title: `Job ${x.n}`, labels: ['factory', ...x.labels], comments: [{ id: 1, author: 'op', body: withMarker('intake', intakeComment({ ...J8, issue: x.n, pr: x.n + 2, ...x.job }, INTAKE)), createdAt: at, updatedAt: at }] } as Ticket,
+  }]))
+  const ticketOf = (n: number): Ticket => (n === 9 ? prTicket : others.get(n)?.ticket ?? { ...issue, state: closed ? 'closed' : 'open' })
   const pr = (): PrState => ({
     number: 9, state: merged ? 'MERGED' : 'OPEN', isDraft: false, title: 'feat(x): y', body: 'Closes #7\n', author: o.author ?? 'bob',
     headRefName: 'factory/7', headRefOid: HEAD, reviewDecision: o.approved === true ? 'APPROVED' : '', mergeCommit: merged ? MERGE : null, ...o.pr,
@@ -53,23 +65,38 @@ function tracker(o: Opts = {}) {
     log, states, posts, reviews, merges, upserts, assigns,
     login: async () => 'op',
     assign: async (n: number, on: boolean) => { assigns.push(`${on ? '+' : '-'}${n}`) },
-    get: async (n: number) => (n === 9 ? prTicket : { ...issue, state: closed ? 'closed' : 'open' }),
-    setState: async (_n: number, to: State, opts?: { prMerged?: boolean }) => {
-      assertTransition(stateOf(issue.labels) as State | null, to, opts)
+    events,
+    backlog: async () => [issue, ...[...others.values()].map(x => x.ticket)],
+    get: async (n: number) => ticketOf(n),
+    setState: async (n: number, to: State, opts?: { prMerged?: boolean }) => {
+      const ticket = ticketOf(n)
+      assertTransition(stateOf(ticket.labels) as State | null, to, opts)
+      if (n !== 7) {
+        events.push(`setState ${n} ${to}`)
+        ticket.labels = ['factory', `factory:${to}`]
+        return
+      }
       states.push(to)
     },
-    upsertComment: async (_n: number, name: MarkerName, body: string): Promise<Comment> => {
-      upserts.push({ name, body })
+    upsertComment: async (n: number, name: MarkerName, body: string): Promise<Comment> => {
       const c: Comment = { id: 2, author: 'op', body: withMarker(name, body), createdAt: at, updatedAt: at }
-      const i = comments.findIndex(x => x.body.startsWith(`<!-- factory:${name} -->`))
-      if (i >= 0) comments[i] = c
-      else comments.push(c)
+      const list = ticketOf(n).comments
+      const i = list.findIndex(x => x.body.startsWith(`<!-- factory:${name} -->`))
+      if (i >= 0) list[i] = c
+      else list.push(c)
+      if (n === 7) upserts.push({ name, body })
+      else events.push(`upsert ${n} ${name}`)
       return c
     },
-    comment: async (_n: number, body: string) => { posts.push(body) },
+    comment: async (n: number, body: string) => {
+      if (n === 7) posts.push(body)
+      else events.push(`comment ${n} ${body}`)
+    },
     close: async (_n: number, reason: string) => { log.push(`close ${reason}`); closed = true },
     findPr: async (b: string) => {
       log.push(`findPr ${b}`)
+      const other = [...others.values()].find(x => b === `factory/${x.n}`)
+      if (other !== undefined) return other.pr === null ? null : { ...pr(), number: other.n + 2, state: 'OPEN', headRefName: b, ...other.pr }
       return o.prs !== undefined ? (o.prs[0] ?? null) : pr()
     },
     prState: async () => ({ ...pr(), ...o.reads?.shift() }),
@@ -94,10 +121,20 @@ function setup(o: Opts = {}, over: Reply[] = [], files: Record<string, string> =
       [`${DIR}/job.md`]: renderJob({ ...J, ...o.job }),
       [`${DIR}/intake.md`]: INTAKE,
       [`${DIR}/spec.md`]: 'STATUS: READY\nTitle: feat(x): y\n',
+      ...Object.fromEntries((o.others ?? []).flatMap(x => {
+        const dir = `/repo/.factory/jobs/${x.n}`
+        return [
+          [`/repo/.factory/worktrees/${x.n}`, ''],
+          [`${dir}/job.md`, renderJob({ ...J8, issue: x.n, jobDir: dir, worktree: `/repo/.factory/worktrees/${x.n}`, branch: `factory/${x.n}`, pr: x.n + 2, ...x.job })],
+          [`${dir}/intake.md`, INTAKE],
+          [`${dir}/spec.md`, 'STATUS: READY\nTitle: feat(x): z\n'],
+        ]
+      })),
       ...files,
     },
     replies: [
       ...over,
+      ...(o.others ?? []).map(x => ({ argv: ['git', '-C', `/repo/.factory/worktrees/${x.n}`, 'rev-parse', 'HEAD'], result: { stdout: `${HEAD}\n` } })),
       { argv: ['git', '-C', WT, 'rev-parse', 'HEAD'], result: { stdout: `${HEAD}\n` } },
       { argv: ['git', '-C', WT, 'merge-base', 'HEAD', 'origin/main'], result: { stdout: `${NEWBASE}\n` } },
       { argv: ['git', '-C', WT, 'show', `${NEWBASE}:package.json`], result: { stdout: pkg } },
@@ -247,7 +284,7 @@ test('merge aborts on a sync conflict', async () => {
   const { ctx, t } = setup({}, [CONFLICT])
   await rejects(merge(ctx, t, 7), 'sync-conflict')
   expect(ctx.calls).toContainEqual(['git', '-C', WT, 'merge', '--abort'])
-  expect(t.states).toEqual(['needs-human'])
+  expect(t.states).toEqual(['build'])
   expect(t.posts.join('\n')).toContain('conflict')
   expect(t.merges).toEqual([])
   expect(count(ctx.calls, 'git', '-C', WT, 'push')).toBe(0)
@@ -428,9 +465,9 @@ test('merge refuses a job with no reviewed commit', async () => {
 const TREE = 'f'.repeat(40)
 const moved = (parents: string, tree = TREE): Reply[] => [
   { argv: ['git', '-C', WT, 'rev-parse', 'HEAD'], result: { stdout: `${MOVED}\n` } },
-  { argv: ['git', '-C', WT, 'rev-list', '--parents', '-n', '1', 'HEAD'], result: { stdout: `${MOVED} ${parents}\n` } },
+  { argv: ['git', '-C', WT, 'rev-list', '--parents', '-n', '1', MOVED], result: { stdout: `${MOVED} ${parents}\n` } },
   { argv: ['git', '-C', WT, 'merge-tree', '--write-tree'], result: { stdout: `${TREE}\n` } },
-  { argv: ['git', '-C', WT, 'rev-parse', 'HEAD^{tree}'], result: { stdout: `${tree}\n` } },
+  { argv: ['git', '-C', WT, 'rev-parse', `${MOVED}^{tree}`], result: { stdout: `${tree}\n` } },
 ]
 
 for (const [what, parents, tree] of [
@@ -486,7 +523,7 @@ test('merge unassigns the factory from the issue and the PR', async () => {
   expect(t.assigns).toEqual(['-7', '-9'])
   const conflict = setup({}, [CONFLICT])
   await rejects(merge(conflict.ctx, conflict.t, 7), 'sync-conflict')
-  expect(conflict.t.assigns).toEqual(['-7', '-9'])
+  expect(conflict.t.assigns).toEqual(['+7', '+9']) // the conflict sends the job to build
 })
 
 test('merge does not close an issue that GitHub already closed', async () => {
@@ -525,4 +562,110 @@ test('merge refuses when job.md names another PR', async () => {
   const { ctx, t } = setup({ pr: { number: 10 } })
   await rejects(merge(ctx, t, 7), 'bad-pr')
   expect(t.merges).toEqual([])
+})
+
+// The first sync of a chain: a merge of the reviewed commit and the base, under the head MOVED.
+const STEP = '1'.repeat(40)
+const step = (parents: string): Reply[] => [
+  { argv: ['git', '-C', WT, 'rev-list', '--parents', '-n', '1', STEP], result: { stdout: `${STEP} ${parents}\n` } },
+  { argv: ['git', '-C', WT, 'rev-parse', `${STEP}^{tree}`], result: { stdout: `${TREE}\n` } },
+]
+
+test('merge accepts two clean sync merges on top of the reviewed commit', async () => {
+  const { ctx, t } = setup({ pr: { headRefOid: MOVED } }, [...moved(`${STEP} ${NEWBASE}`), ...step(`${HEAD} ${SHA}`)])
+  await merge(ctx, t, 7)
+  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'merge-base', '--is-ancestor', SHA, 'origin/main'])
+  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'merge-tree', '--write-tree', HEAD, SHA])
+  expect(t.merges).toEqual([{ pr: 9, subject: 'feat(x): y (#9)', sha: MOVED }])
+})
+
+test('merge refuses a sync chain with an unreviewed commit', async () => {
+  const { ctx, t } = setup({ pr: { headRefOid: MOVED } }, [...moved(`${STEP} ${NEWBASE}`), ...step(HEAD)])
+  await rejects(merge(ctx, t, 7), 'not-reviewed')
+  // The top step is a clean sync: the walk refuses the commit under it.
+  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'rev-list', '--parents', '-n', '1', STEP])
+  expect(count(ctx.calls, 'git', '-C', WT, 'merge', '--no-edit')).toBe(0)
+  expect(count(ctx.calls, 'git', '-C', WT, 'push')).toBe(0)
+  expect(t.merges).toEqual([])
+})
+
+test('a sync conflict from approved sends the job to build', async () => {
+  const { ctx, t } = setup({}, [CONFLICT])
+  const err = (await merge(ctx, t, 7).catch((e: unknown) => e)) as { code: string; fix: string }
+  expect(err.code).toBe('sync-conflict')
+  expect(err.fix).toContain('/factory:run 7')
+  expect(t.states).toEqual(['build'])
+  expect((await readJob(ctx, 7)).round).toBe(2)
+  expect(ctx.calls).toContainEqual(['git', '-C', WT, 'merge', '--abort'])
+  expect(count(ctx.calls, 'git', '-C', WT, 'push')).toBe(0)
+  expect(t.merges).toEqual([])
+})
+
+const syncArgv = (wt: string, n: number): string[] => ['git', '-C', wt, 'merge', '--no-edit', '-m', 'chore(factory): sync with main', '-m', `Refs: #${n}`, 'origin/main']
+const at8 = (calls: string[][], argv: string[]): number => calls.findIndex(c => c.join(' ') === argv.join(' '))
+
+test('merge syncs each other approved job after the merge', async () => {
+  const { ctx, t } = setup({ others: [{ n: 8, labels: ['factory:approved'] }] })
+  const r = await merge(ctx, t, 7)
+  expect(r.syncs).toEqual([{ issue: 8, outcome: 'synced' }])
+  const fetch = at8(ctx.calls, ['git', '-C', WT8, 'fetch', 'origin', 'main'])
+  const sync = at8(ctx.calls, syncArgv(WT8, 8))
+  const push = at8(ctx.calls, ['git', '-C', WT8, 'push', 'origin', 'HEAD:refs/heads/factory/8'])
+  expect(fetch).toBeGreaterThan(at8(ctx.calls, ['rm', '-rf', DIR]))
+  expect(fetch).toBeLessThan(sync)
+  expect(sync).toBeLessThan(push)
+  expect(count(ctx.calls, 'git', '-C', WT8, 'push')).toBe(1)
+  expect(t.states).toEqual(['done'])
+  expect(t.events.filter(e => e.startsWith('setState'))).toEqual([])
+})
+
+test('merge does not sync jobs outside approved', async () => {
+  const others = ['build', 'review', 'needs-human', 'spec'].map((s, i) => ({ n: 20 + i * 10, labels: [`factory:${s}`] }))
+  const { ctx, t } = setup({ others })
+  const r = await merge(ctx, t, 7)
+  expect(r.syncs).toEqual([])
+  for (const o of others) expect(ctx.calls.some(c => c[2] === `/repo/.factory/worktrees/${o.n}`)).toBe(false)
+  expect(t.events).toEqual([])
+})
+
+test('a sync conflict in another job sends it to build', async () => {
+  const conflict: Reply = { argv: ['git', '-C', WT8, 'merge', '--no-edit'], result: { exitCode: 1, stderr: 'CONFLICT' } }
+  const { ctx, t } = setup({ others: [{ n: 8, labels: ['factory:approved'] }] }, [conflict])
+  const r = await merge(ctx, t, 7)
+  expect(r.syncs).toEqual([{ issue: 8, outcome: 'conflict', state: 'build' }])
+  expect(ctx.calls).toContainEqual(['git', '-C', WT8, 'merge', '--abort'])
+  expect(count(ctx.calls, 'git', '-C', WT8, 'push')).toBe(0)
+  const posts = t.events.filter(e => e.startsWith('comment 8 '))
+  expect(posts.length).toBe(1)
+  expect(posts[0]).toContain('the builder merges origin/main')
+  expect(t.events).toContain('setState 8 build')
+  expect((await readJob(ctx, 8)).round).toBe(2)
+  expect(t.states).toEqual(['done'])
+
+  const limit = setup({ others: [{ n: 8, labels: ['factory:approved'], job: { round: 3 } }] }, [conflict])
+  const l = await merge(limit.ctx, limit.t, 7)
+  expect(l.syncs).toEqual([{ issue: 8, outcome: 'conflict', state: 'needs-human' }])
+  expect(limit.t.events).toContain('setState 8 needs-human')
+})
+
+test('a failed sync of one job does not stop the others', async () => {
+  const others = [8, 20, 30, 40].map(n => ({ n, labels: ['factory:approved'] }))
+  const WT30 = '/repo/.factory/worktrees/30'
+  const { ctx, t } = setup({ others }, [
+    { argv: ['git', '-C', WT8, 'fetch'], result: { exitCode: 1, stderr: 'fetch boom' } },
+    { argv: ['git', '-C', WT30, 'rev-parse', 'HEAD'], result: { stdout: `${MOVED}\n` } },
+    { argv: ['git', '-C', WT30, 'rev-list', '--parents', '-n', '1', MOVED], result: { stdout: `${MOVED} ${HEAD}\n` } },
+    { argv: ['git', '-C', '/repo/.factory/worktrees/40', 'push'], result: { exitCode: 1, stderr: 'push rejected' } },
+  ])
+  const r = await merge(ctx, t, 7)
+  expect(r.syncs).toMatchObject([
+    { issue: 8, outcome: 'failed', error: expect.stringContaining('fetch boom') },
+    { issue: 20, outcome: 'synced' },
+    { issue: 30, outcome: 'failed', error: expect.stringContaining('not the reviewed commit') },
+    { issue: 40, outcome: 'failed', error: expect.stringContaining('push rejected') },
+  ])
+  expect(count(ctx.calls, 'git', '-C', WT30, 'merge')).toBe(0)
+  expect(count(ctx.calls, 'git', '-C', WT30, 'push')).toBe(0)
+  expect(t.states).toEqual(['done'])
+  expect(t.events.filter(e => e.startsWith('setState'))).toEqual([])
 })

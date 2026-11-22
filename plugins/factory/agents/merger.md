@@ -29,6 +29,13 @@ If the path has another form, do not call the tool. Report
      The merge commit is `mergeCommit` from the result. Never name `head` as
      the merge commit. `head` is the pushed branch head.
      If `mergeCommit` is null, say that the merge commit is unknown.
+     Then report each entry of `syncs`. Each entry is one other approved job
+     that got the base branch after the merge:
+     - `synced`: "#<issue> synced with the base branch".
+     - `conflict`: "#<issue> has a conflict and is now <state>". If the state
+       is `build`, tell the user to run `/factory:run <issue>`.
+     - `failed`: "#<issue> sync failed: <error>". The label did not change.
+     If `syncs` is empty, say that no other job needed a sync.
    - Success with `alreadyMerged: true`: report "PR merged on GitHub, set to
      done". Then give the merge commit and the cleanup report as above.
    - Error: the error code, the error text, and its `Fix` line. Do not try to

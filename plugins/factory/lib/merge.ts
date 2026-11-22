@@ -3,12 +3,12 @@ import { loadConfig } from './config.ts'
 import { type CleanupReport, cleanupJob, finishMerged } from './cleanup.ts'
 import { FactoryError, must } from './exec.ts'
 import { gateJob } from './gatejob.ts'
-import { intakeComment, jobSync, reviewedOf, verifyJob } from './job.ts'
+import { intakeComment, jobAdvance, jobSync, reviewedOf, verifyJob } from './job.ts'
 import { branchName, writeJob } from './jobfile.ts'
 import { stateOf } from './labels.ts'
 import { findMarked } from './markers.ts'
 import type { Tracker } from './tracker.ts'
-import type { Ctx, PrState, Ticket } from './types.ts'
+import type { Ctx, PrState, State, Ticket } from './types.ts'
 
 const HEAD_READS = 10
 const HEAD_READ_DELAY_MS = 1000
@@ -52,24 +52,71 @@ async function record(t: Tracker, issue: number, pr: PrState, sha: string): Prom
   return 'review'
 }
 
-// HEAD must be the reviewed commit. One exception: the sync merge that an earlier merge run made on top of it.
-// That is a merge of the reviewed commit and a base commit, with the tree that git makes from the two.
+// HEAD must be the reviewed commit, or a chain of sync merges on top of it that earlier merge runs made.
+// Each sync merges the commit under it (first parent) and a base commit, with the tree that git makes from the two.
 async function checkReviewed(ctx: Ctx, wt: string, reviewed: string | null, origin: string): Promise<string> {
   if (reviewed === null) throw notReviewed('the job has no reviewed commit')
   const head = await must(ctx, ['git', '-C', wt, 'rev-parse', 'HEAD'])
-  if (head === reviewed) return reviewed
-  const [, first, second, ...rest] = (await must(ctx, ['git', '-C', wt, 'rev-list', '--parents', '-n', '1', 'HEAD'])).split(/\s+/)
-  const clean = first === reviewed && second !== undefined && rest.length === 0
-    && (await ctx.run(['git', '-C', wt, 'merge-base', '--is-ancestor', second, origin])).exitCode === 0
-    && await sameTree(ctx, wt, first, second)
-  if (!clean) throw notReviewed(`HEAD ${head} is not the reviewed commit ${reviewed}`)
+  for (let c = head; c !== reviewed;) {
+    const [, first, second, ...rest] = (await must(ctx, ['git', '-C', wt, 'rev-list', '--parents', '-n', '1', c])).split(/\s+/)
+    const clean = first !== undefined && second !== undefined && rest.length === 0
+      && (await ctx.run(['git', '-C', wt, 'merge-base', '--is-ancestor', second, origin])).exitCode === 0
+      && await sameTree(ctx, wt, c, first, second)
+    if (!clean) throw notReviewed(`HEAD ${head} is not the reviewed commit ${reviewed}`)
+    c = first
+  }
   return reviewed
 }
 
-async function sameTree(ctx: Ctx, wt: string, a: string, b: string): Promise<boolean> {
+async function sameTree(ctx: Ctx, wt: string, commit: string, a: string, b: string): Promise<boolean> {
   const made = await ctx.run(['git', '-C', wt, 'merge-tree', '--write-tree', a, b])
   if (made.exitCode !== 0) return false // a conflict: the factory never commits one
-  return made.stdout.split('\n', 1)[0]?.trim() === (await must(ctx, ['git', '-C', wt, 'rev-parse', 'HEAD^{tree}']))
+  return made.stdout.split('\n', 1)[0]?.trim() === (await must(ctx, ['git', '-C', wt, 'rev-parse', `${commit}^{tree}`]))
+}
+
+// Merges origin/<base> into the worktree. It undoes a conflict, comments on the issue, and returns false.
+async function syncBase(ctx: Ctx, t: Tracker, wt: string, issue: number, base: string): Promise<boolean> {
+  const origin = `origin/${base}`
+  const sync = await ctx.run(['git', '-C', wt, 'merge', '--no-edit', '-m', `chore(factory): sync with ${base}`, '-m', `Refs: #${issue}`, origin])
+  if (sync.exitCode === 0) return true
+  // Only a stopped merge leaves MERGE_HEAD. Other failures (lock, disk, bad ref) are no conflict.
+  const conflict = (await ctx.run(['git', '-C', wt, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0
+  if (!conflict) {
+    throw new FactoryError('sync-failed', `git merge ${origin} failed in ${wt}: ${(sync.stderr || sync.stdout).trim()}`, 'Fix the git problem in the worktree, then merge again. The label did not change.')
+  }
+  await ctx.run(['git', '-C', wt, 'merge', '--abort'])
+  await t.comment(issue, `Factory stopped: ${conflictReason(origin, branchName(issue))} The job needs a new build: the builder merges ${origin}, then the reviews run again.`)
+  return false
+}
+
+const conflictReason = (origin: string, branch: string): string => `merging ${origin} into ${branch} has a conflict.`
+
+export type Sync = { issue: number; outcome: 'synced' } | { issue: number; outcome: 'conflict'; state: State } | { issue: number; outcome: 'failed'; error: string }
+
+// Only approved jobs: no agent and no human uses their worktrees. An error in one job does not stop the next.
+// shortcut: no gate after a sync, the gate runs at the merge of each job. Upgrade when a red gate at merge time is common.
+async function syncOthers(ctx: Ctx, t: Tracker, merged: number, base: string): Promise<Sync[]> {
+  const syncs: Sync[] = []
+  for (const other of await t.backlog()) {
+    const m = other.number
+    if (m === merged || stateOf(other.labels) !== 'approved') continue
+    try {
+      if ((await t.findPr(branchName(m)))?.state !== 'OPEN') continue
+      const { job } = await jobSync(ctx, t, m)
+      await verifyJob(ctx, t, await t.get(m), job)
+      await must(ctx, ['git', '-C', job.worktree, 'fetch', 'origin', base])
+      await checkReviewed(ctx, job.worktree, job.reviewed, `origin/${base}`)
+      if (await syncBase(ctx, t, job.worktree, m, base)) {
+        await must(ctx, ['git', '-C', job.worktree, 'push', 'origin', `HEAD:refs/heads/${branchName(m)}`])
+        syncs.push({ issue: m, outcome: 'synced' })
+      } else {
+        syncs.push({ issue: m, outcome: 'conflict', state: (await jobAdvance(ctx, t, { issue: m, from: 'approved', to: 'build' })).state })
+      }
+    } catch (e) {
+      syncs.push({ issue: m, outcome: 'failed', error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  return syncs
 }
 
 // Approval and merge apply only after the reviews: the job is approved, or a human must decide.
@@ -90,14 +137,14 @@ export async function approve(ctx: Ctx, t: Tracker, n: number): Promise<{ issue:
   return { issue, pr: pr.number, how: await record(t, issue, pr, reviewed) }
 }
 
-export type MergeResult = { issue: number; pr: number; head: string; mergeCommit: string | null; alreadyMerged: boolean; cleanup: CleanupReport }
+export type MergeResult = { issue: number; pr: number; head: string; mergeCommit: string | null; alreadyMerged: boolean; cleanup: CleanupReport; syncs: Sync[] }
 
 export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResult> {
   const { issue, pr: found } = await resolvePair(ctx, t, n)
   // A human merged the PR on GitHub: only the housekeeping is left.
   if (found.state === 'MERGED') {
     const cleanup = await finishMerged(ctx, t, await t.get(issue))
-    return { issue, pr: found.number, head: found.headRefOid, mergeCommit: found.mergeCommit, alreadyMerged: true, cleanup }
+    return { issue, pr: found.number, head: found.headRefOid, mergeCommit: found.mergeCommit, alreadyMerged: true, cleanup, syncs: [] }
   }
   const cfg = await loadConfig(ctx)
   const base = cfg.baseBranch
@@ -112,21 +159,11 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
 
   await must(ctx, ['git', '-C', wt, 'fetch', 'origin', base])
   const reviewed = await checkReviewed(ctx, wt, job.reviewed, origin)
-  const sync = await ctx.run(['git', '-C', wt, 'merge', '--no-edit', '-m', `chore(factory): sync with ${base}`, '-m', `Refs: #${issue}`, origin])
-  if (sync.exitCode !== 0) {
-    // Only a stopped merge leaves MERGE_HEAD. Other failures (lock, disk, bad ref) are no conflict.
-    const conflict = (await ctx.run(['git', '-C', wt, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'])).exitCode === 0
-    if (!conflict) {
-      throw new FactoryError('sync-failed', `git merge ${origin} failed in ${wt}: ${(sync.stderr || sync.stdout).trim()}`, 'Fix the git problem in the worktree, then merge again. The label did not change.')
-    }
-    await ctx.run(['git', '-C', wt, 'merge', '--abort'])
-    const reason = `merging ${origin} into ${job.branch} has a conflict.`
-    await t.comment(issue, `Factory stopped: ${reason} The job needs a new build: the builder merges ${origin}, then the reviews run again.`)
-    if (state === 'approved') {
-      await t.setState(issue, 'needs-human')
-      await followState(t, [issue, found.number], 'needs-human')
-    }
-    throw new FactoryError('sync-conflict', reason, `The factory undid the merge, so the worktree has no conflict now. Send the job back to build: the builder merges ${origin}, then the reviews run again.`)
+  if (!(await syncBase(ctx, t, wt, issue, base))) {
+    // At the round limit, job_advance sets needs-human instead of build.
+    const to = state === 'approved' ? (await jobAdvance(ctx, t, { issue, from: 'approved', to: 'build' })).state : state
+    const next = to === 'build' ? `The job is in build now. Run /factory:run ${issue}` : 'Send the job back to build'
+    throw new FactoryError('sync-conflict', conflictReason(origin, job.branch), `The factory undid the merge, so the worktree has no conflict now. ${next}: the builder merges ${origin}, then the reviews run again.`)
   }
 
   const head = async (): Promise<string> => must(ctx, ['git', '-C', wt, 'rev-parse', 'HEAD'])
@@ -166,5 +203,6 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   await followState(t, [issue, pr.number], 'done')
   if ((await t.get(issue)).state !== 'closed') await t.close(issue, 'done')
   // shortcut: no retry when GitHub gives no merge commit, upgrade when a real run shows null.
-  return { issue, pr: pr.number, head: sha, mergeCommit: after.mergeCommit, alreadyMerged: false, cleanup: await cleanupJob(ctx, t, issue, 'done') }
+  const cleanup = await cleanupJob(ctx, t, issue, 'done')
+  return { issue, pr: pr.number, head: sha, mergeCommit: after.mergeCommit, alreadyMerged: false, cleanup, syncs: await syncOthers(ctx, t, issue, base) }
 }

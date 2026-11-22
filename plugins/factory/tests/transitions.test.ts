@@ -22,11 +22,12 @@ test('review can loop back to build', () => {
   expect(canTransition('review', 'build')).toBe(true)
 })
 
-test('approved goes only to done or needs-human', () => {
-  expect(canTransition('approved', 'build')).toBe(false)
+test('approved can go back to build', () => {
+  expect(canTransition('approved', 'build')).toBe(true)
+  expect(canTransition('approved', 'review')).toBe(false)
   expect(canTransition('approved', 'needs-human')).toBe(true)
   expect(canTransition('approved', 'done')).toBe(true)
-  expect(TRANSITIONS.approved).toEqual(['done', 'needs-human'])
+  expect(TRANSITIONS.approved).toEqual(['build', 'done', 'needs-human'])
 })
 
 test('transitions without a forward path are rejected', () => {
