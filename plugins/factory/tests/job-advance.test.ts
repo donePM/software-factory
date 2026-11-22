@@ -801,3 +801,32 @@ test('rejected reports what cleanup kept', async () => {
   expect(r.cleanup!.kept[0]!.reason).toContain('offline')
   expect(r.cleanup!.removed).toContain(DIR)
 })
+
+const autoCfg = (auto?: boolean): Record<string, string> => ({
+  '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('u', 'main', [{ id: 'node', path: '.' }]), merge: auto === undefined ? { method: 'merge' } : { method: 'merge', auto } }),
+})
+const allPass = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS') }
+
+test('approved returns autoMerge when merge.auto is on', async () => {
+  const { ctx, t } = inReview({ ...autoCfg(true), ...allPass, [`${DIR}/decision.md`]: APPROVE })
+  const r = await jobAdvance(ctx, t, { issue: 7, to: 'approved' })
+  expect(r.state).toBe('approved')
+  expect(r.autoMerge).toBe(true)
+  expect(t.states).toEqual(['approved'])
+})
+
+test('approved has no autoMerge when merge.auto is off', async () => {
+  for (const auto of [undefined, false]) {
+    const { ctx, t } = inReview({ ...autoCfg(auto), ...allPass, [`${DIR}/decision.md`]: APPROVE })
+    const r = await jobAdvance(ctx, t, { issue: 7, to: 'approved' })
+    expect(r.state).toBe('approved')
+    expect('autoMerge' in r).toBe(false)
+  }
+})
+
+test('escalate has no autoMerge when merge.auto is on', async () => {
+  const { ctx, t } = inReview({ ...autoCfg(true), ...allPass, [`${DIR}/decision.md`]: ESCALATE })
+  const r = await jobAdvance(ctx, t, { issue: 7, to: 'needs-human' })
+  expect(r.state).toBe('needs-human')
+  expect('autoMerge' in r).toBe(false)
+})

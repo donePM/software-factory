@@ -211,7 +211,7 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
 }
 
 export type AdvanceInput = { issue: number; to: State; reason?: string; from?: State }
-export type AdvanceResult = { job: Job; state: State; round: number; roundDir: string; reviewers?: Reviewer[]; note?: string; cleanup?: CleanupReport; warnings?: string[] }
+export type AdvanceResult = { job: Job; state: State; round: number; roundDir: string; reviewers?: Reviewer[]; note?: string; cleanup?: CleanupReport; warnings?: string[]; autoMerge?: true }
 
 const SUPPORTED: State[] = ['spec', 'needs-info', 'rejected', 'build', 'review', 'approved', 'needs-human']
 const MENTION = /^[A-Za-z0-9-]+(\[bot\])?$/
@@ -515,5 +515,6 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   }
   if (to === 'needs-human') await t.prComment(job.pr, decision.question ?? '')
   await moveJob(t, job, to)
-  return done(job, to, warnings.length === 0 ? {} : { warnings })
+  const autoMerge = to === 'approved' && (await loadConfig(ctx)).merge.auto === true
+  return done(job, to, { ...(warnings.length === 0 ? {} : { warnings }), ...(autoMerge ? { autoMerge } : {}) })
 }
