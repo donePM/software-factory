@@ -1,5 +1,7 @@
 import { lacksScope } from './doctor.ts'
 import { FactoryError, must } from './exec.ts'
+import { jobDir, readJob, writeJob } from './jobfile.ts'
+import type { BoardIds } from './jobfile.ts'
 import { stateOf } from './labels.ts'
 import type { Config } from './config.ts'
 import type { Tracker } from './tracker.ts'
@@ -64,27 +66,69 @@ async function loadBoard(ctx: Ctx, owner: string, number: number): Promise<Board
   return boardOf(owner, p, field)
 }
 
+// The cached ids of the card, or undefined when job.md is missing or bad.
+async function cachedIds(ctx: Ctx, n: number): Promise<BoardIds | undefined> {
+  if (!(await ctx.fs.exists(`${jobDir(ctx.root, n)}/job.md`))) return undefined
+  return readJob(ctx, n).then(j => j.board, () => undefined)
+}
+
+// The ids never change. A write that fails with them needs the operator, not a retry.
+async function editCached(ctx: Ctx, n: number, ids: BoardIds, option: string): Promise<void> {
+  const r = await ctx.run([
+    'gh', 'project', 'item-edit', '--id', ids.item, '--project-id', ids.project, '--field-id', ids.field, '--single-select-option-id', option,
+  ])
+  if (r.exitCode !== 0) {
+    throw new FactoryError('board-write', `the board write with the ids in job.md failed: ${r.stderr.trim()}`,
+      `Delete the ## Board section in ${jobDir(ctx.root, n)}/job.md. The next transition looks the ids up again.`)
+  }
+}
+
+export type Boarded = { tracker: Tracker; warnings: string[]; save: () => Promise<void> }
+
 // After each label change, sets the Factory option of the issue card. A board failure becomes a warning.
-export function withBoard(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project'>): { tracker: Tracker; warnings: string[] } {
+// With the ids in job.md a change is one GraphQL mutation. save() writes the ids that this tracker looked up.
+export function withBoard(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project'>): Boarded {
   const warnings: string[] = []
+  const found = new Map<number, BoardIds>()
+  const save = async (): Promise<void> => {
+    for (const [n, board] of found) {
+      try {
+        if (await ctx.fs.exists(`${jobDir(ctx.root, n)}/job.md`)) await writeJob(ctx, { ...(await readJob(ctx, n)), board })
+      } catch (e) {
+        warnings.push(`#${n}: the board ids were not saved: ${messageOf(e)}`)
+      }
+    }
+    found.clear()
+  }
   const p = cfg.project
-  if (p?.enabled !== true) return { tracker, warnings }
+  if (p?.enabled !== true) return { tracker, warnings, save }
   let board: Promise<Board> | undefined
   const setState: Tracker['setState'] = async (n, to, opts) => {
-    await tracker.setState(n, to, opts)
+    const from = await tracker.setState(n, to, opts)
+    // The card is in the right column already.
+    if (from !== undefined && optionFor(from) === optionFor(to)) return from
     if (p.number === undefined) {
       warnings.push(NO_NUMBER)
-      return
+      return from
     }
     try {
+      const ids = found.get(n) ?? (await cachedIds(ctx, n))
+      const cached = ids?.options[optionFor(to)]
+      if (ids !== undefined && cached !== undefined) {
+        await editCached(ctx, n, ids, cached)
+        return from
+      }
       board ??= loadBoard(ctx, tracker.repo.split('/')[0]!, p.number)
       const b = await board
-      await setOption(ctx, b, await addItem(ctx, b, `https://github.com/${tracker.repo}/issues/${n}`), optionFor(to))
+      const item = await addItem(ctx, b, `https://github.com/${tracker.repo}/issues/${n}`)
+      found.set(n, { project: b.id, field: b.fieldId, item, options: Object.fromEntries(b.options) })
+      await setOption(ctx, b, item, optionFor(to))
     } catch (e) {
-      warnings.push(`#${n}: ${messageOf(e)}`)
+      warnings.push(`#${n}: ${messageOf(e)}${e instanceof FactoryError && e.fix !== undefined ? ` Fix: ${e.fix}` : ''}`)
     }
+    return from
   }
-  return { tracker: { ...tracker, setState }, warnings }
+  return { tracker: { ...tracker, setState }, warnings, save }
 }
 
 // Adds a Backlog card for each issue. A board failure becomes a warning.

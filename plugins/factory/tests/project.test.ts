@@ -1,9 +1,10 @@
 import { expect, test } from 'claude-code/testing'
+import { readJob, renderJob, type BoardIds, type Job } from '../lib/jobfile.ts'
 import { STATUS } from '../lib/labels.ts'
 import { addToBacklog, boardDrift, FACTORY_OPTIONS, optionFor, withBoard } from '../lib/project.ts'
 import type { Tracker } from '../lib/tracker.ts'
-import type { Ticket } from '../lib/types.ts'
-import { boardCalls, boardReplies, edit, itemList, ON, onBoard } from './support/board.ts'
+import type { State, Ticket } from '../lib/types.ts'
+import { boardCalls, boardReplies, edit, itemList, ON, onBoard, optionId } from './support/board.ts'
 import { fakeCtx } from './support/host.ts'
 
 test('optionFor maps each state to one Factory option', () => {
@@ -15,19 +16,73 @@ test('optionFor maps each state to one Factory option', () => {
   })
 })
 
-const fake = (fail = false): Tracker => ({
+const fake = (fail = false, from?: State | null): Tracker => ({
   repo: 'o/r',
-  setState: async () => { if (fail) throw new Error('bad move') },
+  setState: async () => {
+    if (fail) throw new Error('bad move')
+    return from
+  },
 }) as unknown as Tracker
 
-test('withBoard adds the card and sets the option after the label change', async () => {
+const DIR = '/repo/.factory/jobs/7'
+const JOB: Job = {
+  issue: 7, title: 't', jobDir: DIR, worktree: '/repo/.factory/worktrees/7', branch: 'factory/7', base: 'none', baseBranch: 'main',
+  pr: null, round: 0, specUpdated: null, reviewed: null, route: {}, language: 'English',
+}
+const IDS: BoardIds = { project: 'P1', field: 'F1', item: 'I1', options: Object.fromEntries(FACTORY_OPTIONS.map(o => [o, optionId(o)])) }
+const withJob = (board?: BoardIds) => ({ [`${DIR}/job.md`]: renderJob(board === undefined ? JOB : { ...JOB, board }) })
+
+test('a transition with the board ids in job.md makes exactly one board call', async () => {
+  const ctx = fakeCtx({ files: withJob(IDS), replies: boardReplies })
+  const { tracker, warnings } = onBoard(ctx, fake(false, 'intake'))
+  await tracker.setState(7, 'spec')
+  expect(boardCalls(ctx.calls)).toEqual(['setState 7 spec', 'gh project item-edit'])
+  expect(ctx.calls).toContainEqual(edit('Spec'))
+  expect(warnings).toEqual([])
+})
+
+test('the first board write saves the board ids in job.md', async () => {
+  const ctx = fakeCtx({ files: withJob(), replies: boardReplies })
+  const { tracker, warnings, save } = onBoard(ctx, fake(false, 'intake'))
+  await tracker.setState(7, 'spec')
+  await save()
+  expect((await readJob(ctx, 7)).board).toEqual(IDS)
+  expect(warnings).toEqual([])
+  // No job.md: the ids are not saved, and save writes no file.
+  const none = fakeCtx({ replies: boardReplies })
+  const b = onBoard(none, fake(false, 'intake'))
+  await b.tracker.setState(7, 'spec')
+  await b.save()
+  expect(Object.keys(none.files)).toEqual([])
+})
+
+test('a transition that keeps the board column makes no board call', async () => {
+  for (const [from, to] of [['spec', 'spec'], ['fastlane', 'build'], ['needs-info', 'needs-human']] as const) {
+    const ctx = fakeCtx({ files: withJob(IDS), replies: boardReplies })
+    const { tracker } = onBoard(ctx, fake(false, from))
+    await tracker.setState(7, to)
+    expect(boardCalls(ctx.calls)).toEqual([`setState 7 ${to}`])
+  }
+})
+
+test('a failed board write with cached ids gives a warning with a fix and no lookup', async () => {
+  const ctx = fakeCtx({ files: withJob(IDS), replies: [{ argv: ['gh', 'project', 'item-edit'], result: { exitCode: 1, stderr: 'boom' } }, ...boardReplies] })
+  const { tracker, warnings } = onBoard(ctx, fake(false, 'intake'))
+  await tracker.setState(7, 'spec')
+  expect(boardCalls(ctx.calls)).toEqual(['setState 7 spec', 'gh project item-edit'])
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]).toContain('boom')
+  expect(warnings[0]).toContain(`Fix: Delete the ## Board section in ${DIR}/job.md.`)
+})
+
+test('withBoard adds the card and sets the option after the label change, and looks the ids up once', async () => {
   const ctx = fakeCtx({ replies: boardReplies })
   const { tracker, warnings } = onBoard(ctx, fake())
   await tracker.setState(7, 'spec')
   await tracker.setState(7, 'build')
   expect(boardCalls(ctx.calls)).toEqual([
     'setState 7 spec', 'gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit',
-    'setState 7 build', 'gh project item-add', 'gh project item-edit',
+    'setState 7 build', 'gh project item-edit',
   ])
   expect(ctx.calls).toContainEqual(['gh', 'project', 'item-add', '3', '--owner', 'o', '--url', 'https://github.com/o/r/issues/7', '--format', 'json'])
   expect(ctx.calls).toContainEqual(edit('Spec'))
