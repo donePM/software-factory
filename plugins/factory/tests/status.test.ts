@@ -5,7 +5,7 @@ import { causeOf, statusFor, statusText } from '../lib/status.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import { withMarker } from '../lib/markers.ts'
 import type { Comment, Ticket } from '../lib/types.ts'
-import { itemList } from './support/board.ts'
+import { boardReplies, itemList } from './support/board.ts'
 import { fakeCtx } from './support/host.ts'
 
 const Q = (o: Partial<Queue> = {}): Queue => ({ running: [], waiting: [], ready: [], blocked: [], conflicts: [], slots: 0, next: [], ...o })
@@ -58,10 +58,15 @@ test('needs-human rows give one step in each sentence', () => {
   const waiting = [1, 2, 3].map(number => ({ number, state: 'needs-human' as const }))
   const causes = { 1: { reason: 'Approver escalated: API?', merge: true }, 2: { reason: 'Builder blocked.', merge: false } }
   const text = statusText('o/r', Q({ waiting, slots: 2 }), { 1: 71 }, 2, {}, causes)
-  expect(lineWith(text, '#1')).toBe('  #1  needs you: Approver escalated: API? · decide. Then run /factory:merge 1 (https://github.com/o/r/pull/71)')
+  expect(lineWith(text, '#1')).toBe('  #1  needs you: Approver escalated: API? · decide. To merge, run /factory:merge 1. To rework, comment in the issue. Then run /factory:run 1 (https://github.com/o/r/pull/71)')
   expect(lineWith(text, '#2')).toBe('  #2  needs you: Builder blocked. · fix the cause. Then run /factory:run 2')
   expect(lineWith(text, '#3')).toBe('  #3  needs you: answer in the issue. Then run /factory:run 3')
   expect(text).not.toContain(', then ')
+})
+
+test('an escalated row names merge and rework', () => {
+  const text = statusText('o/r', Q({ waiting: [{ number: 6, state: 'needs-human' as const }], slots: 2 }), { 6: 76 }, 2, {}, { 6: { reason: 'Approver escalated: API?', merge: true } })
+  expect(lineWith(text, '#6')).toBe('  #6  needs you: Approver escalated: API? · decide. To merge, run /factory:merge 6. To rework, comment in the issue. Then run /factory:run 6 (https://github.com/o/r/pull/76)')
 })
 
 test('a round limit row names maxRounds and /factory:run', () => {
@@ -214,6 +219,45 @@ test('statusFor shows the board differences', async () => {
   expect(lines.slice(-3)).toEqual(['', 'Board differs from labels', '  #1 board says Review, label says build: move the card to Build'])
   const same = await statusFor(fakeCtx({ replies: [itemList([{ url: 'https://github.com/o/r/issues/1', factory: 'Build' }])] }), tr, cfg)
   expect(same).not.toContain('Board differs from labels')
+})
+
+test('statusFor reads the board cards once', async () => {
+  const T = (n: number, labels: string[]): Ticket => ({
+    kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', ...labels],
+    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: `https://github.com/o/r/issues/${n}`, comments: [],
+  })
+  const tr = {
+    repo: 'o/r',
+    login: async () => 'op',
+    backlog: async () => [T(1, []), T(2, ['factory:build'])],
+    findPr: async () => null,
+  } as unknown as Tracker
+  const cfg = { ...defaultConfig('u', 'main', []), concurrency: 2, project: { enabled: true, number: 3 } }
+  const ctx = fakeCtx({ replies: [itemList([{ url: 'https://github.com/o/r/issues/1', factory: 'Backlog' }, { url: 'https://github.com/o/r/issues/2', factory: 'Review' }])] })
+  const text = await statusFor(ctx, tr, cfg)
+  expect(ctx.calls.filter(c => c[1] === 'project' && c[2] === 'item-list')).toHaveLength(1)
+  expect(text.split('\n').slice(-3)).toEqual(['', 'Board differs from labels', '  #2 board says Review, label says build: move the card to Build'])
+})
+
+test('statusFor moves a card that differs and shows no line for it', async () => {
+  const T = (n: number, label: string): Ticket => ({
+    kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', label],
+    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: `https://github.com/o/r/issues/${n}`, comments: [],
+  })
+  const tr = {
+    repo: 'o/r',
+    login: async () => 'op',
+    backlog: async () => [T(1, 'factory:build'), T(2, 'factory:review')],
+    findPr: async () => null,
+  } as unknown as Tracker
+  const cfg = { ...defaultConfig('u', 'main', []), concurrency: 2, project: { enabled: true, number: 3 } }
+  const cards = itemList([{ url: 'https://github.com/o/r/issues/1', factory: 'Review' }, { url: 'https://github.com/o/r/issues/2', factory: 'Build' }])
+  const ctx = fakeCtx({ replies: [...boardReplies, cards] })
+  expect(await statusFor(ctx, tr, cfg)).not.toContain('Board differs from labels')
+  expect(ctx.calls.filter(c => c[2] === 'item-edit').map(c => c[4])).toEqual(['I0', 'I1'])
+  const limit = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-edit', '--id', 'I1'], result: { exitCode: 1, stderr: 'rate limit' } }, ...boardReplies, cards] })
+  const lines = (await statusFor(limit, tr, cfg)).split('\n')
+  expect(lines.slice(-3)).toEqual(['', 'Board differs from labels', '  #2 board says Build, label says review: move the card to Review'])
 })
 
 test('statusFor shows the round limit step', async () => {

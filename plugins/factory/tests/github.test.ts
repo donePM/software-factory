@@ -84,6 +84,13 @@ test('get marks a pull request as kind pr', async () => {
   expect((await githubTracker(spyCtx(getReplies(['factory'])), 'a/b').get(5)).kind).toBe('issue')
 })
 
+test('get reads the close reason of an issue', async () => {
+  const read = (o: Record<string, unknown>) => spyCtx([{ argv: ['gh', 'api', 'repos/a/b/issues/5'], result: { stdout: issueJson([], 5, o) } }, ...getReplies([])])
+  expect((await githubTracker(read({ state: 'closed', state_reason: 'duplicate' }), 'a/b').get(5)).stateReason).toBe('duplicate')
+  expect(await githubTracker(read({ state_reason: null }), 'a/b').get(5)).not.toHaveProperty('stateReason')
+  expect(await githubTracker(read({}), 'a/b').get(5)).not.toHaveProperty('stateReason')
+})
+
 const PUT = ['gh', 'api', '-X', 'PUT', 'repos/a/b/issues/5/labels', '--input', '-']
 const puts = (s: Spy) => s.stdins.filter(x => x.argv.includes('PUT')).map(x => ({ argv: x.argv, labels: JSON.parse(x.stdin!).labels }))
 

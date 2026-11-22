@@ -1,5 +1,5 @@
 import { lacksScope } from './doctor.ts'
-import { FactoryError, must } from './exec.ts'
+import { FactoryError, must, RATE_LIMIT_FIX } from './exec.ts'
 import { jobDir, readJob, writeJob } from './jobfile.ts'
 import type { BoardIds } from './jobfile.ts'
 import { stateOf } from './labels.ts'
@@ -28,8 +28,19 @@ type RawField = { id: string; name: string; options?: { id: string; name: string
 const FIELD = 'Factory'
 export const NO_NUMBER = 'project.number is missing. Run /factory:setup project.'
 
-const project = async <T>(ctx: Ctx, argv: string[]): Promise<T> =>
-  JSON.parse(await must(ctx, ['gh', 'project', ...argv, '--format', 'json'])) as T
+// gh prints "unknown owner type" when its owner lookup fails, and hides the real cause.
+async function project<T>(ctx: Ctx, argv: string[]): Promise<T> {
+  try {
+    return JSON.parse(await must(ctx, ['gh', 'project', ...argv, '--format', 'json'])) as T
+  } catch (e) {
+    const at = argv.indexOf('--owner')
+    if (!(e instanceof FactoryError) || at < 0 || !/unknown owner type/i.test(e.message)) throw e
+    const owner = argv[at + 1]
+    throw new FactoryError('owner-unresolved',
+      `${e.message}. gh could not resolve the owner "${owner}". The probable cause is a GraphQL rate limit.`,
+      RATE_LIMIT_FIX)
+  }
+}
 
 const factoryField = async (ctx: Ctx, owner: string, n: number): Promise<RawField | undefined> =>
   (await project<{ fields: RawField[] }>(ctx, ['field-list', String(n), '--owner', owner])).fields.find(f => f.name === FIELD)
@@ -55,11 +66,14 @@ const viewSteps = (url: string): string[] => [
 ]
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+// A board failure as a warning, with the fix when the error has one.
+export const warningOf = (e: unknown): string => `${messageOf(e)}${e instanceof FactoryError && e.fix !== undefined ? ` Fix: ${e.fix}` : ''}`
+const rateLimited = (e: unknown): boolean => e instanceof FactoryError && e.code === 'rate-limited'
 
 const boardOf = (owner: string, p: RawProject, field: RawField): Board =>
   ({ owner, number: p.number, id: p.id, fieldId: field.id, options: new Map(field.options?.map(o => [o.name, o.id])) })
 
-async function loadBoard(ctx: Ctx, owner: string, number: number): Promise<Board> {
+export async function loadBoard(ctx: Ctx, owner: string, number: number): Promise<Board> {
   const p = await project<RawProject>(ctx, ['view', String(number), '--owner', owner])
   const field = await factoryField(ctx, owner, p.number)
   if (field === undefined) throw new FactoryError('project-field', `the project has no field ${FIELD}`)
@@ -73,12 +87,15 @@ async function cachedIds(ctx: Ctx, n: number): Promise<BoardIds | undefined> {
 }
 
 // The ids never change. A write that fails with them needs the operator, not a retry.
+// A rate limit is no cause to delete the ids.
 async function editCached(ctx: Ctx, n: number, ids: BoardIds, option: string): Promise<void> {
-  const r = await ctx.run([
-    'gh', 'project', 'item-edit', '--id', ids.item, '--project-id', ids.project, '--field-id', ids.field, '--single-select-option-id', option,
-  ])
-  if (r.exitCode !== 0) {
-    throw new FactoryError('board-write', `the board write with the ids in job.md failed: ${r.stderr.trim()}`,
+  try {
+    await must(ctx, [
+      'gh', 'project', 'item-edit', '--id', ids.item, '--project-id', ids.project, '--field-id', ids.field, '--single-select-option-id', option,
+    ])
+  } catch (e) {
+    if (rateLimited(e)) throw e
+    throw new FactoryError('board-write', `the board write with the ids in job.md failed: ${messageOf(e)}`,
       `Delete the ## Board section in ${jobDir(ctx.root, n)}/job.md. The next transition looks the ids up again.`)
   }
 }
@@ -124,7 +141,7 @@ export function withBoard(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project
       found.set(n, { project: b.id, field: b.fieldId, item, options: Object.fromEntries(b.options) })
       await setOption(ctx, b, item, optionFor(to))
     } catch (e) {
-      warnings.push(`#${n}: ${messageOf(e)}${e instanceof FactoryError && e.fix !== undefined ? ` Fix: ${e.fix}` : ''}`)
+      warnings.push(`#${n}: ${warningOf(e)}`)
     }
     return from
   }
@@ -140,48 +157,79 @@ export async function addToBacklog(ctx: Ctx, tracker: Pick<Tracker, 'repo'>, cfg
   try {
     board = await loadBoard(ctx, tracker.repo.split('/')[0]!, p.number)
   } catch (e) {
-    return [messageOf(e)]
+    return [warningOf(e)]
   }
   const warnings: string[] = []
   for (const n of numbers) {
     try {
       await setOption(ctx, board, await addItem(ctx, board, `https://github.com/${tracker.repo}/issues/${n}`), 'Backlog')
     } catch (e) {
-      warnings.push(`#${n}: ${messageOf(e)}`)
+      warnings.push(`#${n}: ${warningOf(e)}`)
+      // More gh calls make a rate limit last longer. The next queue adds the missing cards.
+      if (rateLimited(e) || (e instanceof FactoryError && e.code === 'owner-unresolved')) break
     }
   }
   return warnings
 }
 
-type RawItem = { content?: { url?: string }; factory?: string }
+type RawItem = { id: string; content?: { url?: string }; factory?: string }
+export type Card = { id: string; factory?: string }
+export type Cards = Map<string | undefined, Card>
+export type CardReader = (owner: string, number: number) => Promise<Cards>
 
-// Maps the issue URL of each card to its Factory option.
-export async function listCards(ctx: Ctx, owner: string, number: number): Promise<Map<string | undefined, string | undefined>> {
+// The gh project calls (GraphQL) of each tool, with the board on:
+// - queue: one item-list. Then view and field-list once, and item-add and item-edit for each new card.
+//   For each closed issue with no status label and a card in an open column: one item-edit.
+// - status: the queue calls. The board check uses the same item-list, or makes one item-list when the queue made none.
+//   For cards that differ from their label: view and field-list once, then one item-edit for each card.
+// - job_sync and job_advance: one item-edit for each label change that moves the card, with the ids in job.md.
+//   With no ids: view and field-list once, then item-add and item-edit.
+// item-list --limit 1000 can make several GraphQL requests, one for each page of cards.
+
+// Maps the issue URL of each card to its item id and Factory option.
+export async function listCards(ctx: Ctx, owner: string, number: number): Promise<Cards> {
   // shortcut: one item-list page of 1000 cards, upgrade to paging when a board has more
   const { items } = await project<{ items: RawItem[] }>(ctx, ['item-list', String(number), '--owner', owner, '--limit', '1000'])
-  return new Map(items.map(i => [i.content?.url, i.factory]))
+  return new Map(items.map(i => [i.content?.url, { id: i.id, factory: i.factory }]))
 }
 
-// Reads the board only. The label wins, so each line tells the operator where to move the card.
-export async function boardDrift(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project'>, tickets: Ticket[]): Promise<string[]> {
+// Moves each card to the column of its label, because the label wins. A line remains for each card that does not move.
+export async function boardDrift(
+  ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project'>, tickets: Ticket[], read: CardReader = (o, n) => listCards(ctx, o, n),
+): Promise<string[]> {
   const p = cfg.project
   if (p?.enabled !== true) return []
   if (p.number === undefined) return [NO_NUMBER]
+  const owner = tracker.repo.split('/')[0]!
+  let cards: Cards
   try {
-    const cards = await listCards(ctx, tracker.repo.split('/')[0]!, p.number)
-    const lines: string[] = []
-    for (const t of tickets) {
-      const state = stateOf(t.labels)
-      // shortcut: a ticket with no card is not reported, upgrade when cards go missing
-      if (state === 'conflict' || !cards.has(t.url)) continue
-      const want = optionFor(state)
-      const has = cards.get(t.url)
-      if (has !== want) lines.push(`#${t.number} board says ${has ?? 'nothing'}, label says ${state ?? 'none'}: move the card to ${want}`)
-    }
-    return lines
+    cards = await read(owner, p.number)
   } catch (e) {
-    return [`board check failed: ${messageOf(e)}`]
+    return [`board check failed: ${warningOf(e)}`]
   }
+  const drift: { card: Card; want: FactoryOption; line: string }[] = []
+  for (const t of tickets) {
+    const state = stateOf(t.labels)
+    const card = cards.get(t.url)
+    // shortcut: a ticket with no card is not reported, upgrade when cards go missing
+    if (state === 'conflict' || card === undefined) continue
+    const want = optionFor(state)
+    if (card.factory !== want) {
+      drift.push({ card, want, line: `#${t.number} board says ${card.factory ?? 'nothing'}, label says ${state ?? 'none'}: move the card to ${want}` })
+    }
+  }
+  if (drift.length === 0) return []
+  let board: Board
+  try {
+    board = await loadBoard(ctx, owner, p.number)
+  } catch {
+    return drift.map(d => d.line)
+  }
+  const lines: string[] = []
+  for (const d of drift) {
+    await setOption(ctx, board, d.card.id, d.want).catch(() => lines.push(d.line))
+  }
+  return lines
 }
 
 // Connects the project (creates it when number is undefined) and adds each open ticket. A failure becomes a warning.
@@ -222,11 +270,11 @@ export async function connectProject(ctx: Ctx, tracker: Tracker, number: number 
         if (state === 'conflict') report.warnings.push(`#${t.number} has more than one status label. Its card has no ${FIELD} value.`)
         else await setOption(ctx, board, item, optionFor(state))
       } catch (e) {
-        report.warnings.push(`#${t.number}: ${messageOf(e)}`)
+        report.warnings.push(`#${t.number}: ${warningOf(e)}`)
       }
     }
   } catch (e) {
-    report.warnings.push(messageOf(e))
+    report.warnings.push(warningOf(e))
   }
   return report
 }

@@ -20,7 +20,9 @@ absolute paths: the job folder `<jobDir>` and the round folder `<roundDir>`
 (`<jobDir>/round-<N>`, the last round). You get all other context from files.
 
 Your decision is a recommendation. The human approves each merge. You never
-merge, and you never approve a pull request.
+merge, and you never approve a pull request. Exception: the operator can set
+`merge.auto: true` in `.factory/config.json`. Then an APPROVE leads to a merge
+without a human step. An ESCALATE still waits for the human.
 
 ## Read
 - `<jobDir>/job.md`. Its `## Job` section gives the **Issue**, the

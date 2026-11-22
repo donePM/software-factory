@@ -225,7 +225,7 @@ test('tool queue returns the queue', async () => {
 })
 
 const onCfg = { ...cfg, ...ON }
-const boardTracker = (backlog: Ticket[]): Tracker => ({ ...tracker(backlog), repo: 'o/r' })
+const boardTracker = (backlog: Ticket[], extra: Ticket[] = []): Tracker => ({ ...tracker(backlog, extra), repo: 'o/r' })
 
 test('queue adds a Backlog card only for a ticket without a card', async () => {
   const c = fakeCtx({ replies: [itemList([{ url: 'u/1', factory: 'Intake' }]), ...boardReplies] })
@@ -240,7 +240,7 @@ test('queue adds a Backlog card only for a ticket without a card', async () => {
   expect(boardCalls(all.calls)).toEqual(['gh project item-list'])
   const busy = fakeCtx({ replies: [itemList([]), ...boardReplies] })
   await queue(busy, boardTracker([T(3, ['factory:build'])]), onCfg)
-  expect(busy.calls).toEqual([])
+  expect(boardCalls(busy.calls)).toEqual(['gh project item-list'])
 })
 
 test('queue reports board failures as warnings and makes no call with the board off', async () => {
@@ -261,7 +261,76 @@ test('queue reports board failures as warnings and makes no call with the board 
   }
 })
 
+test('queue gives a rate-limited board list a Fix line', async () => {
+  const c = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-list'], result: { exitCode: 1, stderr: 'GraphQL: API rate limit already exceeded for user ID 1.' } }] })
+  const q = await queue(c, boardTracker([T(1)]), onCfg)
+  expect(q.warnings).toHaveLength(1)
+  expect(q.warnings?.[0]?.startsWith('board list failed: ')).toBe(true)
+  expect(q.warnings?.[0]).toContain(' Fix: Wait at least 5 minutes.')
+  expect(q.warnings?.[0]?.endsWith('does not show it.')).toBe(true)
+})
+
 const bare = (n: number, o: Partial<Ticket> = {}): Ticket => ({ ...T(n, [], o), labels: [] })
+
+const url = (n: number): string => `https://github.com/o/r/issues/${n}`
+const closed = (n: number, o: Partial<Ticket> = {}): Ticket => ({ ...bare(n, { state: 'closed', url: url(n) }), ...o })
+const edits = (calls: string[][]): string[][] => calls.filter(x => x[2] === 'item-edit')
+
+test('queue moves the card of a closed duplicate issue to Done', async () => {
+  for (const o of [{ stateReason: 'duplicate' }, { stateReason: 'completed' }, {}]) {
+    const c = fakeCtx({ replies: [itemList([{ url: 'u/3', factory: 'Build' }, { url: url(54), factory: 'Backlog' }]), ...boardReplies] })
+    const q = await queue(c, boardTracker([T(3, ['factory:build'])], [closed(54, o)]), onCfg)
+    expect(q.warnings).toBeUndefined()
+    expect(c.calls.filter(x => x[2] === 'item-list')).toHaveLength(1)
+    expect(edits(c.calls)).toEqual([edit('Done')])
+  }
+})
+
+test('queue moves the card of a closed not planned issue to Rejected', async () => {
+  const c = fakeCtx({ replies: [itemList([{ url: 'u/3', factory: 'Build' }, { url: url(54), factory: 'Spec' }]), ...boardReplies] })
+  const q = await queue(c, boardTracker([T(3, ['factory:build'])], [closed(54, { stateReason: 'not_planned' })]), onCfg)
+  expect(q.warnings).toBeUndefined()
+  expect(edits(c.calls)).toEqual([edit('Rejected')])
+})
+
+test('queue keeps the card of an open issue and of a labelled issue', async () => {
+  const items = [
+    { id: 'I0', content: { url: 'u/1' }, factory: 'Backlog' },
+    { id: 'I1', content: { url: url(60) }, factory: 'Backlog' },
+    { id: 'I2', content: { url: url(61) }, factory: 'Backlog' },
+    { id: 'I3', content: { url: url(62) }, factory: 'Done' },
+    { id: 'I4', content: { url: url(63) }, factory: 'Rejected' },
+    { id: 'I5', content: { url: 'https://github.com/o/r/pull/64' }, factory: 'Backlog' },
+    { id: 'I6', content: { url: 'https://github.com/x/y/issues/65' }, factory: 'Backlog' },
+    { id: 'I7', content: {}, factory: 'Backlog' },
+  ]
+  const c = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-list'], result: { stdout: JSON.stringify({ items }) } }, ...boardReplies] })
+  const extra = [bare(60, { url: url(60) }), closed(61, { labels: ['factory', 'factory:done'] }), closed(62), closed(63, { stateReason: 'not_planned' })]
+  const tr = boardTracker([T(1)], extra) as Tracker & { gets: number[] }
+  const q = await queue(c, tr, onCfg)
+  expect(tr.gets).toEqual([60, 61])
+  expect(q.warnings).toBeUndefined()
+  expect(edits(c.calls)).toEqual([])
+})
+
+test('queue warns with a fix when a closed card move fails', async () => {
+  const backlog = [T(1), T(3, ['factory:build'])]
+  const cards = itemList([{ url: 'u/1', factory: 'Backlog' }, { url: url(54), factory: 'Backlog' }])
+  const want = await queue(ctx, boardTracker(backlog), cfg)
+  const bad = fakeCtx({ replies: [cards, { argv: ['gh', 'project', 'item-edit'], result: { exitCode: 1, stderr: 'bad edit' } }, ...boardReplies] })
+  const gone = fakeCtx({ replies: [cards, ...boardReplies] })
+  for (const [c, tr, text] of [
+    [bad, boardTracker(backlog, [closed(54)]), 'bad edit'],
+    [gone, boardTracker(backlog), 'no #54'],
+  ] as const) {
+    const { warnings, ...rest } = await queue(c, tr, onCfg)
+    expect(warnings).toHaveLength(1)
+    expect(warnings?.[0]?.startsWith('#54: ')).toBe(true)
+    expect(warnings?.[0]).toContain(text)
+    expect(warnings?.[0]).toContain('Fix: Move the card by hand on the board, or wait for the next queue.')
+    expect(rest).toEqual(want)
+  }
+})
 
 test('queue with issue labels an open issue and puts it in next', async () => {
   const tr = tracker([T(1)], [bare(9)])
