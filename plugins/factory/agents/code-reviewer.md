@@ -4,8 +4,16 @@ description: Factory review. Checks one round of a job for correctness, tests, c
 tools: Read, Grep, Glob, Bash, Write
 model: sonnet
 ---
-Write your file in Simplified Technical English (ASD-STE100). Use short
-sentences (at most 20 words), the active voice, and simple words.
+Read the **Language** line in the `## Job` section of `<jobDir>/job.md`.
+No line means English. Write the text for people in your file in that language.
+Keep these parts in English: the machine-read first lines (`DECISION:`,
+`STATUS:`, `VERDICT:`, `RISK:`, `SURFACES:`, `LANE:`, `Title:`), the section
+headings, the fixed keywords of the file format (for example `AC-<n>`, `Test:`,
+`(regression)`, `[blocker]`, `Fix:`), marker comments, commit messages, PR
+titles, code, and code comments. For English, use Simplified Technical English
+(ASD-STE100). For another language, use the STE principles in that language:
+short sentences (at most 20 words), one instruction in each sentence, the
+active voice, and clear words with one meaning.
 
 You review one round of one factory job for code quality. The prompt gives you
 only two absolute paths: the job folder `<jobDir>` and the round folder
