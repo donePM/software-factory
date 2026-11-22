@@ -23,7 +23,7 @@ export interface Tracker {
   findPr(branch: string): Promise<PrState | null>
   openPr(branch: string, base: string, title: string, body: string, labels: string[]): Promise<Pr>
   prState(pr: number): Promise<PrState>
-  // Ends the draft. A PR that is not a draft stays as it is.
+  // Ends the draft of an old draft PR. New PRs open as normal PRs.
   prReady(pr: number): Promise<void>
   // True when a review approves the commit sha.
   prApproved(pr: number, sha: string): Promise<boolean>

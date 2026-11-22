@@ -159,14 +159,14 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
       return row ? toPr(row) : null
     },
     async openPr(branch, base, title, body, labels) {
-      const r = JSON.parse(await api('POST', 'pulls', { title, head: branch, base, body, draft: true })) as RawPr
+      const r = JSON.parse(await api('POST', 'pulls', { title, head: branch, base, body, draft: false })) as RawPr
       if (labels.length > 0) await api('POST', `issues/${r.number}/labels`, { labels })
       return { number: r.number, url: r.html_url }
     },
     async prState(pr) {
       return toPr(await json<RawPr>(['api', `repos/${repo}/pulls/${pr}`]))
     },
-    // shortcut: REST cannot end a draft, so a draft PR takes one GraphQL mutation; upgrade when REST can.
+    // shortcut: REST cannot end a draft, so an old draft PR takes one GraphQL mutation; upgrade when REST can.
     async prReady(pr) {
       const r = await json<RawPr>(['api', `repos/${repo}/pulls/${pr}`])
       if (r.draft) await gh(['api', 'graphql', '-f', READY, '-f', `id=${r.node_id}`])
