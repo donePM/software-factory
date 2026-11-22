@@ -56,7 +56,7 @@ const viewSteps = (url: string): string[] => [
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 // A board failure as a warning, with the fix when the error has one.
-export const warningOf =(e: unknown): string => `${messageOf(e)}${e instanceof FactoryError && e.fix !== undefined ? ` Fix: ${e.fix}` : ''}`
+export const warningOf = (e: unknown): string => `${messageOf(e)}${e instanceof FactoryError && e.fix !== undefined ? ` Fix: ${e.fix}` : ''}`
 const rateLimited = (e: unknown): boolean => e instanceof FactoryError && e.code === 'rate-limited'
 
 const boardOf = (owner: string, p: RawProject, field: RawField): Board =>
