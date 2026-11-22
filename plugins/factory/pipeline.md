@@ -53,6 +53,11 @@ root as `<root>`. `<jobDir>` is `<root>/.factory/jobs/<n>`. `<roundDir>` is
   `- code: sonnet` gives `factory:code-reviewer` the model `sonnet`.
 - Give each agent a description with the step and the issue, for example
   `build #42`. Use it to find the job when the notification comes.
+- Give `factory:gate-runner` exactly one line, `<roundDir>`. Never give
+  `<jobDir>` alone. The prompt has no other text. Example:
+  ```
+  /repo/.factory/jobs/42/round-2
+  ```
 - Start a new builder for each build. Never resume an old builder.
 - Before each start of `factory:gate-runner`, remember `attempts` from the
   last `job_sync` result. It is the number of gate attempts in the round.
