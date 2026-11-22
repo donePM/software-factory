@@ -57,7 +57,7 @@
     "medium": "priority:medium",
     "low": "priority:low"
   },
-  "language": "English"
+  "language": "English",
   "protectedPaths": [".factory/config.json", ".factory/checks.local.ts"],
   "project": {
     "enabled": true,
