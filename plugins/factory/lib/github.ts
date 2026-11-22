@@ -16,7 +16,7 @@ export function repoFromUrl(url: string): string {
 type RawFields = { issue_field_values?: { value?: unknown; single_select_option?: { name?: string } | null }[] | null }
 type RawIssue = RawFields & {
   number: number; title: string; body: string | null; labels: { name: string }[]; user: { login: string }
-  created_at: string; html_url: string; state: string; pull_request?: unknown; assignees?: { login: string }[] | null
+  created_at: string; html_url: string; state: string; pull_request?: unknown; assignees?: { login: string }[] | null; state_reason?: string | null
 }
 type RawComment = { id: number; user: { login: string }; body: string; created_at: string; updated_at: string }
 type RawPr = {
@@ -44,7 +44,9 @@ const toTicket = (r: RawIssue, comments: Comment[]): Ticket => {
     createdAt: r.created_at, url: r.html_url, comments,
   }
   const p = priorityOf(r)
-  return p === undefined ? t : { ...t, priority: p }
+  if (p !== undefined) t.priority = p
+  if (typeof r.state_reason === 'string') t.stateReason = r.state_reason
+  return t
 }
 const toComment = (c: RawComment): Comment => ({
   id: c.id, author: c.user.login, body: c.body, createdAt: c.created_at, updatedAt: c.updated_at,

@@ -70,7 +70,7 @@ const messageOf = (e: unknown): string => (e instanceof Error ? e.message : Stri
 const boardOf = (owner: string, p: RawProject, field: RawField): Board =>
   ({ owner, number: p.number, id: p.id, fieldId: field.id, options: new Map(field.options?.map(o => [o.name, o.id])) })
 
-async function loadBoard(ctx: Ctx, owner: string, number: number): Promise<Board> {
+export async function loadBoard(ctx: Ctx, owner: string, number: number): Promise<Board> {
   const p = await project<RawProject>(ctx, ['view', String(number), '--owner', owner])
   const field = await factoryField(ctx, owner, p.number)
   if (field === undefined) throw new FactoryError('project-field', `the project has no field ${FIELD}`)
@@ -164,13 +164,14 @@ export async function addToBacklog(ctx: Ctx, tracker: Pick<Tracker, 'repo'>, cfg
   return warnings
 }
 
-type RawItem = { content?: { url?: string }; factory?: string }
+type RawItem = { id: string; content?: { url?: string }; factory?: string }
+export type Card = { item: string; factory: string | undefined }
 
-// Maps the issue URL of each card to its Factory option.
-export async function listCards(ctx: Ctx, owner: string, number: number): Promise<Map<string | undefined, string | undefined>> {
+// Maps the issue URL of each card to its item id and its Factory option.
+export async function listCards(ctx: Ctx, owner: string, number: number): Promise<Map<string | undefined, Card>> {
   // shortcut: one item-list page of 1000 cards, upgrade to paging when a board has more
   const { items } = await project<{ items: RawItem[] }>(ctx, ['item-list', String(number), '--owner', owner, '--limit', '1000'])
-  return new Map(items.map(i => [i.content?.url, i.factory]))
+  return new Map(items.map(i => [i.content?.url, { item: i.id, factory: i.factory }]))
 }
 
 // Reads the board only. The label wins, so each line tells the operator where to move the card.
@@ -186,7 +187,7 @@ export async function boardDrift(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, '
       // shortcut: a ticket with no card is not reported, upgrade when cards go missing
       if (state === 'conflict' || !cards.has(t.url)) continue
       const want = optionFor(state)
-      const has = cards.get(t.url)
+      const has = cards.get(t.url)?.factory
       if (has !== want) lines.push(`#${t.number} board says ${has ?? 'nothing'}, label says ${state ?? 'none'}: move the card to ${want}`)
     }
     return lines
