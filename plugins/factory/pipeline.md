@@ -155,6 +155,9 @@ remembered count, or the agent reports a tool error: the gate did not run. Call
 - `VERDICT: PASS`: call `job_advance` with `to: review`. It reuses the
   result of the gate-runner at the same HEAD. Start all reviewers in the
   `reviewers` list of the result. Start them in one message.
+- `VERDICT: FAIL` and `checks.md` has a `## Host problem` section: call
+  `job_advance` with `to: needs-human` and the reason
+  `host problem in round <N>: <line of the section>`. Start no builder.
 - `VERDICT: FAIL`: look at `attempts`.
   - Fewer than 3: start `factory:builder` again with the same `<roundDir>`.
   - 3 or more: call `job_advance` with `to: needs-human` and the reason

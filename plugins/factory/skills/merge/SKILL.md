@@ -13,7 +13,12 @@ Follow `${CLAUDE_PLUGIN_ROOT}/ste.md` for all text to the user.
 1. Say in one sentence: "This call is your approval: the factory will sync the branch, run the gate and merge the PR."
 2. Never call the tool `mcp__factory__merge` in this session. The gate can run a long time.
    - Spawn the agent `factory:merger` with `run_in_background: true`.
-   - Give it only the job path and the number: `<root>/.factory/jobs/<issue>` and `<number>`. Use the repo root as `<root>`. If the number is a PR, ask the user for the issue number, or use the issue named by the PR.
+   - Give it only the job path and the issue number, one value on each line. Line 1 is `<root>/.factory/jobs/<issue>`. Line 2 is `<issue>`. Use the repo root as `<root>`. The prompt has no other text. Example:
+     ```
+     /repo/.factory/jobs/42
+     42
+     ```
+   - If the number is a PR, ask the user for the issue number, or use the issue named by the PR.
 3. Stay available while it runs. Answer questions from the user.
 4. When the notification comes, report the result in simple words:
    - Success: the PR is merged with the merge commit SHA from the report, the issue is done, and the cleanup report lists what was removed and what was kept.

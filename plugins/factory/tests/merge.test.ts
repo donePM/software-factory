@@ -59,7 +59,7 @@ function tracker(o: Opts = {}) {
   const ticketOf = (n: number): Ticket => (n === 9 ? prTicket : others.get(n)?.ticket ?? { ...issue, state: closed ? 'closed' : 'open' })
   const pr = (): PrState => ({
     number: 9, state: merged ? 'MERGED' : 'OPEN', isDraft: false, title: 'feat(x): y', body: 'Closes #7\n', author: o.author ?? 'bob',
-    headRefName: 'factory/7', headRefOid: HEAD, reviewDecision: o.approved === true ? 'APPROVED' : '', mergeCommit: merged ? MERGE : null, ...o.pr,
+    headRefName: 'factory/7', headRefOid: HEAD, mergeCommit: merged ? MERGE : null, ...o.pr,
   })
   const t = {
     log, states, posts, reviews, merges, upserts, assigns,
@@ -102,6 +102,7 @@ function tracker(o: Opts = {}) {
     },
     prState: async () => ({ ...pr(), ...o.reads?.shift() }),
     approvePr: async (_pr: number, body: string) => { reviews.push(body) },
+    prApproved: async (p: number, sha: string) => { log.push(`approved? ${p} ${sha}`); return o.approved === true },
     prReady: async (p: number) => { log.push(`ready ${p}`) },
     merge: async (p: number, subject: string, sha: string) => {
       log.push(`merge ${p}`)
@@ -256,6 +257,17 @@ test('merge sets the Done option on the board', async () => {
   expect(boardCalls(ctx.calls)).toEqual(['setState 7 done', 'gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit'])
   expect(ctx.calls).toContainEqual(edit('Done'))
   expect(warnings).toEqual([])
+})
+
+test('merge goes on when the board hits the GraphQL rate limit', async () => {
+  const limit: Reply = { argv: ['gh', 'project'], result: { exitCode: 1, stderr: 'GraphQL: API rate limit already exceeded for user ID 1.' } }
+  const { ctx, t } = setup({}, [limit])
+  const { tracker, warnings } = onBoard(ctx, t)
+  const r = await merge(ctx, tracker, 7)
+  expect(r).toMatchObject({ pr: 9, alreadyMerged: false, state: 'done' })
+  expect(t.merges).toHaveLength(1)
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]).toContain('rate limit')
 })
 
 const CONFLICT: Reply ={ argv: ['git', '-C', WT, 'merge', '--no-edit'], result: { exitCode: 1, stderr: 'CONFLICT' } }
@@ -490,6 +502,7 @@ test('merge approves when no approval is recorded, and not when one is', async (
   await merge(b.ctx, b.t, 7)
   expect(b.t.reviews).toEqual([])
   expect(b.t.upserts.some(u => u.name === 'approval')).toBe(false)
+  expect(b.t.log).toContain(`approved? 9 ${HEAD}`)
 })
 
 test('approve refuses a job with no reviewed commit', async () => {
@@ -626,6 +639,16 @@ test('merge readies a draft PR before the merge', async () => {
   await merge(ctx, t, 7)
   expect(t.log.indexOf('ready 9')).toBeGreaterThan(-1)
   expect(t.log.indexOf('ready 9')).toBeLessThan(t.log.indexOf('merge 9'))
+})
+
+test('merge stops with a fix when a draft PR cannot leave draft', async () => {
+  const { ctx, t } = setup({ labels: ['factory:needs-human'], pr: { isDraft: true } })
+  t.prReady = async (p: number) => { t.log.push(`ready ${p}`); throw new Error('GraphQL: API rate limit already exceeded') }
+  const err = await merge(ctx, t, 7).catch(e => e)
+  expect(err).toMatchObject({ code: 'draft-pr' })
+  expect(err.message).toContain('rate limit')
+  expect(err.fix).toContain('Ready for review')
+  expect(t.merges).toEqual([])
 })
 
 test('merge does not ready a PR that is not a draft', async () => {

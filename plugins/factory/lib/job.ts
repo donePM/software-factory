@@ -107,6 +107,7 @@ export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
     reviewed: old?.reviewed ?? null,
     route: old?.route ?? {},
     language: old?.language ?? cfg.language ?? 'English',
+    ...(old?.board === undefined ? {} : { board: old.board }),
   }
   await writeJob(ctx, job)
   await ctx.fs.write(`${dir}/issue.md`, renderIssue(ticket, operator))
@@ -210,7 +211,7 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
 }
 
 export type AdvanceInput = { issue: number; to: State; reason?: string; from?: State }
-export type AdvanceResult = { job: Job; state: State; round: number; roundDir: string; reviewers?: Reviewer[]; note?: string; cleanup?: CleanupReport }
+export type AdvanceResult = { job: Job; state: State; round: number; roundDir: string; reviewers?: Reviewer[]; note?: string; cleanup?: CleanupReport; warnings?: string[] }
 
 const SUPPORTED: State[] = ['spec', 'needs-info', 'rejected', 'build', 'review', 'approved', 'needs-human']
 const MENTION = /^[A-Za-z0-9-]+(\[bot\])?$/
@@ -494,10 +495,17 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   }
   await t.upsertComment(n, `round-${job.round}`, await roundSummary(ctx, job, roundDir))
   await t.upsertComment(n, 'decision', `Round: ${job.round}\n\n${await ctx.fs.read(`${job.jobDir}/decision.md`)}`)
-  if ((await t.prState(job.pr)).headRefName !== job.branch) throw new FactoryError('bad-pr', `PR #${job.pr} is not on ${job.branch}`, 'Run job_sync.')
-  // Both ways the PR leaves draft: GitHub does not merge a draft, and a human may merge an escalated job.
-  await t.prReady(job.pr)
+  const pr = await t.prState(job.pr)
+  if (pr.headRefName !== job.branch) throw new FactoryError('bad-pr', `PR #${job.pr} is not on ${job.branch}`, 'Run job_sync.')
+  // Both ways an old draft PR leaves draft: GitHub does not merge a draft, and a human may merge an escalated job.
+  // The merge tries again, so a failure here does not block the job.
+  const warnings: string[] = []
+  if (pr.isDraft) {
+    await t.prReady(job.pr).catch((e: unknown) => {
+      warnings.push(`PR #${job.pr} is still a draft: ${e instanceof Error ? e.message : String(e)} Fix: Click "Ready for review" on the PR, or let the merge try again.`)
+    })
+  }
   if (to === 'needs-human') await t.prComment(job.pr, decision.question ?? '')
   await moveJob(t, job, to)
-  return done(job, to)
+  return done(job, to, warnings.length === 0 ? {} : { warnings })
 }
