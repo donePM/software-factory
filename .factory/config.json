@@ -57,5 +57,9 @@
     "medium": "priority:medium",
     "low": "priority:low"
   },
-  "protectedPaths": [".factory/config.json", ".factory/checks.local.ts"]
+  "protectedPaths": [".factory/config.json", ".factory/checks.local.ts"],
+  "project": {
+    "enabled": true,
+    "number": 2
+  }
 }
