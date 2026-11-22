@@ -2,7 +2,7 @@ import { defaultConfig } from '../../lib/config.ts'
 import type { Reply } from './host.ts'
 
 // The backlog replies and files of one status read: running #3 in round 2, approved #42 with PR 50, ready #6.
-const raw = (n: number, labels: string[]) => JSON.stringify({
+export const raw = (n: number, labels: string[]) => JSON.stringify({
   number: n, title: `t${n}`, body: '', labels: ['factory', ...labels].map(name => ({ name })), user: { login: 'a' },
   created_at: '2026-01-01T00:00:00Z', html_url: `https://github.com/o/r/issues/${n}`, state: 'open',
 })

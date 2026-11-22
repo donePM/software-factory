@@ -269,13 +269,14 @@ async function gateTool(ctx: Ctx, input: { issue?: unknown; round?: string }): P
 const DEFAULT_TIMEOUT_MS = 120000
 const MAX_TIMEOUT_MS = 600000
 
-// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep, fs and ui.invalidate.
+// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep, ui.status, ui.invalidate and fs.
 export async function makeCtx($: any): Promise<Ctx> {
   const root: string = await $.session.root()
   return {
     root,
     now: () => new Date(),
     sleep: ms => $.clock.sleep(ms),
+    status: text => void Promise.resolve($.ui.status(text)).catch(() => undefined),
     run: (argv, opts) =>
       $.process.run(argv, {
         ...opts,
@@ -294,7 +295,7 @@ export async function makeCtx($: any): Promise<Ctx> {
 }
 
 // status writes its snapshot itself, from the data of its text.
-const SNAPSHOT_TOOLS = ['job_create', 'job_advance', 'job_sync', 'merge', 'cleanup']
+export const SNAPSHOT_TOOLS = ['job_create', 'job_advance', 'job_sync', 'merge', 'cleanup']
 
 export type ToolOutcome = { result: string } | { isError: true; result: string }
 
