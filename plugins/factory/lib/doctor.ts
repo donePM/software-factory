@@ -8,7 +8,7 @@ export type Check = { check: string; ok: boolean; detail: string; fix?: string }
 
 const LOGIN = '! gh auth login --web'
 
-const first = (text: string): string => text.trim().split('\n')[0] ?? ''
+export const first = (text: string): string => text.trim().split('\n')[0] ?? ''
 
 async function tool(ctx: Ctx, name: string): Promise<Check> {
   const r = await ctx.run([name, '--version'])
@@ -90,17 +90,27 @@ async function origin(ctx: Ctx): Promise<Check> {
 
 export const WIKI_TIMEOUT_MS = 30_000
 
+function parseWikiOn(stdout: string): boolean {
+  try {
+    return (JSON.parse(stdout) as { hasWikiEnabled?: unknown }).hasWikiEnabled === true
+  } catch {
+    return false
+  }
+}
+
+// undefined: gh repo view failed, so the state is not known.
+export async function wikiOn(ctx: Ctx, repo: string): Promise<boolean | undefined> {
+  const view = await ctx.run(['gh', 'repo', 'view', repo, '--json', 'hasWikiEnabled'])
+  return view.exitCode === 0 ? parseWikiOn(view.stdout) : undefined
+}
+
 export async function wikiCheck(ctx: Ctx, repo: string): Promise<Check> {
   const page = `https://github.com/${repo}/wiki`
   const view = await ctx.run(['gh', 'repo', 'view', repo, '--json', 'hasWikiEnabled'])
   if (view.exitCode !== 0) {
     return { check: 'wiki', ok: false, detail: `gh repo view failed: ${first(view.stderr)}`, fix: 'Wait a moment. Then run setup again.' }
   }
-  let on = false
-  try {
-    on = (JSON.parse(view.stdout) as { hasWikiEnabled?: unknown }).hasWikiEnabled === true
-  } catch {}
-  if (!on) {
+  if (!parseWikiOn(view.stdout)) {
     return { check: 'wiki', ok: false, detail: `the wiki of ${repo} is off`, fix: `Run gh repo edit ${repo} --enable-wiki. Then open ${page} and create the first page.` }
   }
   // A missing wiki repo of a private repo can ask for a user name, so git must not prompt.

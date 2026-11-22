@@ -417,8 +417,8 @@ test('reports the missing wiki steps', async () => {
 
   const off = await run([wikiView(false), lsRemote(128)])
   expect(off.r.wiki!.ok).toBe(false)
-  expect(off.r.wiki!.fix).toContain('gh repo edit a/b --enable-wiki')
-  expect(off.r.wiki!.fix).toContain('https://github.com/a/b/wiki')
+  expect(off.r.wiki!.detail.startsWith('gh repo edit failed:')).toBe(true)
+  expect(off.r.wiki!.fix).toContain('https://github.com/a/b/settings')
   expect(off.r.next).toContain(off.r.wiki!.fix!)
   expect(off.r.applied).toBe(true)
   expect(off.r.gitignore).toBe(true)
@@ -433,4 +433,71 @@ test('reports the missing wiki steps', async () => {
   const none = fakeCtx({ replies: replies() })
   expect((await setup(none, { apply: true, docs: 'docs' })).wiki).toBeUndefined()
   expect(none.calls.some(c => c[1] === 'repo' || c[1] === 'ls-remote')).toBe(false)
+})
+
+const enableArgv = ['gh', 'repo', 'edit', 'a/b', '--enable-wiki']
+const isEdit = (c: readonly string[]) => c[1] === 'repo' && c[2] === 'edit'
+
+test('enables the wiki when it is off', async () => {
+  const ctx = fakeCtx({ replies: [wikiView(false), { argv: enableArgv }, lsRemote(128), ...replies()] })
+  const inner = ctx.run
+  ctx.run = async (argv, opts) => {
+    const r = await inner(argv, opts)
+    const enabled = ctx.calls.some(isEdit)
+    return enabled && argv[1] === 'repo' && argv[2] === 'view' ? { ...r, stdout: JSON.stringify({ hasWikiEnabled: true }) } : r
+  }
+  const r = await setup(ctx, { apply: true, docs: 'wiki' })
+  expect(ctx.calls).toContainEqual(enableArgv)
+  expect(r.enableWiki).toBe(true)
+  const edit = ctx.calls.findIndex(isEdit)
+  expect(ctx.calls.slice(edit + 1)).toContainEqual(['gh', 'repo', 'view', 'a/b', '--json', 'hasWikiEnabled'])
+  expect(r.wiki!.ok).toBe(false)
+  expect(r.wiki!.detail).toContain('does not exist')
+  expect(r.wiki!.fix).toContain('https://github.com/a/b/wiki')
+  expect(r.wiki!.fix).toContain('first page')
+  expect(r.wiki!.fix).not.toContain('gh ')
+  expect(r.next).toContain(r.wiki!.fix!)
+})
+
+test('keeps a wiki that is on', async () => {
+  const ctx = fakeCtx({ replies: [wikiView(true), lsRemote(0), ...replies()] })
+  const r = await setup(ctx, { apply: true, docs: 'wiki' })
+  expect(ctx.calls.some(isEdit)).toBe(false)
+  expect(r.wiki!.ok).toBe(true)
+})
+
+test('gives a clear fix when the wiki cannot be turned on', async () => {
+  const fail: Reply = { argv: enableArgv, result: { exitCode: 1, stderr: 'HTTP 403: Must have admin rights\nmore' } }
+  const ctx = fakeCtx({ replies: [wikiView(false), fail, ...replies()] })
+  const r = await setup(ctx, { apply: true, docs: 'wiki' })
+  expect(r.enableWiki).toBe(false)
+  expect(r.applied).toBe(true)
+  expect(r.wiki!.ok).toBe(false)
+  expect(r.wiki!.detail).toBe('gh repo edit failed: HTTP 403: Must have admin rights')
+  expect(r.wiki!.fix).toContain('https://github.com/a/b/settings')
+  expect(r.wiki!.fix).toContain('admin rights')
+  expect(r.wiki!.fix).toContain('run setup again')
+  expect(r.wiki!.fix).not.toContain('gh ')
+  expect(r.next).toContain(r.wiki!.fix!)
+})
+
+test('previews the wiki change', async () => {
+  const off = fakeCtx({ replies: [wikiView(false), ...replies()] })
+  expect((await setup(off, { apply: false, docs: 'wiki' })).enableWiki).toBe(true)
+  expect(off.calls.some(isEdit)).toBe(false)
+  expect(off.files).toEqual({})
+
+  const files = { [CFG]: JSON.stringify({ ...stored(), docs: { target: 'wiki' } }) }
+  const on = fakeCtx({ replies: [wikiView(true), ...replies()], files })
+  expect((await setup(on, { apply: false })).enableWiki).toBe(false)
+  expect(on.files).toEqual(files)
+
+  const storedOff = fakeCtx({ replies: [wikiView(false), ...replies()], files })
+  expect((await setup(storedOff, { apply: false })).enableWiki).toBe(true)
+  expect(storedOff.calls.some(isEdit)).toBe(false)
+  expect(storedOff.files).toEqual(files)
+
+  const none = fakeCtx({ replies: replies() })
+  expect((await setup(none, { apply: false, docs: 'docs' })).enableWiki).toBe(false)
+  expect(none.calls.some(c => c[1] === 'repo' && c[2] === 'view')).toBe(false)
 })

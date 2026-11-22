@@ -88,7 +88,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'setup',
-    description: 'Set up the factory in this repo: config, labels, repo standard. project true connects a GitHub Project board, project false stores no. language sets the ticket language. docs sets the docs target. askProject, askLanguage and askDocs true mean: ask the user. A failed wiki check gives the steps to create the wiki. With apply false it only previews.',
+    description: 'Set up the factory in this repo: config, labels, repo standard. project true connects a GitHub Project board, project false stores no. language sets the ticket language. docs sets the docs target. askProject, askLanguage and askDocs true mean: ask the user. With the wiki target, setup turns on the wiki of the repo when it is off. enableWiki true shows this change. A failed wiki check gives the steps to create the wiki. With apply false it only previews.',
     inputSchema: {
       type: 'object',
       properties: {
