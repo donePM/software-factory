@@ -869,6 +869,39 @@ test('a docs job publishes the wiki page and finishes', async () => {
   }
 })
 
+const PAGES = `${WT}/docs/wiki`
+
+test('a docs job also publishes the wiki pages of the repo', async () => {
+  const { ctx, t } = inDocs()
+  ctx.files[`${PAGES}/Home.md`] = '# Home\n'
+  ctx.files[`${PAGES}/Pipeline.md`] = '# Pipeline\n'
+  expect((await jobAdvance(ctx, t, { issue: 7, to: 'done' })).state).toBe('done')
+  expect(ctx.files[`${WIKI}/Home.md`]).toBe('# Home\n')
+  expect(ctx.files[`${WIKI}/Pipeline.md`]).toBe('# Pipeline\n')
+  expect(ctx.calls).toContainEqual(['git', '-C', WIKI, 'add', '--', 'Home.md', 'Pipeline.md', 'Issue-7.md'])
+  expect(ctx.calls.filter(c => c.join(' ') === COMMIT.join(' '))).toHaveLength(1)
+  expect(ctx.calls.filter(c => c.join(' ') === PUSH.join(' '))).toHaveLength(1)
+})
+
+test('a docs job skips bad wiki page names and a missing wiki folder', async () => {
+  const { ctx, t } = inDocs()
+  ctx.files[`${PAGES}/Home.md`] = '# Home\n'
+  ctx.files[`${PAGES}/Issue-7.md`] = '# Old\n'
+  for (const bad of ['_Sidebar.md', 'notes.txt', '-x.md', 'a b.md']) ctx.files[`${PAGES}/${bad}`] = 'bad\n'
+  const list = ctx.fs.list
+  ctx.fs.list = async p => (p === PAGES ? [...(await list(p)), '../x.md', '..'] : list(p))
+  expect((await jobAdvance(ctx, t, { issue: 7, to: 'done' })).state).toBe('done')
+  expect(Object.keys(ctx.files).filter(p => p.startsWith(`${WIKI}/`)).sort()).toEqual([`${WIKI}/Home.md`, `${WIKI}/Issue-7.md`])
+  expect(ctx.files[`${WIKI}/Issue-7.md`]).toBe('# Add thing\n\n## Use\nRun it. Issue: #7.\n')
+  expect(ctx.calls).toContainEqual(['git', '-C', WIKI, 'add', '--', 'Home.md', 'Issue-7.md'])
+
+  const none = inDocs()
+  none.ctx.fs.list = async () => { throw new Error(`ENOENT ${PAGES}`) }
+  expect((await jobAdvance(none.ctx, none.t, { issue: 7, to: 'done' })).state).toBe('done')
+  expect(none.ctx.calls).toContainEqual(['git', '-C', WIKI, 'add', '--', 'Issue-7.md'])
+  expect(at(none.ctx, PUSH)).toBeGreaterThan(-1)
+})
+
 test('a failed wiki push moves a docs job to needs-human', async () => {
   const fails: Reply[][] = [
     [CHANGED, { argv: PUSH, result: { exitCode: 1, stderr: 'remote: Permission denied\n' } }],

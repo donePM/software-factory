@@ -522,8 +522,8 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   return done(job, to, { ...(warnings.length === 0 ? {} : { warnings }), ...(autoMerge ? { autoMerge } : {}) })
 }
 
-// The wiki repo uses the git login of the operator. The page name is fixed, so agent text cannot pick a path.
-async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, page: string): Promise<void> {
+// The wiki repo uses the git login of the operator. Agent text cannot pick a path.
+async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, page: string, pages: string): Promise<void> {
   const git = async (args: string[]): Promise<string> => {
     // A missing wiki repo of a private repo can ask for a user name, so git must not prompt.
     const r = await ctx.run(['git', ...args], { env: { GIT_TERMINAL_PROMPT: '0' }, timeoutMs: WIKI_TIMEOUT_MS })
@@ -532,9 +532,13 @@ async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, page
   }
   await rmrf(ctx, wiki) // a clone from a failed run blocks a new clone
   await git(['clone', '--depth', '1', `https://github.com/${repo}.wiki.git`, wiki])
+  // The name rule blocks path traversal and hidden pages such as _Sidebar.md.
+  // shortcut: a page removed from docs/wiki/ stays in the wiki, upgrade when a page is renamed or removed.
+  const names = (await ctx.fs.list(pages).catch(() => [])).filter(f => /^[A-Za-z0-9][A-Za-z0-9-]*\.md$/.test(f)).sort()
+  for (const f of names) await ctx.fs.write(`${wiki}/${f}`, await ctx.fs.read(`${pages}/${f}`))
   await ctx.fs.write(`${wiki}/Issue-${n}.md`, `${page}\n`)
   if ((await git(['-C', wiki, 'status', '--porcelain'])).trim() === '') return
-  await git(['-C', wiki, 'add', '--', `Issue-${n}.md`])
+  await git(['-C', wiki, 'add', '--', ...new Set([...names, `Issue-${n}.md`])])
   await git(['-C', wiki, 'commit', '-m', `docs(wiki): document #${n}`, '-m', `Refs: #${n}`])
   await git(['-C', wiki, 'push', 'origin', 'HEAD'])
 }
@@ -547,7 +551,7 @@ async function advanceDocs(ctx: Ctx, t: Tracker, job: Job, ticket: Ticket): Prom
     throw new FactoryError('docs-not-done', 'docs.md must start with "STATUS: DONE" and have a non-empty "## Page"', 'The documenter must finish first.')
   }
   try {
-    await publishWiki(ctx, t.repo, n, `${job.jobDir}/wiki`, docs.page)
+    await publishWiki(ctx, t.repo, n, `${job.jobDir}/wiki`, docs.page, `${job.worktree}/docs/wiki`)
   } catch (e) {
     await t.comment(n, `Factory stopped: the wiki push failed: ${e instanceof Error ? e.message : String(e)}`)
     await moveJob(t, job, 'needs-human')

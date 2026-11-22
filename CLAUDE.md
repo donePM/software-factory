@@ -77,6 +77,7 @@ This loads the branch code in that process only.
   `documenter`. With `docs.target: wiki`, the merge sets `docs`. The documenter
   writes `docs.md`. `job_advance` with `to: done` pushes the wiki page, posts
   the `<!-- factory:docs -->` link comment, and sets `done`.
+  It also pushes the pages in `docs/wiki/` of the job worktree, for example `Home.md`.
   Models and tools are set in their frontmatter; reviewer models come from
   `## Route` in `job.md`.
 - Skills (`/factory:setup|add|run|status|approve|merge`) are thin entry points.
