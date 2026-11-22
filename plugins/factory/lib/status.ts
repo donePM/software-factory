@@ -33,7 +33,7 @@ export const atRoundLimit = (cause: Cause | undefined): boolean => /^Round \d+ r
 const label = (n: number, titles: Record<number, string>): string => (titles[n] ? `#${n} ${titles[n]}` : `#${n}`)
 
 // prs maps an issue number to its PR number; titles maps an issue number to its title.
-export function statusText(repo: string, q: Queue, prs: Record<number, number>, concurrency: number, titles: Record<number, string> = {}, causes: Record<number, Cause> = {}, drift: string[] = []): string {
+export function statusText(repo: string, q: Queue, prs: Record<number, number>, concurrency: number, titles: Record<number, string> = {}, causes: Record<number, Cause> = {}, drift: string[] = [], autoMerge = false): string {
   const lines = [`Factory · ${repo}  ${q.running.length}/${concurrency} slots`]
   const section = (name: string, rows: string[]): void => {
     lines.push('', name, ...rows.map(r => `  ${r}`))
@@ -48,7 +48,7 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
     const cause = causes[n]
     const link = pr === undefined ? '' : ` (https://github.com/${repo}/pull/${pr})`
     if (w.state === 'approved') {
-      rows.push(`${label(n, titles)}  approved: /factory:merge ${n}${link}`)
+      rows.push(`${label(n, titles)}  approved: ${autoMerge ? 'the factory merges it' : `/factory:merge ${n}`}${link}`)
     } else if (w.state === 'needs-human' && cause?.merge === true) {
       rows.push(`${label(n, titles)}  needs you: ${cause.reason} · decide. To merge, run /factory:merge ${n}. To rework, comment in the issue. Then run /factory:run ${n}${link}`)
     } else if (w.state === 'needs-human' && atRoundLimit(cause)) {
@@ -98,5 +98,5 @@ export async function statusFor(ctx: Ctx, base: Tracker, cfg: Config): Promise<s
     const cause = ticket === null ? undefined : causeOf(ticket.comments, await tr.login())
     if (cause !== undefined) causes[w.number] = cause
   }
-  return statusText(tr.repo, q, prs, cfg.concurrency, titles, causes, await boardDrift(ctx, tr, cfg, tickets, read))
+  return statusText(tr.repo, q, prs, cfg.concurrency, titles, causes, await boardDrift(ctx, tr, cfg, tickets, read), cfg.merge.auto === true)
 }
