@@ -64,6 +64,17 @@ test('needs-human rows give one step in each sentence', () => {
   expect(text).not.toContain(', then ')
 })
 
+test('a round limit row names maxRounds and /factory:run', () => {
+  const waiting = [{ number: 4, state: 'needs-human' as const }, { number: 5, state: 'needs-human' as const }]
+  const reason = 'Round 3 reached the round limit of 3.'
+  const causes = { 4: { reason, merge: false }, 5: { reason, merge: false } }
+  const text = statusText('o/r', Q({ waiting, slots: 2 }), { 5: 75 }, 2, {}, causes)
+  expect(lineWith(text, '#4')).toBe(`  #4  needs you: ${reason} · increase maxRounds in .factory/config.json. Then run /factory:run 4`)
+  expect(lineWith(text, '#5')).toBe(`  #5  needs you: ${reason} · increase maxRounds in .factory/config.json. Then run /factory:run 5 (https://github.com/o/r/pull/75)`)
+  expect(text).not.toContain('fix the cause')
+  expect(text).not.toContain('/factory:merge')
+})
+
 test('statusFor asks for a PR only for approved and needs-human tickets', async () => {
   const T = (n: number, label: string): Ticket => ({
     kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', label],
@@ -198,4 +209,21 @@ test('statusFor shows the board differences', async () => {
   expect(lines.slice(-3)).toEqual(['', 'Board differs from labels', '  #1 board says Review, label says build: move the card to Build'])
   const same = await statusFor(fakeCtx({ replies: [itemList([{ url: 'https://github.com/o/r/issues/1', factory: 'Build' }])] }), tr, cfg)
   expect(same).not.toContain('Board differs from labels')
+})
+
+test('statusFor shows the round limit step', async () => {
+  const T = (n: number, comments: Comment[] = []): Ticket => ({
+    kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', 'factory:needs-human'],
+    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: `u/${n}`, comments,
+  })
+  const stop = C(1, 'op', 'Factory stopped: Round 3 reached the round limit of 3.', '2026-01-02T00:00:00Z')
+  const tr = {
+    repo: 'o/r',
+    login: async () => 'op',
+    backlog: async () => [T(2)],
+    get: async (n: number) => T(n, [stop]),
+    findPr: async () => null,
+  } as unknown as Tracker
+  const text = await statusFor(fakeCtx(), tr, { ...defaultConfig('u', 'main', []), concurrency: 2 })
+  expect(lineWith(text, '#2')).toBe('  #2 t2  needs you: Round 3 reached the round limit of 3. · increase maxRounds in .factory/config.json. Then run /factory:run 2')
 })

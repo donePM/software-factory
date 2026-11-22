@@ -26,6 +26,9 @@ export function causeOf(comments: Comment[], operator: string): Cause | undefine
   return stop === undefined ? undefined : { reason: firstLine(stop.body.slice(STOP.length)), merge: false }
 }
 
+// The stop comment of advanceBuild: build refuses a new round until maxRounds goes up.
+export const atRoundLimit = (cause: Cause | undefined): boolean => /^Round \d+ reached the round limit of \d+\.$/.test(cause?.reason ?? '')
+
 const label = (n: number, titles: Record<number, string>): string => (titles[n] ? `#${n} ${titles[n]}` : `#${n}`)
 
 // prs maps an issue number to its PR number; titles maps an issue number to its title.
@@ -46,8 +49,9 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
       rows.push(`${label(n, titles)}  approved: /factory:merge ${n}${link}`)
     } else if (w.state === 'needs-human' && cause?.merge === true) {
       rows.push(`${label(n, titles)}  needs you: ${cause.reason} · decide. Then run /factory:merge ${n}${link}`)
+    } else if (w.state === 'needs-human' && atRoundLimit(cause)) {
+      rows.push(`${label(n, titles)}  needs you: ${cause?.reason} · increase maxRounds in .factory/config.json. Then run /factory:run ${n}${link}`)
     } else if (w.state === 'needs-human' && cause !== undefined) {
-      // shortcut: the round-limit row still shows /factory:run, upgrade when operators run it in vain
       rows.push(`${label(n, titles)}  needs you: ${cause.reason} · fix the cause. Then run /factory:run ${n}${link}`)
     } else if (w.state === 'needs-human') {
       rows.push(`${label(n, titles)}  needs you: answer in the issue. Then run /factory:run ${n}${link}`)
