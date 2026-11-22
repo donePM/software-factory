@@ -9,6 +9,7 @@ import type { Tracker } from '../lib/tracker.ts'
 import type { Comment, State, Ticket } from '../lib/types.ts'
 import { TOOLS } from '../hooks/tools.ts'
 import { typesSource } from '../lib/stacks/claude-plugin.ts'
+import { boardCalls, boardReplies, edit, onBoard } from './support/board.ts'
 import { fakeCtx, type Reply } from './support/host.ts'
 
 const SHA = 'a'.repeat(40)
@@ -103,6 +104,15 @@ test('jobCreate sets intake and writes issue.md', async () => {
   expect(ctx.files[`${DIR}/issue.md`]).toContain('# Issue #7: Add thing')
   expect(job.title).toBe('Add thing')
   expect(job.round).toBe(0)
+})
+
+test('job_create sets the Intake option on the board', async () => {
+  const ctx = fakeCtx({ files: CFG, replies: [...boardReplies, ...createReplies] })
+  const { tracker: t, warnings } = onBoard(ctx, tracker(T([])))
+  await jobCreate(ctx, t, 7)
+  expect(boardCalls(ctx.calls)).toEqual(['setState 7 intake', 'gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit'])
+  expect(ctx.calls).toContainEqual(edit('Intake'))
+  expect(warnings).toEqual([])
 })
 
 test('job_create assigns the factory to the issue', async () => {

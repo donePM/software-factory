@@ -144,6 +144,8 @@ Run `/factory:setup project` to show the tickets on a board in GitHub Projects.
 Setup creates a project, or uses the one in `project.number` in `.factory/config.json`.
 It adds the single-select field `Factory` with one option for each state.
 Then it adds each open factory ticket with its current state.
+After that, the tools update the `Factory` field each time they change a status label.
+A board problem never stops a job: it shows as a line in `warnings` in the tool result.
 GitHub cannot create the board view from the command line, so setup shows the clicks.
 Commit `.factory/config.json` after this step, because it now holds `project.number`.
 

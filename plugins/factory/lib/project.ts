@@ -1,6 +1,7 @@
 import { lacksScope } from './doctor.ts'
 import { FactoryError, must } from './exec.ts'
 import { stateOf } from './labels.ts'
+import type { Config } from './config.ts'
 import type { Tracker } from './tracker.ts'
 import type { Ctx, State } from './types.ts'
 
@@ -52,6 +53,39 @@ const viewSteps = (url: string): string[] => [
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
+const boardOf = (owner: string, p: RawProject, field: RawField): Board =>
+  ({ owner, number: p.number, id: p.id, fieldId: field.id, options: new Map(field.options?.map(o => [o.name, o.id])) })
+
+async function loadBoard(ctx: Ctx, owner: string, number: number): Promise<Board> {
+  const p = await project<RawProject>(ctx, ['view', String(number), '--owner', owner])
+  const field = await factoryField(ctx, owner, p.number)
+  if (field === undefined) throw new FactoryError('project-field', `the project has no field ${FIELD}`)
+  return boardOf(owner, p, field)
+}
+
+// After each label change, sets the Factory option of the issue card. A board failure becomes a warning.
+export function withBoard(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project'>): { tracker: Tracker; warnings: string[] } {
+  const warnings: string[] = []
+  const p = cfg.project
+  if (p?.enabled !== true) return { tracker, warnings }
+  let board: Promise<Board> | undefined
+  const setState: Tracker['setState'] = async (n, to, opts) => {
+    await tracker.setState(n, to, opts)
+    if (p.number === undefined) {
+      warnings.push('project.number is missing. Run /factory:setup project.')
+      return
+    }
+    try {
+      board ??= loadBoard(ctx, tracker.repo.split('/')[0]!, p.number)
+      const b = await board
+      await setOption(ctx, b, await addItem(ctx, b, `https://github.com/${tracker.repo}/issues/${n}`), optionFor(to))
+    } catch (e) {
+      warnings.push(`#${n}: ${messageOf(e)}`)
+    }
+  }
+  return { tracker: { ...tracker, setState }, warnings }
+}
+
 // Connects the project (creates it when number is undefined) and adds each open ticket. A failure becomes a warning.
 export async function connectProject(ctx: Ctx, tracker: Tracker, number: number | undefined): Promise<ProjectReport> {
   const report: ProjectReport = { viewSteps: [], added: 0, warnings: [] }
@@ -77,7 +111,7 @@ export async function connectProject(ctx: Ctx, tracker: Tracker, number: number 
       field = await factoryField(ctx, owner, p.number)
       if (field === undefined) throw new FactoryError('project-field', `the field ${FIELD} is missing after field-create`)
     }
-    const board: Board = { owner, number: p.number, id: p.id, fieldId: field.id, options: new Map(field.options?.map(o => [o.name, o.id])) }
+    const board = boardOf(owner, p, field)
     // shortcut: setup does not add missing options to an existing field, upgrade when operators ask for it.
     const missing = FACTORY_OPTIONS.filter(o => !board.options.has(o))
     if (missing.length > 0) report.warnings.push(`The field ${FIELD} has no option ${missing.join(', ')}. Add the options in the project settings.`)
