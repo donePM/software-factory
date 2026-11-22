@@ -19,11 +19,19 @@ export type Config = {
   surfaces: Record<string, Models>
   protectedPaths: string[]
   project?: { enabled: boolean; number?: number }
+  language?: string
 }
 
 const MODELS: readonly string[] = ['haiku', 'sonnet', 'opus', 'fable']
 const REVIEWERS: readonly string[] = ['code', 'security', 'ux', 'ui']
 const STEPS: readonly string[] = ['install', 'format', 'lint', 'typecheck', 'build', 'test', 'audit', 'start']
+// The language reaches prompts, so it stays a short name with no newline.
+const LANGUAGE = /^\p{L}[\p{L}\p{M} ()-]{0,39}$/u
+export const LANGUAGE_ERROR = 'language must be a short single-line name'
+
+export function validLanguage(x: unknown): boolean {
+  return typeof x === 'string' && LANGUAGE.test(x)
+}
 
 export function defaultConfig(url: string, baseBranch: string, stacks: StackRef[]): Config {
   return {
@@ -47,6 +55,7 @@ export function defaultConfig(url: string, baseBranch: string, stacks: StackRef[
       api: { security: 'opus' },
     },
     project: { enabled: false },
+    language: 'English',
     protectedPaths: ['.factory/config.json', '.factory/checks.local.ts'],
   }
 }
@@ -117,6 +126,7 @@ export function validateConfig(x: unknown): string[] {
       if (x.project.number !== undefined && !posInt(x.project.number)) errs.push('project.number must be an integer of 1 or more')
     }
   }
+  if (x.language !== undefined && !validLanguage(x.language)) errs.push(LANGUAGE_ERROR)
   return errs
 }
 

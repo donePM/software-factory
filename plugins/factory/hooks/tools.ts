@@ -81,7 +81,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'setup',
-    description: 'Set up the factory in this repo: config, labels, repo standard. project true connects a GitHub Project board, project false stores no. askProject true means: ask the user. With apply false it only previews.',
+    description: 'Set up the factory in this repo: config, labels, repo standard. project true connects a GitHub Project board, project false stores no. language sets the ticket language. askProject and askLanguage true mean: ask the user. With apply false it only previews.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -89,11 +89,12 @@ export const TOOLS: ToolDef[] = [
         baseBranch: { type: 'string' },
         concurrency: { type: 'integer', minimum: 1 },
         project: { type: 'boolean' },
+        language: { type: 'string', maxLength: 40 },
       },
       required: ['apply'],
       additionalProperties: false,
     },
-    handler: (ctx, input) => setup(ctx, { apply: input.apply, baseBranch: input.baseBranch, concurrency: input.concurrency, project: input.project }),
+    handler: (ctx, input) => setup(ctx, { apply: input.apply, baseBranch: input.baseBranch, concurrency: input.concurrency, project: input.project, language: input.language }),
   },
   {
     name: 'gate',

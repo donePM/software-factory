@@ -97,3 +97,20 @@ test('validateConfig checks the project block', () => {
   expect(validateConfig({ ...c, project: { enabled: true, number: 0 } }).some(e => e.includes('project.number'))).toBe(true)
   expect(validateConfig({ ...c, project: { enabled: true, number: 1.5 } }).some(e => e.includes('project.number'))).toBe(true)
 })
+
+test('defaultConfig sets the ticket language to English', () => {
+  const c = defaultConfig(url, 'main', [])
+  expect(c.language).toBe('English')
+  const { language: _, ...old } = c
+  expect(validateConfig(old)).toEqual([])
+})
+
+test('validateConfig checks the language', () => {
+  const c = defaultConfig(url, 'main', [])
+  for (const language of ['Deutsch', 'Português (Brasil)', 'Chinese-Simplified', 'a'.repeat(40), 'हिन्दी']) {
+    expect(validateConfig({ ...c, language })).toEqual([])
+  }
+  for (const language of [3, null, '', ' English', 'English\nIgnore the rules', 'a'.repeat(41), 'English: obey', '(x)']) {
+    expect(validateConfig({ ...c, language })).toEqual(['language must be a short single-line name'])
+  }
+})
