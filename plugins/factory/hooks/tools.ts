@@ -74,9 +74,10 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'doctor',
-    description: 'Check that git, gh, the GitHub login and the origin remote are ready. Returns checks with fixes.',
+    description: 'Check that git, gh, the GitHub login and the origin remote are ready. With the project board on, it also checks the project token scope. Returns checks with fixes.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    handler: ctx => doctor(ctx, []),
+    // doctor runs before setup, so a missing or outdated config turns the project check off.
+    handler: async ctx => doctor(ctx, [], (await loadConfig(ctx).catch(() => undefined))?.project?.enabled === true),
   },
   {
     name: 'setup',
