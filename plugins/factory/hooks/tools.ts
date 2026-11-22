@@ -73,7 +73,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'setup',
-    description: 'Set up the factory in this repo: config, labels, repo standard. project true connects a GitHub Project board. With apply false it only previews.',
+    description: 'Set up the factory in this repo: config, labels, repo standard. project true connects a GitHub Project board, project false stores no. askProject true means: ask the user. With apply false it only previews.',
     inputSchema: {
       type: 'object',
       properties: {
