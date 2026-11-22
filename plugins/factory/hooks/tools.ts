@@ -275,7 +275,7 @@ export async function makeCtx($: any): Promise<Ctx> {
 // status writes its snapshot itself, from the data of its text.
 const SNAPSHOT_TOOLS = ['job_create', 'job_advance', 'job_sync', 'merge', 'cleanup']
 
-export type ToolOutcome ={ result: string } | { isError: true; result: string }
+export type ToolOutcome = { result: string } | { isError: true; result: string }
 
 export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<ToolOutcome> {
   try {
