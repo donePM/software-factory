@@ -61,7 +61,8 @@ async function answered(tr: Tracker, t: Ticket, operator: string): Promise<boole
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
-// Moves the open-column card of each closed issue with no status label to Done, or to Rejected when not planned.
+// Moves the open-column card of each closed issue to its final column.
+// factory:done gives Done and factory:rejected gives Rejected. With no status label, not planned gives Rejected, else Done.
 // shortcut: one get with comments for each open-column card that is not in the backlog, upgrade to a get without comments when the board has many such cards.
 async function closedCards(ctx: Ctx, tr: Tracker, number: number, tickets: Ticket[], cards: Map<string | undefined, Card>): Promise<string[]> {
   const known = new Set<string | undefined>(tickets.map(t => t.url))
@@ -73,9 +74,10 @@ async function closedCards(ctx: Ctx, tr: Tracker, number: number, tickets: Ticke
     if (n === undefined || known.has(url) || card.factory === 'Done' || card.factory === 'Rejected') continue
     try {
       const t = await tr.get(Number(n))
-      if (t.state !== 'closed' || stateOf(t.labels) !== null) continue
+      const s = stateOf(t.labels)
+      if (t.state !== 'closed' || (s !== null && s !== 'done' && s !== 'rejected')) continue
       board ??= loadBoard(ctx, tr.repo.split('/')[0]!, number)
-      await setOption(ctx, await board, card.id, t.stateReason === 'not_planned' ? 'Rejected' : 'Done')
+      await setOption(ctx, await board, card.id, s === 'rejected' || (s === null && t.stateReason === 'not_planned') ? 'Rejected' : 'Done')
     } catch (e) {
       warnings.push(`#${n}: ${messageOf(e)} Fix: Move the card by hand on the board, or wait for the next queue.`)
     }
