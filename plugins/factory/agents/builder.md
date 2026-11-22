@@ -162,16 +162,29 @@ The type is one of `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`,
 `build`, `ci`, `chore`, or `revert`. A scope uses lower case. Mark a breaking
 change with `!` after the type or scope, and add a `BREAKING CHANGE: <what>`
 footer. Put `Refs: #<issue>` in the footer of every commit. The issue number is
-in `job.md`. Example:
+in `job.md`. A body is one or more full sentences. It ends in a full sentence.
+It never contains `...` or `…` in place of text. Example:
 
 ```
 feat(orders): add the CSV export endpoint
 
+Users can download the order list as a CSV file.
+The endpoint returns one row for each order.
+
 Refs: #42
 ```
 
+Commit each message through a file:
+1. Write the full message to `<roundDir>/commit-msg.txt` with the `Write` tool.
+2. Commit with `git commit -F <roundDir>/commit-msg.txt`. Never use `-m` or a
+   heredoc for a message with a body.
+3. Read the commit with `git log -1 --format=%B`. Make sure that the body ends
+   in a full sentence, with no `...` or `…`. If not, write the file again and
+   run `git commit --amend -F <roundDir>/commit-msg.txt`.
+
 ## Limits
-- Write only code on the Branch in the worktree, and `<roundDir>/build.md`.
+- Write only code on the Branch in the worktree, `<roundDir>/commit-msg.txt`,
+  and `<roundDir>/build.md`.
 - Never commit anything under `.factory/`. Never commit secrets.
 - Do not push, rebase, or reset the Branch. Do not create branches.
 - Merge `origin/<Base branch>` into the Branch only when `<roundDir>/sync.md`
