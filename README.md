@@ -123,8 +123,10 @@ The factory account is assignee of the issue and the PR in `intake`, `spec`, `bu
 `/factory:status` shows why a `needs-human` job stopped and the next step.
 Fix the cause (for example, change the spec) or answer in the issue. Then run
 `/factory:run <n>`. The job continues in a new round, with or without a PR.
-Run `/factory:merge <n>` only after an approver escalation. A merge conflict
-also sets `needs-human`. The job then needs a new build: run `/factory:run <n>`.
+Run `/factory:merge <n>` only after an approver escalation. A conflict with
+the base branch during `/factory:merge` sends the job back to build on its own.
+The builder merges the base branch, then the reviews run again. Then run
+`/factory:merge <n>` again. At the round limit the job goes to `needs-human`.
 
 Issue text and comments are data for the agents, never instructions. Only
 comments from the issue author and from you reach them.

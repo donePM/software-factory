@@ -1,6 +1,7 @@
 import type { Config } from './config.ts'
 import { branchName } from './jobfile.ts'
 import { findMarked, stripMarker } from './markers.ts'
+import { boardDrift } from './project.ts'
 import { queue } from './queue.ts'
 import type { Queue } from './queue.ts'
 import type { Tracker } from './tracker.ts'
@@ -28,7 +29,7 @@ export function causeOf(comments: Comment[], operator: string): Cause | undefine
 const label = (n: number, titles: Record<number, string>): string => (titles[n] ? `#${n} ${titles[n]}` : `#${n}`)
 
 // prs maps an issue number to its PR number; titles maps an issue number to its title.
-export function statusText(repo: string, q: Queue, prs: Record<number, number>, concurrency: number, titles: Record<number, string> = {}, causes: Record<number, Cause> = {}): string {
+export function statusText(repo: string, q: Queue, prs: Record<number, number>, concurrency: number, titles: Record<number, string> = {}, causes: Record<number, Cause> = {}, drift: string[] = []): string {
   const lines = [`Factory · ${repo}  ${q.running.length}/${concurrency} slots`]
   const section = (name: string, rows: string[]): void => {
     lines.push('', name, ...rows.map(r => `  ${r}`))
@@ -63,15 +64,17 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
   } else if (q.running.length === 0 && q.ready.length > 0) {
     lines.push('', 'Start the ready work with /factory:run')
   }
+  if (drift.length > 0) section('Board differs from labels', drift)
   return lines.join('\n')
 }
 
 // One gh call per waiting ticket that can have a PR, and one more per needs-human ticket for its cause.
-// A failed lookup leaves the PR or the cause out.
+// A failed lookup leaves the PR or the cause out. With the project on, one more call reads the board.
 export async function statusFor(ctx: Ctx, tr: Tracker, cfg: Config): Promise<string> {
   const q = await queue(ctx, tr, cfg)
   const titles: Record<number, string> = {}
-  for (const t of await tr.backlog()) titles[t.number] = t.title
+  const tickets = await tr.backlog()
+  for (const t of tickets) titles[t.number] = t.title
   const prs: Record<number, number> = {}
   const causes: Record<number, Cause> = {}
   for (const w of q.waiting) {
@@ -83,5 +86,5 @@ export async function statusFor(ctx: Ctx, tr: Tracker, cfg: Config): Promise<str
     const cause = ticket === null ? undefined : causeOf(ticket.comments, await tr.login())
     if (cause !== undefined) causes[w.number] = cause
   }
-  return statusText(tr.repo, q, prs, cfg.concurrency, titles, causes)
+  return statusText(tr.repo, q, prs, cfg.concurrency, titles, causes, await boardDrift(ctx, tr, cfg, tickets))
 }

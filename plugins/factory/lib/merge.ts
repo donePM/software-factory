@@ -74,8 +74,8 @@ async function sameTree(ctx: Ctx, wt: string, commit: string, a: string, b: stri
   return made.stdout.split('\n', 1)[0]?.trim() === (await must(ctx, ['git', '-C', wt, 'rev-parse', `${commit}^{tree}`]))
 }
 
-// Merges origin/<base> into the worktree. It undoes a conflict, comments on the issue, and returns false.
-async function syncBase(ctx: Ctx, t: Tracker, wt: string, issue: number, base: string): Promise<boolean> {
+// Merges origin/<base> into the worktree. It undoes a conflict and returns false.
+async function syncBase(ctx: Ctx, wt: string, issue: number, base: string): Promise<boolean> {
   const origin = `origin/${base}`
   const sync = await ctx.run(['git', '-C', wt, 'merge', '--no-edit', '-m', `chore(factory): sync with ${base}`, '-m', `Refs: #${issue}`, origin])
   if (sync.exitCode === 0) return true
@@ -85,8 +85,18 @@ async function syncBase(ctx: Ctx, t: Tracker, wt: string, issue: number, base: s
     throw new FactoryError('sync-failed', `git merge ${origin} failed in ${wt}: ${(sync.stderr || sync.stdout).trim()}`, 'Fix the git problem in the worktree, then merge again. The label did not change.')
   }
   await ctx.run(['git', '-C', wt, 'merge', '--abort'])
-  await t.comment(issue, `Factory stopped: ${conflictReason(origin, branchName(issue))} The job needs a new build: the builder merges ${origin}, then the reviews run again.`)
   return false
+}
+
+// After a sync conflict: a new build round with sync.md, so the builder merges the base branch.
+async function toBuild(ctx: Ctx, t: Tracker, issue: number, from: State, origin: string, branch: string) {
+  // jobAdvance counts the round, applies the round limit, and sets the label and the assignees.
+  const next = await jobAdvance(ctx, t, { issue, to: 'build', from })
+  if (next.state !== 'build') return next
+  const reason = conflictReason(origin, branch)
+  await ctx.fs.write(`${next.roundDir}/sync.md`, `Merge ${origin} into ${branch}: the merge has a conflict. Resolve the conflict.\n`)
+  await t.comment(issue, `The sync with the base branch has a conflict: ${reason} Round ${next.round} starts. The builder merges ${origin}, then the reviews run again.`)
+  return next
 }
 
 const conflictReason = (origin: string, branch: string): string => `merging ${origin} into ${branch} has a conflict.`
@@ -106,11 +116,11 @@ async function syncOthers(ctx: Ctx, t: Tracker, merged: number, base: string): P
       await verifyJob(ctx, t, await t.get(m), job)
       await must(ctx, ['git', '-C', job.worktree, 'fetch', 'origin', base])
       await checkReviewed(ctx, job.worktree, job.reviewed, `origin/${base}`)
-      if (await syncBase(ctx, t, job.worktree, m, base)) {
+      if (await syncBase(ctx, job.worktree, m, base)) {
         await must(ctx, ['git', '-C', job.worktree, 'push', 'origin', `HEAD:refs/heads/${branchName(m)}`])
         syncs.push({ issue: m, outcome: 'synced' })
       } else {
-        syncs.push({ issue: m, outcome: 'conflict', state: (await jobAdvance(ctx, t, { issue: m, from: 'approved', to: 'build' })).state })
+        syncs.push({ issue: m, outcome: 'conflict', state: (await toBuild(ctx, t, m, 'approved', `origin/${base}`, job.branch)).state })
       }
     } catch (e) {
       syncs.push({ issue: m, outcome: 'failed', error: e instanceof Error ? e.message : String(e) })
@@ -159,11 +169,13 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
 
   await must(ctx, ['git', '-C', wt, 'fetch', 'origin', base])
   const reviewed = await checkReviewed(ctx, wt, job.reviewed, origin)
-  if (!(await syncBase(ctx, t, wt, issue, base))) {
-    // At the round limit, job_advance sets needs-human instead of build.
-    const to = state === 'approved' ? (await jobAdvance(ctx, t, { issue, from: 'approved', to: 'build' })).state : state
-    const next = to === 'build' ? `The job is in build now. Run /factory:run ${issue}` : 'Send the job back to build'
-    throw new FactoryError('sync-conflict', conflictReason(origin, job.branch), `The factory undid the merge, so the worktree has no conflict now. ${next}: the builder merges ${origin}, then the reviews run again.`)
+  if (!(await syncBase(ctx, wt, issue, base))) {
+    const reason = conflictReason(origin, job.branch)
+    const next = await toBuild(ctx, t, issue, state, origin, job.branch)
+    if (next.state !== 'build') {
+      throw new FactoryError('sync-conflict-limit', `${reason} ${next.note ?? ''}`.trim(), 'The job is needs-human. A human decides how to go on.')
+    }
+    throw new FactoryError('sync-conflict', reason, `The factory undid the merge and started round ${next.round}. Follow pipeline.md as /factory:run ${issue}: the builder merges ${origin}, then the reviews run again.`)
   }
 
   const head = async (): Promise<string> => must(ctx, ['git', '-C', wt, 'rev-parse', 'HEAD'])

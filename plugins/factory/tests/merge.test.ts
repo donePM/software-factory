@@ -280,23 +280,51 @@ test('a failed sync without MERGE_HEAD is not a conflict', async () => {
   expect(t.merges).toEqual([])
 })
 
-test('merge aborts on a sync conflict', async () => {
+test('a sync conflict starts a new build round', async () => {
   const { ctx, t } = setup({}, [CONFLICT])
-  await rejects(merge(ctx, t, 7), 'sync-conflict')
+  const err = (await merge(ctx, t, 7).catch((e: unknown) => e)) as { code: string; fix: string }
+  expect(err.code).toBe('sync-conflict')
+  expect(err.fix).toContain('round 2')
+  expect(err.fix).not.toContain('Send the job back')
   expect(ctx.calls).toContainEqual(['git', '-C', WT, 'merge', '--abort'])
   expect(t.states).toEqual(['build'])
-  expect(t.posts.join('\n')).toContain('conflict')
+  const job = await readJob(ctx, 7)
+  expect(job.round).toBe(2)
+  expect(job.reviewed).toBe(null)
+  const sync = await ctx.fs.read(`${DIR}/round-2/sync.md`)
+  expect(sync).toContain('origin/main')
+  expect(sync).toContain('conflict')
+  expect(t.posts).toHaveLength(1)
+  expect(t.posts[0]).toContain('conflict')
+  expect(t.posts[0]?.startsWith('Factory stopped:')).toBe(false)
   expect(t.merges).toEqual([])
   expect(count(ctx.calls, 'git', '-C', WT, 'push')).toBe(0)
 })
 
-test('a sync conflict from needs-human comments and keeps the label', async () => {
+test('a sync conflict from needs-human starts a new build round', async () => {
   const { ctx, t } = setup({ labels: ['factory:needs-human'] }, [CONFLICT])
   await rejects(merge(ctx, t, 7), 'sync-conflict')
   expect(ctx.calls).toContainEqual(['git', '-C', WT, 'merge', '--abort'])
-  expect(t.states).toEqual([])
-  expect(t.posts.join('\n')).toContain('conflict')
+  expect(t.states).toEqual(['build'])
+  expect((await readJob(ctx, 7)).round).toBe(2)
+  expect(await ctx.fs.exists(`${DIR}/round-2/sync.md`)).toBe(true)
   expect(t.merges).toEqual([])
+})
+
+test('a sync conflict at the round limit sets needs-human', async () => {
+  const { ctx, t } = setup({ job: { round: 3 } }, [CONFLICT])
+  await rejects(merge(ctx, t, 7), 'sync-conflict-limit')
+  expect(t.states).toEqual(['needs-human'])
+  expect(t.posts.some(p => p.startsWith('Factory stopped: Round limit'))).toBe(true)
+  expect(await ctx.fs.exists(`${DIR}/round-4/sync.md`)).toBe(false)
+  expect(await ctx.fs.exists(`${DIR}/round-3/sync.md`)).toBe(false)
+  expect(t.merges).toEqual([])
+})
+
+test('a sync conflict keeps the factory as assignee', async () => {
+  const { ctx, t } = setup({}, [CONFLICT])
+  await rejects(merge(ctx, t, 7), 'sync-conflict')
+  expect(t.assigns).toEqual(['+7', '+9'])
 })
 
 test('merge syncs with origin/<base> from the config', async () => {
@@ -521,9 +549,6 @@ test('merge unassigns the factory from the issue and the PR', async () => {
   const { ctx, t } = setup()
   await merge(ctx, t, 7)
   expect(t.assigns).toEqual(['-7', '-9'])
-  const conflict = setup({}, [CONFLICT])
-  await rejects(merge(conflict.ctx, conflict.t, 7), 'sync-conflict')
-  expect(conflict.t.assigns).toEqual(['+7', '+9']) // the conflict sends the job to build
 })
 
 test('merge does not close an issue that GitHub already closed', async () => {
@@ -637,7 +662,8 @@ test('a sync conflict in another job sends it to build', async () => {
   expect(count(ctx.calls, 'git', '-C', WT8, 'push')).toBe(0)
   const posts = t.events.filter(e => e.startsWith('comment 8 '))
   expect(posts.length).toBe(1)
-  expect(posts[0]).toContain('the builder merges origin/main')
+  expect(posts[0]).toContain('The builder merges origin/main')
+  expect(await ctx.fs.exists(`${DIR8}/round-2/sync.md`)).toBe(true)
   expect(t.events).toContain('setState 8 build')
   expect((await readJob(ctx, 8)).round).toBe(2)
   expect(t.states).toEqual(['done'])

@@ -17,10 +17,11 @@ Use plain words. The user may not be a developer.
 4. When the notification comes, report the result in simple words:
    - Success: the PR is merged with the merge commit SHA from the report, the issue is done, and the cleanup report lists what was removed and what was kept.
      Then name each other approved job from the report. The factory merged the base branch into each one.
-     A job with a `conflict` entry is now in build. Tell the user to run `/factory:run <n>` for it. The builder resolves the conflict, then the reviews run again.
+     A job with a `conflict` entry is now in build. Tell the user to run `/factory:run <n>` for it. The builder resolves the conflict, then the reviews run again. At the round limit, the entry says `needs-human`: a human decides how to go on.
      A job with a `failed` entry did not change. Its next `/factory:merge` syncs it.
    - Error: give the error text and its `Fix` line.
-     - `sync-conflict`: the branch conflicts with the base branch. The factory undid the merge. An approved job is now in build: tell the user to run `/factory:run <n>`. The builder merges the base branch, then the reviews run again. A `needs-human` job keeps its label and gets a comment. At the round limit, the job goes to `needs-human`.
+     - `sync-conflict`: the branch conflicts with the base branch. The factory undid the merge. The job went back to build on its own, in a new round. Read `${CLAUDE_PLUGIN_ROOT}/pipeline.md` and follow it as `/factory:run <issue>`: start the builder. The builder merges the base branch, then the reviews run again. When the job is `approved` or `needs-human` again, tell the user to run `/factory:merge <issue>` again.
+     - `sync-conflict-limit`: the branch conflicts with the base branch, and the job reached the round limit. The job is now `needs-human`. A human decides how to go on.
      - `sync-failed`: git could not merge the base branch, but there is no conflict. Nothing changed. Fix the git problem, then run `/factory:merge` again.
      - `not-reviewed`: the branch has commits that no review saw. Nothing was merged. The job must go back to build for a new review.
      - `gate-failed`: the gate is red after the sync. Nothing was merged. Fix the failures first.
