@@ -74,10 +74,12 @@ This loads the branch code in that process only.
   `job_sync`, `job_advance`, `status`, `approve`).
 - `plugins/factory/agents/*.md`: `intake`, `spec-writer`, `builder`, the
   `code|security|ux|ui` reviewers, `approver`, `gate-runner`, `merger`, and
-  `documenter`. With `docs.target: wiki`, the merge sets `docs`. The documenter
-  writes `docs.md`. `job_advance` with `to: done` pushes the wiki page, posts
-  the `<!-- factory:docs -->` comment with the link and the `docs.md` text, and sets `done`.
-  It also pushes the pages in `docs/wiki/` of the job worktree, for example `Home.md`.
+  `documenter`. With `docs.target: wiki`, the merge sets `docs`. `job_sync` clones
+  the wiki into `<jobDir>/wiki`. The documenter reads it and writes `docs.md` with
+  one `## Page <Name>.md` section for each changed feature page, and `Home.md` as the index.
+  `job_advance` with `to: done` pushes these pages in one commit, deletes the old
+  `Issue-<digits>.md` pages, posts the `<!-- factory:docs -->` comment with the page
+  links and the `docs.md` text, and sets `done`.
   Models and tools are set in their frontmatter; reviewer models come from
   `## Route` in `job.md`.
 - Skills (`/factory:setup|add|run|status|approve|merge`) are thin entry points.

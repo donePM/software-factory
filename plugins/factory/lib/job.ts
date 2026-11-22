@@ -2,7 +2,7 @@ import { type Config, loadConfig } from './config.ts'
 import { checkMessage, typeOf } from './conventional.ts'
 import { type CleanupReport, cleanupJob } from './cleanup.ts'
 import { FactoryError, must, mkdirp, rmrf } from './exec.ts'
-import { parseDocs } from './docs.ts'
+import { ISSUE_PAGE, parseDocs, type Page } from './docs.ts'
 import { WIKI_GIT, WIKI_TIMEOUT_MS } from './doctor.ts'
 import { countAttempts } from './gate.ts'
 import { followState } from './assignee.ts'
@@ -209,6 +209,13 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
   if (state === 'docs' && !(await ctx.fs.exists(job.worktree))) await must(ctx, ['git', 'fetch', 'origin', job.baseBranch])
   await ensureWorktree(ctx, job.worktree, job.branch, fromBase ? `origin/${job.baseBranch}` : job.base)
   await copyTypes(ctx, job.worktree, cfg)
+  // The documenter reads the live wiki pages, so each docs run starts from a fresh clone.
+  if (state === 'docs') {
+    const wiki = `${dir}/wiki`
+    await rmrf(ctx, wiki)
+    const r = await wikiGit(ctx, wikiClone(t.repo, wiki))
+    if (r.exitCode !== 0) throw new FactoryError('wiki-clone', `the wiki clone failed: ${(r.stderr || r.stdout).trim() || `git exited with ${r.exitCode}`}`, wikiFix(t.repo))
+  }
 
   let specChanged = false
   const spec = findMarked(ticket.comments, 'spec', operator)
@@ -535,29 +542,32 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
 // The merge closed the issue, and queue refuses a closed issue: the sweep of a plain run moves the job on.
 const RETRY = 'Then run /factory:run without an issue number.'
 
-// The wiki repo uses the gh login of the operator. Agent text cannot pick a path.
-async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, page: string, pages: string): Promise<void> {
+const wikiFix = (repo: string): string => `Open https://github.com/${repo}/wiki and create the first page. ${RETRY}`
+
+// The wiki repo uses the gh login of the operator. A missing wiki repo of a private repo can ask for a user name, so git must not prompt.
+const wikiGit = (ctx: Ctx, args: string[]) => ctx.run([...WIKI_GIT, ...args], { env: { GIT_TERMINAL_PROMPT: '0' }, timeoutMs: WIKI_TIMEOUT_MS })
+const wikiClone = (repo: string, wiki: string): string[] => ['clone', '--depth', '1', `https://github.com/${repo}.wiki.git`, wiki]
+
+// The page names passed the name rule of parseDocs. Only the fixed Issue-<digits>.md pattern deletes a page.
+// shortcut: no retry when two docs jobs push at the same time, upgrade when parallel docs jobs often collide.
+async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, pages: Page[]): Promise<void> {
   const fixes: Record<string, string> = {
-    clone: `Open https://github.com/${repo}/wiki and create the first page. ${RETRY}`,
+    clone: wikiFix(repo),
     push: `Run gh auth status. gh must be logged in with the repo scope and you need write access to ${repo}. ${RETRY}`,
   }
   const git = async (args: string[]): Promise<string> => {
-    // A missing wiki repo of a private repo can ask for a user name, so git must not prompt.
-    const r = await ctx.run([...WIKI_GIT, ...args], { env: { GIT_TERMINAL_PROMPT: '0' }, timeoutMs: WIKI_TIMEOUT_MS })
+    const r = await wikiGit(ctx, args)
     if (r.exitCode === 0) return r.stdout
     const step = args[0] === '-C' ? args[2]! : args[0]!
     const fix = fixes[step]
     throw new Error(`the wiki ${step} failed: ${(r.stderr || r.stdout).trim() || `git exited with ${r.exitCode}`}${fix === undefined ? '' : `\nFix: ${fix}`}`)
   }
-  await rmrf(ctx, wiki) // a clone from a failed run blocks a new clone
-  await git(['clone', '--depth', '1', `https://github.com/${repo}.wiki.git`, wiki])
-  // The name rule blocks path traversal and hidden pages such as _Sidebar.md.
-  // shortcut: a page removed from docs/wiki/ stays in the wiki, upgrade when a page is renamed or removed.
-  const names = (await ctx.fs.list(pages).catch(() => [])).filter(f => /^[A-Za-z0-9][A-Za-z0-9-]*\.md$/.test(f)).sort()
-  for (const f of names) await ctx.fs.write(`${wiki}/${f}`, await ctx.fs.read(`${pages}/${f}`))
-  await ctx.fs.write(`${wiki}/Issue-${n}.md`, `${page}\n`)
+  if (!(await ctx.fs.exists(wiki))) await git(wikiClone(repo, wiki))
+  const old = (await ctx.fs.list(wiki)).filter(f => ISSUE_PAGE.test(f)).sort()
+  if (old.length > 0) await git(['-C', wiki, 'rm', '--quiet', '--', ...old])
+  for (const p of pages) await ctx.fs.write(`${wiki}/${p.name}`, `${p.text}\n`)
   if ((await git(['-C', wiki, 'status', '--porcelain'])).trim() === '') return
-  await git(['-C', wiki, 'add', '--', ...new Set([...names, `Issue-${n}.md`])])
+  await git(['-C', wiki, 'add', '--', ...new Set(pages.map(p => p.name))])
   await git(['-C', wiki, 'commit', '-m', `docs(wiki): document #${n}`, '-m', `Refs: #${n}`])
   await git(['-C', wiki, 'push', 'origin', 'HEAD'])
 }
@@ -567,11 +577,11 @@ async function advanceDocs(ctx: Ctx, t: Tracker, job: Job, ticket: Ticket): Prom
   const n = job.issue
   const text = await readRequired(ctx, `${job.jobDir}/docs.md`, 'docs-not-done', 'The documenter must write docs.md.')
   const docs = parseDocs(text)
-  if (docs.status !== 'DONE' || docs.page === '') {
-    throw new FactoryError('docs-not-done', 'docs.md must start with "STATUS: DONE" and have a non-empty "## Page"', 'The documenter must finish first.')
+  if (docs.status !== 'DONE' || docs.pages.length === 0 || docs.pages.some(p => p.text === '')) {
+    throw new FactoryError('docs-not-done', 'docs.md must start with "STATUS: DONE" and have at least one "## Page <Name>.md" with text', 'The documenter must finish first.')
   }
   try {
-    await publishWiki(ctx, t.repo, n, `${job.jobDir}/wiki`, docs.page, `${job.worktree}/docs/wiki`)
+    await publishWiki(ctx, t.repo, n, `${job.jobDir}/wiki`, docs.pages)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     await t.comment(n, `Factory stopped: ${msg}${msg.includes('\nFix: ') ? '' : `\n\nFix the cause. ${RETRY}`}`)
@@ -580,7 +590,8 @@ async function advanceDocs(ctx: Ctx, t: Tracker, job: Job, ticket: Ticket): Prom
   }
   // jobSync rebuilds docs.md from the text after the link line.
   // shortcut: no guard for a docs.md over the GitHub comment limit, upgrade when a page reaches the limit.
-  await t.upsertComment(n, 'docs', `Docs: https://github.com/${t.repo}/wiki/Issue-${n}\n\n${text}`)
+  const links = [...new Set(docs.pages.map(p => `https://github.com/${t.repo}/wiki/${p.name.slice(0, -'.md'.length)}`))]
+  await t.upsertComment(n, 'docs', `Docs: ${links.join(', ')}\n\n${text}`)
   await moveJob(t, job, 'done')
   if (ticket.state !== 'closed') await t.close(n, 'done')
   return done(job, 'done', { cleanup: await cleanupJob(ctx, t, n, 'done') })

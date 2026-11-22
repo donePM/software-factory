@@ -350,29 +350,41 @@ const DOCS_DONE = [
   'STATUS: DONE',
   '',
   '## Summary',
-  'The page describes the CSV export of the order list. It names the new endpoint and the new button.',
+  'The Orders page now describes the CSV export. Home.md links the Orders page.',
   '',
-  '## Page',
-  '# CSV export of the order list',
+  '## Page Orders.md',
+  '# Orders',
   '',
-  'Users can download the order list as a CSV file. Issue: #42.',
+  'The orders page lists all orders of the shop.',
   '',
-  '## How to use it',
+  '## Export the order list',
+  'You can download the order list as a CSV file.',
   '1. Open the orders page.',
   '2. Click "Export CSV".',
   '',
-  '## What changed',
-  '- `GET /orders.csv` returns one row for each order.',
-  '- The orders page has an "Export CSV" button.',
+  '`GET /orders.csv` returns one row for each order.',
+  '',
+  '## Changes',
+  '- #42: add the CSV export.',
+  '- #17: add the orders page.',
+  '',
+  '## Page Home.md',
+  '# Home',
+  '',
+  'The wiki has one page for each feature.',
+  '',
+  '- [Orders](Orders): the order list and its CSV export.',
+  '- [Users](Users): sign-up and login.',
 ].join('\n')
 
-test('documenter example docs.md has a page', () => {
+test('documenter example docs.md has feature pages', () => {
   const d = parseDocs(DOCS_DONE)
   expect(d.status).toBe('DONE')
   expect(d.summary).not.toBe('')
-  expect(d.page.startsWith('# CSV export of the order list')).toBe(true)
-  expect(d.page).toContain('## How to use it')
-  expect(d.page).toContain('## What changed')
+  expect(d.pages.map(p => p.name)).toEqual(['Orders.md', 'Home.md'])
+  expect(d.pages[0]!.text.startsWith('# Orders')).toBe(true)
+  expect(d.pages[0]!.text).toContain('## Changes\n- #42: add the CSV export.')
+  expect(d.pages[1]!.text).toContain('[Orders](Orders)')
 })
 
 // START_STEP_1 stands word for word in pipeline.md, step 1 of `## Start`.
