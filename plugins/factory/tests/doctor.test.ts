@@ -29,7 +29,17 @@ test('doctor reports gh not logged in', async () => {
   const checks = await doctor(fakeCtx({ replies }), [])
   const c = checks.find(x => x.check === 'gh auth')!
   expect(c.ok).toBe(false)
-  expect(c.fix).toContain('gh auth login --web')
+  expect(c.detail).toBe('gh is not logged in')
+  expect(c.fix).toBe('! gh auth login --web')
+})
+
+test('doctor gives a retry hint for a non-login gh error', async () => {
+  const replies = good.map(r => (r.argv[1] === 'auth' ? { argv: r.argv, result: { exitCode: 1, stderr: 'error connecting to api.github.com\nmore' } } : r))
+  const c = (await doctor(fakeCtx({ replies }), [])).find(x => x.check === 'gh auth')!
+  expect(c.ok).toBe(false)
+  expect(c.detail).toBe('gh auth status failed: error connecting to api.github.com')
+  expect(c.fix).toContain('setup again')
+  expect(c.fix).not.toContain('gh auth login')
 })
 
 test('doctor reports a missing repo scope', async () => {

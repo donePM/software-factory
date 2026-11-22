@@ -29,8 +29,8 @@ test('setup without apply writes nothing', async () => {
   const ctx = fakeCtx({ replies: replies() })
   const r = await setup(ctx, { apply: false })
   expect(r.created).toBe(false)
-  expect(r.config.baseBranch).toBe('main')
-  expect(r.config.tracker.url).toBe('https://github.com/a/b')
+  expect(r.config!.baseBranch).toBe('main')
+  expect(r.config!.tracker.url).toBe('https://github.com/a/b')
   expect(Object.keys(ctx.files)).toEqual([])
   expect(labelCreates(ctx.calls)).toBe(0)
   expect(ctx.calls.some(c => c.includes('PATCH'))).toBe(false)
@@ -51,12 +51,12 @@ test('setup creates config, gitignore and labels', async () => {
 
 test('setup reads the base branch from origin HEAD', async () => {
   const r = await setup(fakeCtx({ replies: replies('refs/remotes/origin/trunk') }), { apply: false })
-  expect(r.config.baseBranch).toBe('trunk')
+  expect(r.config!.baseBranch).toBe('trunk')
 })
 
 test('setup honors an explicit base branch', async () => {
   const r = await setup(fakeCtx({ replies: replies() }), { apply: false, baseBranch: 'dev' })
-  expect(r.config.baseBranch).toBe('dev')
+  expect(r.config!.baseBranch).toBe('dev')
 })
 
 test('setup is idempotent', async () => {
@@ -109,7 +109,7 @@ test('preview migrates in memory only and lists the planned migrations', async (
   const before = { ...ctx.files }
   const r = await setup(ctx, { apply: false, migrations: [{ from: 0, name: 'zero-to-one', up: o => o }] })
   expect(r.migrated).toEqual(['zero-to-one'])
-  expect(r.config.version).toBe(1)
+  expect(r.config!.version).toBe(1)
   expect(ctx.files).toEqual(before)
 })
 
@@ -127,13 +127,39 @@ test('preview does not sweep', async () => {
   expect(ctx.calls.some(c => c.includes('prune'))).toBe(false)
 })
 
+const noAuth = () => replies().map(r => (r.argv[1] === 'auth' ? { argv: r.argv, result: { exitCode: 1, stderr: 'You are not logged in' } } : r))
+
+test('failed gh auth with an existing config writes nothing and shows no config', async () => {
+  const ctx = fakeCtx({ replies: noAuth(), files: { [CFG]: JSON.stringify({ ...defaultConfig('https://github.com/a/b', 'main', []), concurrency: 1 }) } })
+  const before = { ...ctx.files }
+  const r = await setup(ctx, { apply: true })
+  expect('config' in r).toBe(false)
+  expect(ctx.files).toEqual(before)
+  expect(labelCreates(ctx.calls)).toBe(0)
+  expect(ctx.calls.some(c => c.includes('PATCH'))).toBe(false)
+})
+
+test('failed check reports applied false with a reason', async () => {
+  const r = await setup(fakeCtx({ replies: noAuth() }), { apply: true })
+  expect(r.applied).toBe(false)
+  expect(r.reason).toContain('gh auth')
+})
+
+test('applied is true only after an apply', async () => {
+  const preview = await setup(fakeCtx({ replies: replies() }), { apply: false })
+  expect(preview.applied).toBe(false)
+  expect(preview.config).toBeDefined()
+  const applied = await setup(fakeCtx({ replies: replies() }), { apply: true })
+  expect(applied.applied).toBe(true)
+})
+
 const stored = () => ({ ...defaultConfig('https://github.com/a/b', 'main', []), concurrency: 1, maxRounds: 5 })
 
 test('apply writes concurrency into an existing config', async () => {
   const ctx = fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify(stored()) } })
   const r = await setup(ctx, { apply: true, concurrency: 2 })
   expect(JSON.parse(ctx.files[CFG]!)).toEqual({ ...stored(), concurrency: 2 })
-  expect(r.config.concurrency).toBe(2)
+  expect(r.config?.concurrency).toBe(2)
 })
 
 test('apply writes baseBranch into an existing config', async () => {
@@ -159,7 +185,7 @@ test('preview shows the arguments for an existing config', async () => {
   const ctx = fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify(stored()) } })
   const before = { ...ctx.files }
   const r = await setup(ctx, { apply: false, concurrency: 2, baseBranch: 'dev' })
-  expect(r.config.concurrency).toBe(2)
-  expect(r.config.baseBranch).toBe('dev')
+  expect(r.config?.concurrency).toBe(2)
+  expect(r.config?.baseBranch).toBe('dev')
   expect(ctx.files).toEqual(before)
 })
