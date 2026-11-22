@@ -189,7 +189,7 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
     const reason = conflictReason(origin, job.branch)
     const next = await toBuild(ctx, t, issue, state, origin, job.branch)
     if (next.state !== 'build') {
-      throw new FactoryError('sync-conflict-limit', `${reason} ${next.note ?? ''}`.trim(), 'The job is needs-human. A human decides how to go on.')
+      throw new FactoryError('sync-conflict-limit', `${reason} ${next.note ?? ''}`.trim(), `The job is needs-human at the round limit. Increase maxRounds in .factory/config.json. Then run /factory:run ${issue}.`)
     }
     throw new FactoryError('sync-conflict', reason, `The factory undid the merge and started round ${next.round}. Follow pipeline.md as /factory:run ${issue}. The builder merges ${origin}. Then the reviews run again.`)
   }
