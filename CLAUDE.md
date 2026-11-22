@@ -79,14 +79,15 @@ This loads the branch code in that process only.
   The `plan_create` tool writes `idea.md`, and `plan_feedback` adds a `## Feedback K`
   section. Only "start" creates the slice issues through `issue_create`.
   The auditor reads the repo, or one folder of it, and writes
-  `.factory/audit/audit.md` with ranked findings. No skill starts the auditor yet.
+  `.factory/audit/audit.md` with ranked findings. `/factory:audit [part]` starts it.
+  Only the findings that the operator picks become issues through `issue_create`.
   With `docs.target: wiki`, the merge sets `docs`. The documenter
   writes `docs.md`. `job_advance` with `to: done` pushes the wiki page, posts
   the `<!-- factory:docs -->` comment with the link and the `docs.md` text, and sets `done`.
   It also pushes the pages in `docs/wiki/` of the job worktree, for example `Home.md`.
   Models and tools are set in their frontmatter; reviewer models come from
   `## Route` in `job.md`.
-- Skills (`/factory:setup|add|plan|run|status|approve|merge`) are thin entry points.
+- Skills (`/factory:setup|add|plan|audit|run|status|approve|merge`) are thin entry points.
   Each passes `${CLAUDE_PLUGIN_ROOT}`.
 - Local working copy: `.factory/jobs/<n>/` (`job.md`, `issue.md`, `intake.md`,
   `spec.md`, `round-N/`, `decision.md`, `docs.md`) and `.factory/worktrees/<n>/`. Both are
