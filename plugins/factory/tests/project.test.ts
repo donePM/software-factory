@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { readJob, renderJob, type BoardIds, type Job } from '../lib/jobfile.ts'
+import { RATE_LIMIT_FIX } from '../lib/exec.ts'
 import { STATUS } from '../lib/labels.ts'
 import { addToBacklog, boardDrift, FACTORY_OPTIONS, optionFor, withBoard } from '../lib/project.ts'
 import type { Tracker } from '../lib/tracker.ts'
@@ -123,9 +124,17 @@ test('withBoard explains unknown owner type and keeps the label change', async (
   await tracker.setState(7, 'spec')
   expect(boardCalls(ctx.calls)).toEqual(['setState 7 spec', 'gh project view'])
   expect(warnings).toHaveLength(1)
-  for (const part of ['#7: ', 'unknown owner type', 'owner "o"', 'probable', 'rate limit', 'Fix: Wait', 'job_advance']) {
+  for (const part of ['#7: ', 'unknown owner type', 'owner "o"', 'probable', 'rate limit', 'Fix: Wait']) {
     expect(warnings[0]).toContain(part)
   }
+})
+
+test('an owner lookup that fails because of a rate limit has the rate-limit fix text', async () => {
+  const ctx = fakeCtx({ replies: [{ argv: ['gh', 'project', 'view'], result: { exitCode: 1, stderr: 'unknown owner type' } }] })
+  const { tracker, warnings } = onBoard(ctx, fake())
+  await tracker.setState(7, 'spec')
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]).toContain(`Fix: ${RATE_LIMIT_FIX}`)
 })
 
 test('no gh project call with the project off', async () => {
@@ -152,14 +161,32 @@ const T = (n: number, ...labels: string[]): Ticket => ({
 })
 const url = (n: number): string => `https://github.com/o/r/issues/${n}`
 
-test('boardDrift shows one line for each card that differs', async () => {
-  const ctx = fakeCtx({ replies: [itemList([{ url: url(63), factory: 'Review' }, { url: url(64) }, { url: url(65), factory: 'Spec' }])] })
+const cardEdit = (item: string, option: string): string[] =>
+  ['gh', 'project', 'item-edit', '--id', item, '--project-id', 'P1', '--field-id', 'F1', '--single-select-option-id', optionId(option)]
+
+test('boardDrift moves each card that differs to the column of its label', async () => {
+  const ctx = fakeCtx({ replies: [...boardReplies, itemList([{ url: url(63), factory: 'Review' }, { url: url(64) }, { url: url(65), factory: 'Spec' }])] })
   const lines = await boardDrift(ctx, fake(), ON, [T(63, 'factory:approved'), T(64, 'factory:build'), T(65, 'factory:spec')])
-  expect(lines).toEqual([
+  expect(lines).toEqual([])
+  expect(boardCalls(ctx.calls)).toEqual(['gh project item-list', 'gh project view', 'gh project field-list', 'gh project item-edit', 'gh project item-edit'])
+  expect(ctx.calls.filter(c => c[2] === 'item-edit')).toEqual([cardEdit('I0', 'Ready to merge'), cardEdit('I1', 'Build')])
+})
+
+test('boardDrift keeps the line for each card that it cannot move', async () => {
+  const cards = itemList([{ url: url(63), factory: 'Review' }, { url: url(64) }])
+  const tickets = [T(63, 'factory:approved'), T(64, 'factory:build')]
+  const limit = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-edit', '--id', 'I0'], result: { exitCode: 1, stderr: 'API rate limit exceeded' } }, ...boardReplies, cards] })
+  expect(await boardDrift(limit, fake(), ON, tickets)).toEqual(['#63 board says Review, label says approved: move the card to Ready to merge'])
+  expect(limit.calls).toContainEqual(cardEdit('I1', 'Build'))
+  const both = [
     '#63 board says Review, label says approved: move the card to Ready to merge',
     '#64 board says nothing, label says build: move the card to Build',
-  ])
-  expect(ctx.calls).toEqual([['gh', 'project', 'item-list', '3', '--owner', 'o', '--limit', '1000', '--format', 'json']])
+  ]
+  for (const failed of ['view', 'field-list']) {
+    const ctx = fakeCtx({ replies: [{ argv: ['gh', 'project', failed], result: { exitCode: 1, stderr: 'boom' } }, ...boardReplies, cards] })
+    expect(await boardDrift(ctx, fake(), ON, tickets)).toEqual(both)
+    expect(ctx.calls.filter(c => c[2] === 'item-edit')).toEqual([])
+  }
 })
 
 test('boardDrift shows no line when all cards match', async () => {
@@ -170,12 +197,14 @@ test('boardDrift shows no line when all cards match', async () => {
   expect(await boardDrift(ctx, fake(), ON, tickets)).toEqual([])
 })
 
-test('boardDrift never changes a label or a card', async () => {
+test('boardDrift never changes a label', async () => {
   const ctx = fakeCtx({ replies: [...boardReplies, itemList([{ url: url(63), factory: 'Review' }])] })
   const { tracker } = onBoard(ctx, fake())
-  expect(await boardDrift(ctx, tracker, ON, [T(63, 'factory:approved')])).toHaveLength(1)
-  expect(boardCalls(ctx.calls)).toEqual(['gh project item-list'])
-  expect(ctx.calls.filter(c => c[0] === 'gh' && c[1] === 'issue')).toEqual([])
+  expect(await boardDrift(ctx, tracker, ON, [T(63, 'factory:approved')])).toEqual([])
+  expect(ctx.calls.filter(c => c[0] === 'setState' || (c[0] === 'gh' && c[1] === 'issue'))).toEqual([])
+  const same = fakeCtx({ replies: [...boardReplies, itemList([{ url: url(63), factory: 'Ready to merge' }])] })
+  expect(await boardDrift(same, onBoard(same, fake()).tracker, ON, [T(63, 'factory:approved')])).toEqual([])
+  expect(boardCalls(same.calls)).toEqual(['gh project item-list'])
 })
 
 test('boardDrift makes no project call with the project off and warns on failure', async () => {
@@ -203,6 +232,32 @@ test('addToBacklog adds a Backlog card for each issue', async () => {
   expect(ctx.calls).toContainEqual(['gh', 'project', 'item-add', '3', '--owner', 'o', '--url', url(7), '--format', 'json'])
   expect(ctx.calls).toContainEqual(['gh', 'project', 'item-add', '3', '--owner', 'o', '--url', url(8), '--format', 'json'])
   expect(ctx.calls.filter(c => c[2] === 'item-edit')).toEqual([edit('Backlog'), edit('Backlog')])
+})
+
+test('addToBacklog stops after an owner lookup that fails because of a rate limit', async () => {
+  const ctx = fakeCtx({
+    replies: [{ argv: ['gh', 'project', 'item-add', '3', '--owner', 'o', '--url', url(7)], result: { exitCode: 1, stderr: 'unknown owner type' } }, ...boardReplies],
+  })
+  const warnings = await addToBacklog(ctx, fake(), ON, [7, 8])
+  expect(boardCalls(ctx.calls)).toEqual(['gh project view', 'gh project field-list', 'gh project item-add'])
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]?.startsWith('#7: ')).toBe(true)
+  expect(warnings[0]).toContain(`Fix: ${RATE_LIMIT_FIX}`)
+})
+
+test('addToBacklog stops after a rate limit', async () => {
+  const ctx = fakeCtx({
+    replies: [
+      { argv: ['gh', 'project', 'item-add', '3', '--owner', 'o', '--url', url(7)], result: { stdout: JSON.stringify({ id: 'I7' }) } },
+      { argv: ['gh', 'project', 'item-edit', '--id', 'I7'], result: { exitCode: 1, stderr: 'API rate limit exceeded' } },
+      ...boardReplies,
+    ],
+  })
+  const warnings = await addToBacklog(ctx, fake(), ON, [7, 8])
+  expect(boardCalls(ctx.calls)).toEqual(['gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit'])
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]?.startsWith('#7: ')).toBe(true)
+  expect(warnings[0]).toContain(`Fix: ${RATE_LIMIT_FIX}`)
 })
 
 test('addToBacklog turns board failures into warnings and skips an off board', async () => {

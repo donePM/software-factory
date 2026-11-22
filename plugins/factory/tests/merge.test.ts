@@ -356,6 +356,14 @@ test('a sync conflict at the round limit sets needs-human', async () => {
   expect(t.merges).toEqual([])
 })
 
+test('the sync-conflict-limit fix names maxRounds and /factory:run', async () => {
+  const { ctx, t } = setup({ job: { round: 3 } }, [CONFLICT])
+  await expect(merge(ctx, t, 7)).rejects.toMatchObject({
+    code: 'sync-conflict-limit',
+    fix: 'The job is needs-human at the round limit. Increase maxRounds in .factory/config.json. Then run /factory:run 7.',
+  })
+})
+
 test('a sync conflict keeps the factory as assignee', async () => {
   const { ctx, t } = setup({}, [CONFLICT])
   await rejects(merge(ctx, t, 7), 'sync-conflict')

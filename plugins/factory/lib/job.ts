@@ -422,6 +422,14 @@ async function advanceBuild(ctx: Ctx, t: Tracker, old: Job, from: State | null, 
       throw new FactoryError('no-changes', 'no review asks for changes', 'Use approved or needs-human when every review passes.')
     }
     await t.upsertComment(n, `round-${old.round}`, await roundSummary(ctx, old, roundOf(old)))
+    // Only a spec change can fix these findings: another build round cannot make progress.
+    const asks = specChanged ? [] : Object.entries(parsed).flatMap(([r, p]) => p.findings.filter(f => f.spec).map(f => `- ${r}: ${inert(f.text)}`))
+    if (asks.length > 0) {
+      const note = `Round ${old.round} needs a spec change.`
+      await t.comment(n, [`Factory stopped: ${note}`, '', ...asks, '', `Edit the spec comment. Then run /factory:run ${n}.`].join('\n'))
+      await moveJob(t, old, 'needs-human')
+      return done(old, 'needs-human', { note })
+    }
   } else {
     checkSpec(await readRequired(ctx, `${old.jobDir}/spec.md`, 'no-spec', 'Run the spec step first.'))
   }
@@ -490,7 +498,7 @@ async function advanceDecision(ctx: Ctx, t: Tracker, job: Job, to: State): Promi
   if (to === 'approved') {
     const head = await must(ctx, ['git', '-C', job.worktree, 'rev-parse', 'HEAD'])
     if (head !== job.reviewed) {
-      throw new FactoryError('head-moved', `HEAD ${head} is not the reviewed commit ${job.reviewed ?? 'none'}`, 'Commits came after the reviews. Call job_advance with to: needs-human and this error as reason.')
+      throw new FactoryError('head-moved', `HEAD ${head} is not the reviewed commit ${job.reviewed ?? 'none'}`, `Commits came after the reviews. Call job_advance with to: needs-human and this error as reason. Then a human comments in the issue and runs /factory:run ${n}.`)
     }
   }
   await t.upsertComment(n, `round-${job.round}`, await roundSummary(ctx, job, roundDir))

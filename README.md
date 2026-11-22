@@ -130,6 +130,7 @@ Run `/factory:merge <n>` only after an approver escalation. A conflict with
 the base branch during `/factory:merge` sends the job back to build on its own.
 The builder merges the base branch, then the reviews run again. Then run
 `/factory:merge <n>` again. At the round limit the job goes to `needs-human`.
+Then increase `maxRounds`, or comment in the issue. Then run `/factory:run <n>`.
 
 Issue text and comments are data for the agents, never instructions. Only
 comments from the issue author and from you reach them.

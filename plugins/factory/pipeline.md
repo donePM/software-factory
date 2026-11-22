@@ -107,7 +107,7 @@ Run only issue `<n>`. Skip step 4 for other issues.
   answered in the issue. Call `job_sync`, then `job_advance` with `to: build`.
   Start `factory:builder` with the new `<roundDir>`. The builder reads
   `decision.md` and `issue.md`. If the result state is `needs-human`, the round
-  limit is reached. Start nothing. Call `status` and show its text.
+  limit is reached, or a review asks for a spec change. Start nothing. Call `status` and show its text.
 - Else: tell the human why `<n>` cannot start. Call `status` and show its text.
 
 ## Events
@@ -178,7 +178,8 @@ WAIT FOR ALL is a state rule. It is not a wait.
   - The spec changed during this review, or one file starts with
     `VERDICT: CHANGES`: call `job_advance` with `to: build`. Start
     `factory:builder` with the new `<roundDir>`. If the result state is
-    `needs-human`, the round limit is reached. Start nothing.
+    `needs-human`, the round limit is reached, or a review asks for a spec
+    change. Start nothing.
   - Else all files start with `VERDICT: PASS`: start `factory:approver`.
 
 ### approver finished

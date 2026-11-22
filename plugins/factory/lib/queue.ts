@@ -1,6 +1,7 @@
 import type { Config } from './config.ts'
 import { FactoryError } from './exec.ts'
-import { addToBacklog, listCards, NO_NUMBER } from './project.ts'
+import { addToBacklog, listCards, loadBoard, NO_NUMBER, setOption } from './project.ts'
+import type { Board, Card } from './project.ts'
 import { RUNNING, stateOf } from './labels.ts'
 import { findMarked, isMarkerComment } from './markers.ts'
 import type { Tracker } from './tracker.ts'
@@ -58,19 +59,45 @@ async function answered(tr: Tracker, t: Ticket, operator: string): Promise<boole
   return full.comments.some(c => c.author === full.author && !isMarkerComment(c) && time(c.createdAt) > time(asked.updatedAt))
 }
 
-// Gives each ticket with no status label and no card a Backlog card. It never moves a card that exists.
+const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
+// Moves the open-column card of each closed issue with no status label to Done, or to Rejected when not planned.
+// shortcut: one get with comments for each open-column card that is not in the backlog, upgrade to a get without comments when the board has many such cards.
+async function closedCards(ctx: Ctx, tr: Tracker, number: number, tickets: Ticket[], cards: Map<string | undefined, Card>): Promise<string[]> {
+  const known = new Set<string | undefined>(tickets.map(t => t.url))
+  const prefix = `https://github.com/${tr.repo}/issues/`
+  const warnings: string[] = []
+  let board: Promise<Board> | undefined
+  for (const [url, card] of cards) {
+    const n = url?.startsWith(prefix) ? /^\d+$/.exec(url.slice(prefix.length))?.[0] : undefined
+    if (n === undefined || known.has(url) || card.factory === 'Done' || card.factory === 'Rejected') continue
+    try {
+      const t = await tr.get(Number(n))
+      if (t.state !== 'closed' || stateOf(t.labels) !== null) continue
+      board ??= loadBoard(ctx, tr.repo.split('/')[0]!, number)
+      await setOption(ctx, await board, card.id, t.stateReason === 'not_planned' ? 'Rejected' : 'Done')
+    } catch (e) {
+      warnings.push(`#${n}: ${messageOf(e)} Fix: Move the card by hand on the board, or wait for the next queue.`)
+    }
+  }
+  return warnings
+}
+
+// Gives each ticket with no status label and no card a Backlog card, and moves the cards of closed issues.
 async function backlogCards(ctx: Ctx, tr: Tracker, cfg: Config, tickets: Ticket[]): Promise<string[]> {
   const p = cfg.project
+  if (p?.enabled !== true) return []
   const loose = tickets.filter(t => stateOf(t.labels) === null)
-  if (p?.enabled !== true || loose.length === 0) return []
-  if (p.number === undefined) return [NO_NUMBER]
+  if (p.number === undefined) return loose.length === 0 ? [] : [NO_NUMBER]
+  let cards: Map<string | undefined, Card>
   try {
-    const cards = await listCards(ctx, tr.repo.split('/')[0]!, p.number)
-    const missing = loose.filter(t => !cards.has(t.url)).map(t => t.number)
-    return missing.length === 0 ? [] : await addToBacklog(ctx, tr, cfg, missing)
+    cards = await listCards(ctx, tr.repo.split('/')[0]!, p.number)
   } catch (e) {
-    return [`board list failed: ${e instanceof Error ? e.message : String(e)}`]
+    return [`board list failed: ${messageOf(e)}`]
   }
+  const missing = loose.filter(t => !cards.has(t.url)).map(t => t.number)
+  const added = missing.length === 0 ? [] : await addToBacklog(ctx, tr, cfg, missing)
+  return [...added, ...(await closedCards(ctx, tr, p.number, tickets, cards))]
 }
 
 // Checks the issue that the operator named, and gives it the factory label when it has none.
