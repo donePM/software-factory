@@ -336,6 +336,12 @@ test('approved waits for all routed reviews', async () => {
   expect(t.states).toEqual([])
 })
 
+test('approved with an empty Route is refused', async () => {
+  const r = inReview({ [`${DIR}/decision.md`]: APPROVE }, {}, { route: {} })
+  await expect(jobAdvance(r.ctx, r.t, { issue: 7, to: 'approved' })).rejects.toMatchObject({ code: 'no-route', fix: 'Call job_advance with to: spec again.' })
+  expect(r.t.states).toEqual([])
+})
+
 test('approved needs every review PASS and decision APPROVE', async () => {
   const files = { [`${DIR}/round-1/review-code.md`]: rv('PASS'), [`${DIR}/round-1/review-security.md`]: rv('PASS'), [`${DIR}/decision.md`]: APPROVE }
   const { ctx, t } = inReview(files)
