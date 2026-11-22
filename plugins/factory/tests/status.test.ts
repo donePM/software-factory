@@ -58,10 +58,15 @@ test('needs-human rows give one step in each sentence', () => {
   const waiting = [1, 2, 3].map(number => ({ number, state: 'needs-human' as const }))
   const causes = { 1: { reason: 'Approver escalated: API?', merge: true }, 2: { reason: 'Builder blocked.', merge: false } }
   const text = statusText('o/r', Q({ waiting, slots: 2 }), { 1: 71 }, 2, {}, causes)
-  expect(lineWith(text, '#1')).toBe('  #1  needs you: Approver escalated: API? · decide. Then run /factory:merge 1 (https://github.com/o/r/pull/71)')
+  expect(lineWith(text, '#1')).toBe('  #1  needs you: Approver escalated: API? · decide. To merge, run /factory:merge 1. To rework, comment in the issue. Then run /factory:run 1 (https://github.com/o/r/pull/71)')
   expect(lineWith(text, '#2')).toBe('  #2  needs you: Builder blocked. · fix the cause. Then run /factory:run 2')
   expect(lineWith(text, '#3')).toBe('  #3  needs you: answer in the issue. Then run /factory:run 3')
   expect(text).not.toContain(', then ')
+})
+
+test('an escalated row names merge and rework', () => {
+  const text = statusText('o/r', Q({ waiting: [{ number: 6, state: 'needs-human' as const }], slots: 2 }), { 6: 76 }, 2, {}, { 6: { reason: 'Approver escalated: API?', merge: true } })
+  expect(lineWith(text, '#6')).toBe('  #6  needs you: Approver escalated: API? · decide. To merge, run /factory:merge 6. To rework, comment in the issue. Then run /factory:run 6 (https://github.com/o/r/pull/76)')
 })
 
 test('a round limit row names maxRounds and /factory:run', () => {
