@@ -5,6 +5,7 @@ import { causeOf, statusFor, statusText } from '../lib/status.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import { withMarker } from '../lib/markers.ts'
 import type { Comment, Ticket } from '../lib/types.ts'
+import { itemList } from './support/board.ts'
 import { fakeCtx } from './support/host.ts'
 
 const Q = (o: Partial<Queue> = {}): Queue => ({ running: [], waiting: [], ready: [], blocked: [], conflicts: [], slots: 0, next: [], ...o })
@@ -70,7 +71,10 @@ test('statusFor asks for a PR only for approved and needs-human tickets', async 
       return { number: 70 + Number(b.split('/')[1]) } as never
     },
   } as unknown as Tracker
-  const text = await statusFor(fakeCtx(), tr, { ...defaultConfig('u', 'main', []), concurrency: 2 })
+  const ctx = fakeCtx()
+  const text = await statusFor(ctx, tr, { ...defaultConfig('u', 'main', []), concurrency: 2 })
+  expect(ctx.calls.filter(c => c[0] === 'gh' && c[1] === 'project')).toEqual([])
+  expect(text).not.toContain('Board differs from labels')
   expect(branches).toEqual(['factory/2', 'factory/3', 'factory/4'])
   expect(text).toContain('Factory · o/r  1/2 slots')
   expect(lineWith(text, '#2')).toContain('/factory:merge 2')
@@ -165,4 +169,23 @@ test('statusFor shows the stop reason of a needs-human ticket', async () => {
   expect(lineWith(text, '#2')).not.toContain('/factory:merge')
   expect(lineWith(text, '#3')).toContain('answer in the issue, then /factory:run 3')
   expect(lineWith(text, '#1')).toContain('/factory:merge 1')
+})
+
+test('statusFor shows the board differences', async () => {
+  const T = (n: number, label: string): Ticket => ({
+    kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', label],
+    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: `https://github.com/o/r/issues/${n}`, comments: [],
+  })
+  const tr = {
+    repo: 'o/r',
+    login: async () => 'op',
+    backlog: async () => [T(1, 'factory:build'), T(2, 'factory:review')],
+    findPr: async () => null,
+  } as unknown as Tracker
+  const cfg = { ...defaultConfig('u', 'main', []), concurrency: 2, project: { enabled: true, number: 3 } }
+  const text = await statusFor(fakeCtx({ replies: [itemList([{ url: 'https://github.com/o/r/issues/1', factory: 'Review' }, { url: 'https://github.com/o/r/issues/2', factory: 'Review' }])] }), tr, cfg)
+  const lines = text.split('\n')
+  expect(lines.slice(-3)).toEqual(['', 'Board differs from labels', '  #1 board says Review, label says build: move the card to Build'])
+  const same = await statusFor(fakeCtx({ replies: [itemList([{ url: 'https://github.com/o/r/issues/1', factory: 'Build' }])] }), tr, cfg)
+  expect(same).not.toContain('Board differs from labels')
 })
