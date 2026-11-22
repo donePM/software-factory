@@ -40,7 +40,7 @@ test('doctor gives a retry hint for a non-login gh error', async () => {
   const c = (await doctor(fakeCtx({ replies }), [])).find(x => x.check === 'gh auth')!
   expect(c.ok).toBe(false)
   expect(c.detail).toBe('gh auth status failed: error connecting to api.github.com')
-  expect(c.fix).toContain('setup again')
+  expect(c.fix).toBe('Wait a moment. Then run setup again.')
   expect(c.fix).not.toContain('gh auth login')
 })
 

@@ -42,16 +42,26 @@ test('ready backlog without a run shows /factory:run', () => {
 test('needs-human without a PR shows the answer hint', () => {
   const text = statusText('o/r', Q({ waiting: [{ number: 8, state: 'needs-human' }], slots: 2 }), {}, 2)
   const l = lineWith(text, '#8')
-  expect(l).toContain('answer in the issue, then /factory:run')
+  expect(l).toContain('answer in the issue. Then run /factory:run')
   expect(l).not.toContain('/factory:merge')
 })
 
 test('needs-human with a PR and no cause shows run, not merge; needs-info shows the author hint', () => {
   const text = statusText('o/r', Q({ waiting: [{ number: 9, state: 'needs-human' }, { number: 10, state: 'needs-info' }], slots: 2 }), { 9: 77 }, 2)
-  expect(lineWith(text, '#9')).toContain('answer in the issue, then /factory:run 9')
+  expect(lineWith(text, '#9')).toContain('answer in the issue. Then run /factory:run 9')
   expect(lineWith(text, '#9')).not.toContain('/factory:merge')
   expect(lineWith(text, '#9')).toContain('https://github.com/o/r/pull/77')
   expect(lineWith(text, '#10')).toContain('author answers in the issue')
+})
+
+test('needs-human rows give one step in each sentence', () => {
+  const waiting = [1, 2, 3].map(number => ({ number, state: 'needs-human' as const }))
+  const causes = { 1: { reason: 'Approver escalated: API?', merge: true }, 2: { reason: 'Builder blocked.', merge: false } }
+  const text = statusText('o/r', Q({ waiting, slots: 2 }), { 1: 71 }, 2, {}, causes)
+  expect(lineWith(text, '#1')).toBe('  #1  needs you: Approver escalated: API? · decide. Then run /factory:merge 1 (https://github.com/o/r/pull/71)')
+  expect(lineWith(text, '#2')).toBe('  #2  needs you: Builder blocked. · fix the cause. Then run /factory:run 2')
+  expect(lineWith(text, '#3')).toBe('  #3  needs you: answer in the issue. Then run /factory:run 3')
+  expect(text).not.toContain(', then ')
 })
 
 test('statusFor asks for a PR only for approved and needs-human tickets', async () => {
@@ -140,7 +150,7 @@ test('needs-human rows fit the cause', () => {
   expect(noPr).toContain('/factory:run 3')
   expect(noPr).not.toContain('/pull/')
   const none = lineWith(text, '#4')
-  expect(none).toContain('answer in the issue, then /factory:run 4')
+  expect(none).toContain('answer in the issue. Then run /factory:run 4')
   expect(none).toContain('https://github.com/o/r/pull/74')
   expect(none).not.toContain('/factory:merge')
 })
@@ -167,7 +177,7 @@ test('statusFor shows the stop reason of a needs-human ticket', async () => {
   expect(lineWith(text, '#2')).toContain('Builder blocked.')
   expect(lineWith(text, '#2')).toContain('/factory:run 2')
   expect(lineWith(text, '#2')).not.toContain('/factory:merge')
-  expect(lineWith(text, '#3')).toContain('answer in the issue, then /factory:run 3')
+  expect(lineWith(text, '#3')).toContain('answer in the issue. Then run /factory:run 3')
   expect(lineWith(text, '#1')).toContain('/factory:merge 1')
 })
 

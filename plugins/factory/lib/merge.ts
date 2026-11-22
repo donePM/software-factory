@@ -95,7 +95,7 @@ async function toBuild(ctx: Ctx, t: Tracker, issue: number, from: State, origin:
   if (next.state !== 'build') return next
   const reason = conflictReason(origin, branch)
   await ctx.fs.write(`${next.roundDir}/sync.md`, `Merge ${origin} into ${branch}: the merge has a conflict. Resolve the conflict.\n`)
-  await t.comment(issue, `The sync with the base branch has a conflict: ${reason} Round ${next.round} starts. The builder merges ${origin}, then the reviews run again.`)
+  await t.comment(issue, `The sync with the base branch has a conflict: ${reason} Round ${next.round} starts. The builder merges ${origin}. Then the reviews run again.`)
   return next
 }
 
