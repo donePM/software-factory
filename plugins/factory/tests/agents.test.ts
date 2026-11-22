@@ -891,3 +891,50 @@ test('code-reviewer commit check keeps the blocker and should levels', () => {
   expect(t).toContain('A bad commit is a `blocker`.')
   expect(t).toContain('is a `should`')
 })
+
+// shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
+// REVIEW_DIFF stands word for word in agents/code-reviewer.md, security-reviewer.md, ux-reviewer.md, and ui-reviewer.md.
+const REVIEW_DIFF = [
+  '## Diff',
+  'Read `git diff <base>...HEAD` in the worktree before you write a verdict.',
+  '`build.md`, `checks.md`, and earlier reviews never replace the diff.',
+  'If you cannot read the diff, do not write `VERDICT: PASS`. Write',
+  '`VERDICT: CHANGES` with one `blocker` finding that names the cause, for',
+  'example the error output of `git diff`. The finding uses the place',
+  '`job.md:<n>`, where `<n>` is the line of `- Base:`.',
+  'You may say that the round changes nothing in your area only after you read the diff.',
+].join('\n')
+
+const REVIEW_NO_DIFF = [
+  'VERDICT: CHANGES',
+  '',
+  '## Summary',
+  'The review cannot read the diff of the round, so it cannot check the changes.',
+  '',
+  '## Findings',
+  "1. [blocker] job.md:8: `git diff` fails with `fatal: bad revision 'ea7bfa2'`, so the review sees no change. Fix: set `- Base:` to a commit that exists in the worktree.",
+  '',
+  '## Checked',
+  '- Gate round-1: PASS.',
+].join('\n')
+
+test('review diff rule is the same in all four reviewers', () => {
+  expect(REVIEW_DIFF.split('\n')[0]).toBe('## Diff')
+  const t = oneLine(REVIEW_DIFF)
+  for (const s of [
+    '`git diff <base>...HEAD`',
+    'do not write `VERDICT: PASS`',
+    '`VERDICT: CHANGES`',
+    '`blocker`',
+    '`job.md:<n>`',
+    'only after you read the diff',
+  ]) expect(t).toContain(s)
+})
+
+test('review example for an unreadable diff is CHANGES with a blocker', () => {
+  const r = parseReview(REVIEW_NO_DIFF)
+  expect(r.verdict).toBe('CHANGES')
+  expect(r.findings.length).toBe(1)
+  expect(r.findings[0]?.severity).toBe('blocker')
+  expect(r.findings[0]?.text ?? '').toMatch(FINDING)
+})
