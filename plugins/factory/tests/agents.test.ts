@@ -318,7 +318,9 @@ test('decision example ESCALATE parses with a question', () => {
   expect(d.question ?? '').not.toBe('')
 })
 
-// These examples also stand word for word in agents/gate-runner.md and pipeline.md (the gate-runner spawn prompt).
+// shortcut: plugin tests have no fs and cannot import .md files, so these are copies, upgrade to a file scan when tests get fs.
+// GATE_PROMPT stands word for word in agents/gate-runner.md and pipeline.md, GATE_BAD_PROMPT in agents/gate-runner.md.
+// GATE_SETUP_PROMPT is the `<root>/.factory/gate/setup` form of agents/gate-runner.md with `/repo` as the root.
 const GATE_PROMPT = '/repo/.factory/jobs/42/round-2'
 const GATE_BAD_PROMPT = '/repo/.factory/jobs/64'
 const GATE_SETUP_PROMPT = '/repo/.factory/gate/setup'
