@@ -1,4 +1,4 @@
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register, RenderElement } from 'claude-code'
 import { FactoryError } from '../lib/exec.ts'
 import { issueCreate, issueSearch } from '../lib/add.ts'
 import { cleanupJob, sweep } from '../lib/cleanup.ts'
@@ -16,7 +16,9 @@ import { guardBash, guardMain } from '../lib/guard.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
 import { renderStatus, statusData } from '../lib/status.ts'
-import { refreshSnapshot, writeSnapshot } from '../lib/view.ts'
+import { PANE, paneRows, paneTitle, parseSnapshot } from '../lib/pane.ts'
+import { refreshSnapshot, statusPath, writeSnapshot } from '../lib/view.ts'
+import type { Snapshot } from '../lib/view.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import type { Ctx, State } from '../lib/types.ts'
 
@@ -267,7 +269,7 @@ async function gateTool(ctx: Ctx, input: { issue?: unknown; round?: string }): P
 const DEFAULT_TIMEOUT_MS = 120000
 const MAX_TIMEOUT_MS = 600000
 
-// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep and fs.
+// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep, fs and ui.invalidate.
 export async function makeCtx($: any): Promise<Ctx> {
   const root: string = await $.session.root()
   return {
@@ -283,6 +285,7 @@ export async function makeCtx($: any): Promise<Ctx> {
       read: p => $.fs.read(p),
       write: async (p, text) => {
         await $.fs.write(p, text)
+        if (p === statusPath(root)) $.ui.invalidate('ui.render')
       },
       exists: p => $.fs.exists(p),
       list: async p => (await $.fs.list(p)).map((e: { name: string }) => e.name),
@@ -322,9 +325,16 @@ export const serve = async ($: any, e: any, next: any): Promise<any> => {
   return invoke(def, await makeCtx($), input)
 }
 
+// A missing or unreadable status.json gives null.
+async function readSnapshot($: EngineInterface): Promise<Snapshot | null> {
+  const text = await $.fs.read(statusPath(await $.session.root())).catch(() => null)
+  return typeof text === 'string' ? parseSnapshot(text) : null
+}
+
 export const register: Register = on => {
   // shortcut: the flag stays until the session ends, upgrade when an end event of the run exists.
   let running = false
+  let pinned = false
   on('command.run', { command: 'factory:run' }, async (_$, e, next) => {
     running = true
     return next(e)
@@ -333,7 +343,31 @@ export const register: Register = on => {
     for (const t of TOOLS) {
       await $.tool.register({ name: t.name, description: t.description, inputSchema: t.inputSchema, isDeferred: false })
     }
+    await $.command.register({ name: 'factory-pane', description: 'Open the factory pane: slots, ready count and running jobs' })
+    const snap = e.isInteractive ? await readSnapshot($) : null
+    if (snap !== null) {
+      // A pane that another plugin holds rejects the open. The session start must not fail on it.
+      const opened = await $.ui.open({ id: PANE, title: paneTitle(snap) }).catch(() => ({ isPlaced: true as const }))
+      if (!opened.isPlaced) {
+        $.ui.status('Factory pane: run /factory-pane to open it.')
+        pinned = true
+      }
+    }
     return next(e)
+  })
+  on('command.run', { command: 'factory-pane' }, async $ => {
+    const opened = await $.ui.open({ id: PANE, title: paneTitle(await readSnapshot($)) })
+    return opened.isPlaced ? {} : { text: opened.reason }
+  })
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    if (pinned) {
+      $.ui.status(undefined)
+      pinned = false
+    }
+    const { Box, Text } = $.ui.resolve(e)
+    // A Text drops its key, so a keyed Box holds each row.
+    const rows = paneRows(await readSnapshot($)).map(r => h(Box, { key: r.key }, h(Text, { bold: r.bold }, r.text)))
+    return h(Box, { flexDirection: 'column' }, ...rows) as RenderElement
   })
   // Serve only at tool.run: it fires after the permission check, so tools like merge stay gated.
   on('tool.run', serve)
