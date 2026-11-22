@@ -10,8 +10,10 @@ const PUSH = new RegExp(`${START}git(?:\\s(?:"[^"]*"|'[^']*'|[^;&|\\n'"])*)?\\sp
 const INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'python', 'python3', 'node', 'ruby', 'perl', 'bun', 'deno'])
 const base = (w: string): string => w.slice(w.lastIndexOf('/') + 1)
 const interpreter = (w: string): boolean => INTERPRETERS.has(base(w))
-// -c, -e, a combined flag such as -lc or -pe, and --eval: the next argument is code.
-const CODE_FLAG = /^-[a-zA-Z]*[ce]$|^--eval$/
+// -c, -e, -E, -p, a combined flag such as -lc or -pe, --eval and --print: the next argument is code.
+const CODE_FLAG = /^-[a-zA-Z]*[ceEp]$|^--(?:eval|print)$/
+// A quoted word that is only gh runs gh as a command word, also after xargs or env.
+const GH_WORD = /^(?:\S*\/)?gh$/
 const HEREDOC = /^<<(-?)[ \t]*(?:'([^']*)'|"([^"]*)"|(\\?)([^\s;&|<>()'"]+))/
 
 // The end of a double-quoted part (or of a heredoc body when quote is false), and its $(…) and backtick parts.
@@ -51,9 +53,13 @@ function code(cmd: string): string {
     word = ''
   }
   const isCode = () => {
-    const prev = word !== '' ? word : (words.at(-1) ?? '')
+    // In $'…', the $ is not the word before the quote.
+    const prev = word !== '' && word !== '$' ? word : (words.at(-1) ?? '')
     return words.some(w => base(w) === 'eval') || (words.some(interpreter) && (CODE_FLAG.test(prev) || prev === '<<<'))
   }
+  // The shell joins quoted text into the command word ("gh", g''h), so the command word stays code.
+  const data = (body: string, rest: string): string =>
+    words.length === 0 ? (word === '$' ? ' ' : '') + body : GH_WORD.test(body) ? ` ${body} ` : rest
   let i = 0
   while (i < cmd.length) {
     const c = cmd[i] as string
@@ -70,13 +76,13 @@ function code(cmd: string): string {
       const j = cmd.indexOf("'", i + 1)
       const e = j < 0 ? cmd.length : j
       const body = cmd.slice(i + 1, e)
-      out += isCode() ? ` ${body} ` : ' '
+      out += isCode() ? ` ${body} ` : data(body, ' ')
       word += body
       i = e + 1
     } else if (c === '"') {
       const { end: e, subs } = substitutions(cmd, i + 1, true)
       const body = cmd.slice(i + 1, e)
-      out += isCode() ? ` ${body} ` : ` ${subs.map(code).join(' ')} `
+      out += isCode() ? ` ${body} ` : data(body, ` ${subs.map(code).join(' ')} `)
       word += body
       i = e + 1
     } else if (doc) {

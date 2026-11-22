@@ -36,6 +36,14 @@ test('reachesGitHub finds gh in code inside quotes or a heredoc', () => {
   ]) expect([cmd, reachesGitHub(cmd)]).toEqual([cmd, true])
 })
 
+test('reachesGitHub finds a quoted gh command word', () => {
+  for (const cmd of [
+    '"gh" pr list', "'gh' pr list", "g''h pr list", "bash -c $'gh pr list'", 'cd /w && "gh" api user',
+    "xargs 'gh' pr list < a", '"/usr/local/bin/gh" pr list',
+    `node -p "require('child_process').execSync('gh pr list')"`, `perl -E 'system("gh pr list")'`,
+  ]) expect([cmd, reachesGitHub(cmd)]).toEqual([cmd, true])
+})
+
 const agent = (id: string, type: string) => ({
   id, type, description: 'd', status: 'running', kind: 'local_agent', taskStatus: 'running',
 })
