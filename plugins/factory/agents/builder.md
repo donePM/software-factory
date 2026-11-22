@@ -187,7 +187,8 @@ Commit each message through a file:
 1. Write the full message to `<roundDir>/commit-msg.txt` with the `Write` tool.
 2. Commit with `git commit -F <roundDir>/commit-msg.txt`. Never use `-m` or a
    heredoc for a message with a body.
-3. Read the commit with `git log -1 --format=%B`. Make sure that the body ends
+3. Read the commit with `git cat-file commit HEAD`, not with `git log`. A host
+   output filter can shorten `git log` output. Make sure that the body ends
    in a full sentence, with no `...` or `…`. If not, write the file again and
    run `git commit --amend -F <roundDir>/commit-msg.txt`.
 
