@@ -86,3 +86,14 @@ test('writeConfig keeps an empty array on one line', async () => {
   await writeConfig(ctx, defaultConfig(url, 'main', []))
   expect(ctx.files[configPath('/repo')]).toContain('  "stacks": [],\n')
 })
+
+test('validateConfig checks the project block', () => {
+  const c = defaultConfig(url, 'main', [])
+  expect(c.project).toEqual({ enabled: false })
+  const { project: _, ...noProject } = c
+  expect(validateConfig(noProject)).toEqual([])
+  expect(validateConfig({ ...c, project: { enabled: true, number: 3 } })).toEqual([])
+  expect(validateConfig({ ...c, project: { enabled: 'yes' } }).some(e => e.includes('project.enabled'))).toBe(true)
+  expect(validateConfig({ ...c, project: { enabled: true, number: 0 } }).some(e => e.includes('project.number'))).toBe(true)
+  expect(validateConfig({ ...c, project: { enabled: true, number: 1.5 } }).some(e => e.includes('project.number'))).toBe(true)
+})

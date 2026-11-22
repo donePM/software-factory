@@ -189,3 +189,108 @@ test('preview shows the arguments for an existing config', async () => {
   expect(r.config?.baseBranch).toBe('dev')
   expect(ctx.files).toEqual(before)
 })
+
+const projectScope: Reply = { argv: ['gh', 'auth', 'status'], result: { stdout: "Logged in to github.com account octo\n- Token scopes: 'project', 'repo'" } }
+const OPTIONS = ['Backlog', 'Intake', 'Spec', 'Design', 'Build', 'Review', 'Waiting', 'Ready to merge', 'Docs', 'Done', 'Rejected']
+const fieldList = JSON.stringify({
+  fields: [{ id: 'F1', name: 'Factory', type: 'ProjectV2SingleSelectField', options: OPTIONS.map((name, i) => ({ id: `O${i}`, name })) }],
+})
+const projectCalls = (calls: string[][]) => calls.filter(c => c[0] === 'gh' && c[1] === 'project')
+
+test('setup makes no project call when the project is off', async () => {
+  const { project: _, ...noBlock } = stored()
+  for (const cfg of [noBlock, stored()]) {
+    const ctx = fakeCtx({ replies: [projectScope, ...replies()], files: { [CFG]: JSON.stringify(cfg) } })
+    const r = await setup(ctx, { apply: true })
+    expect(projectCalls(ctx.calls)).toEqual([])
+    expect(r.project).toBeUndefined()
+  }
+})
+
+test('setup creates the project and the Factory field', async () => {
+  let listed = 0
+  const ctx = fakeCtx({
+    replies: [
+      projectScope,
+      { argv: ['gh', 'project', 'create'], result: { stdout: JSON.stringify({ number: 7, id: 'P7', url: 'https://github.com/users/a/projects/7' }) } },
+      { argv: ['gh', 'project', 'field-create'], result: { stdout: '{}' } },
+      ...replies(),
+    ],
+  })
+  const run = ctx.run
+  ctx.run = async (argv, opts) => {
+    if (argv[1] === 'project' && argv[2] === 'field-list') {
+      ctx.calls.push([...argv])
+      return { exitCode: 0, stderr: '', stdout: listed++ === 0 ? JSON.stringify({ fields: [] }) : fieldList }
+    }
+    return run(argv, opts)
+  }
+  const r = await setup(ctx, { apply: true, project: true })
+  const create = ctx.calls.find(c => c[1] === 'project' && c[2] === 'create')!
+  expect(create.slice(0, 5)).toEqual(['gh', 'project', 'create', '--owner', 'a'])
+  expect(JSON.parse(ctx.files[CFG]!).project).toEqual({ enabled: true, number: 7 })
+  const field = ctx.calls.find(c => c[1] === 'project' && c[2] === 'field-create')!
+  expect(field).toContain('SINGLE_SELECT')
+  expect(field[field.indexOf('--name') + 1]).toBe('Factory')
+  expect(field[field.indexOf('--single-select-options') + 1]).toBe(OPTIONS.join(','))
+  expect(r.project).toMatchObject({ number: 7, url: 'https://github.com/users/a/projects/7', added: 0, warnings: [] })
+  expect(r.project!.viewSteps.some(s => s.includes('Column by') && s.includes('Factory'))).toBe(true)
+})
+
+test('setup adds the open tickets with their Factory option', async () => {
+  const issue = (number: number, labels: string[]) => ({
+    number, title: 't', body: '', labels: labels.map(name => ({ name })), author: { login: 'x' }, createdAt: '',
+    url: `https://github.com/a/b/issues/${number}`, state: 'OPEN',
+  })
+  const issues = [issue(1, ['factory']), issue(2, ['factory', 'factory:review'])]
+  const ctx = fakeCtx({
+    replies: [
+      projectScope,
+      { argv: ['gh', 'project', 'view', '7'], result: { stdout: JSON.stringify({ number: 7, id: 'P7', url: 'https://github.com/users/a/projects/7' }) } },
+      { argv: ['gh', 'project', 'field-list', '7'], result: { stdout: fieldList } },
+      { argv: ['gh', 'project', 'item-add', '7', '--owner', 'a', '--url', 'https://github.com/a/b/issues/1'], result: { stdout: '{"id":"I1"}' } },
+      { argv: ['gh', 'project', 'item-add', '7', '--owner', 'a', '--url', 'https://github.com/a/b/issues/2'], result: { stdout: '{"id":"I2"}' } },
+      { argv: ['gh', 'project', 'item-edit'] },
+      { argv: ['gh', 'issue', 'list'], result: { stdout: JSON.stringify(issues) } },
+      ...replies(),
+    ],
+    files: { [CFG]: JSON.stringify({ ...stored(), project: { enabled: true, number: 7 } }) },
+  })
+  const r = await setup(ctx, { apply: true })
+  const p = projectCalls(ctx.calls)
+  expect(p.some(c => c[2] === 'create' || c[2] === 'field-create')).toBe(false)
+  const edits = p.filter(c => c[2] === 'item-edit').map(c => [c[c.indexOf('--id') + 1], c[c.indexOf('--single-select-option-id') + 1]])
+  expect(edits).toEqual([['I1', 'O0'], ['I2', 'O5']])
+  const edit = p.find(c => c[2] === 'item-edit')!
+  expect(edit[edit.indexOf('--project-id') + 1]).toBe('P7')
+  expect(edit[edit.indexOf('--field-id') + 1]).toBe('F1')
+  expect(r.project).toMatchObject({ number: 7, added: 2, warnings: [] })
+})
+
+test('setup reports a project failure as a warning', async () => {
+  const noScope = fakeCtx({ replies: replies() })
+  const a = await setup(noScope, { apply: true, project: true })
+  expect(projectCalls(noScope.calls)).toEqual([])
+  expect(a.project!.warnings.some(w => w.includes('gh auth refresh -s project'))).toBe(true)
+  expect(a.gitignore).toBe(true)
+  expect(labelCreates(noScope.calls)).toBe(labelSet().length)
+  expect(noScope.calls).toContainEqual(['git', 'worktree', 'prune'])
+  expect(JSON.parse(noScope.files[CFG]!).project).toEqual({ enabled: true })
+
+  const broken = fakeCtx({
+    replies: [projectScope, { argv: ['gh', 'project', 'create'], result: { exitCode: 1, stderr: 'boom: no access' } }, ...replies()],
+  })
+  const b = await setup(broken, { apply: true, project: true })
+  expect(b.project!.warnings.some(w => w.includes('boom: no access'))).toBe(true)
+  expect(b.gitignore).toBe(true)
+  expect(broken.calls).toContainEqual(['git', 'worktree', 'prune'])
+})
+
+test('setup tool previews the project without project calls', async () => {
+  const def = TOOLS.find(t => t.name === 'setup')!
+  const ctx = fakeCtx({ replies: [projectScope, ...replies()] })
+  const out = await invoke(def, ctx, { apply: false, project: true })
+  expect('result' in out && out.result !== undefined && JSON.parse(out.result).config.project.enabled).toBe(true)
+  expect(Object.keys(ctx.files)).toEqual([])
+  expect(projectCalls(ctx.calls)).toEqual([])
+})

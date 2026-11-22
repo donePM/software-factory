@@ -18,6 +18,9 @@ You guide the user through setup. Use plain words. The user may not be a develop
    - Each `standard` entry with `ok: false`. These are repo settings that differ from the factory standard.
 4. Ask with `AskUserQuestion`. Put the recommended answer first and add "(recommended)" to it. Ask whether to apply the setup. Ask about concurrency only if the user wants to change it. The default is 4.
 5. Call `mcp__factory__setup` with `apply: true`, plus `baseBranch` or `concurrency` if the user chose them. Tell the user what was created.
+   - When the user typed `/factory:setup project`, pass `project: true` in steps 1 and 5.
+   - When the report has `project`, show its `url`, the count in `added`, each step of `viewSteps`, and each entry of `warnings`.
+   - Otherwise, only mention the board in one sentence: `/factory:setup project` shows the tickets on a Kanban board in GitHub Projects.
 6. Start the first gate check. Never run it in this session.
    - Spawn the agent `factory:gate-runner` with `run_in_background: true`.
    - Give it only one path: `<root>/.factory/gate/setup`. Use the repo root as `<root>`.
