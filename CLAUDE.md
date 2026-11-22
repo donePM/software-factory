@@ -76,7 +76,7 @@ This loads the branch code in that process only.
   `code|security|ux|ui` reviewers, `approver`, `gate-runner`, `merger`, and
   `documenter`. With `docs.target: wiki`, the merge sets `docs`. The documenter
   writes `docs.md`. `job_advance` with `to: done` pushes the wiki page, posts
-  the `<!-- factory:docs -->` link comment, and sets `done`.
+  the `<!-- factory:docs -->` comment with the link and the `docs.md` text, and sets `done`.
   It also pushes the pages in `docs/wiki/` of the job worktree, for example `Home.md`.
   Models and tools are set in their frontmatter; reviewer models come from
   `## Route` in `job.md`.
@@ -90,8 +90,7 @@ This loads the branch code in that process only.
 
 - The issue is the truth. Job state lives only in the status label. The job
   files are a cache that `job_sync` rebuilds from marker comments
-  (`<!-- factory:intake|spec|round-N|decision -->`). `job_sync` does not
-  rebuild `docs.md` from `<!-- factory:docs -->` yet.
+  (`<!-- factory:intake|spec|round-N|decision|docs -->`).
 - Only the factory tools set status labels, through the transition table in
   `lib/transitions.ts`. It rejects illegal moves and issues with two status labels.
 - Subagent-driven event loop: every agent runs with `run_in_background: true`.

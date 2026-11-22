@@ -123,8 +123,9 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 7. **Docs.** With `docs.target` set to `wiki`, the merge sets the issue to
    `docs`, not `done`. The documenter agent writes one wiki page into
    `<jobDir>/docs.md`. The factory pushes it as the wiki page `Issue-<n>` and
-   posts the link in a `<!-- factory:docs -->` comment. Then it sets `done`
-   and cleans up. A failed wiki push sets `needs-human`. The merge stays.
+   posts the link and the full `docs.md` text in a `<!-- factory:docs -->` comment.
+   With this comment, `job_sync` rebuilds `docs.md` on another machine.
+   Then it sets `done` and cleans up. A failed wiki push sets `needs-human`. The merge stays.
 
 The factory account is assignee of the issue and the PR in `intake`, `spec`, `build`, and `review`, and not in wait or end states.
 

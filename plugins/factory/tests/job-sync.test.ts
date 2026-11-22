@@ -336,6 +336,15 @@ test('jobSync creates the branch from Base when nothing else exists', async () =
   expect(ctx.calls).toContainEqual(['git', 'worktree', 'add', '-b', 'factory/7', WT, SHA])
 })
 
+test('jobSync creates the worktree of a docs job from the base branch', async () => {
+  const ctx = fakeCtx({ files: restoreFiles(), replies: [{ argv: ['git', 'rev-parse', '--verify'], result: { exitCode: 1 } }, ...okGit] })
+  await jobSync(ctx, tracker(T(['factory:docs'])), 7)
+  const fetch = ctx.calls.findIndex(c => c.join(' ') === 'git fetch origin main')
+  const add = ctx.calls.findIndex(c => c.join(' ') === `git worktree add -b factory/7 ${WT} origin/main`)
+  expect(fetch).toBeGreaterThan(-1)
+  expect(add).toBeGreaterThan(fetch)
+})
+
 test('jobSync does nothing to git when the worktree exists', async () => {
   const ctx = fakeCtx({ files: { ...restoreFiles(), [WT]: '' } })
   await jobSync(ctx, tracker(T(['factory:build'])), 7)
@@ -499,4 +508,20 @@ test('a failed types copy does not stop the job', async () => {
   const r = await jobSync(synced, tracker(T(['factory:build'])), 7)
   expect(r.job.round).toBe(2)
   expect(synced.calls.filter(c => c[0] === 'sh')).toEqual([copyCall('plugins/p')])
+})
+
+test('jobSync rebuilds docs.md from the docs comment', async () => {
+  const page = 'STATUS: DONE\n\n## Summary\nOne page.\n\n## Page\n# Add thing\n'
+  const link = 'Docs: https://github.com/a/b/wiki/Issue-7'
+  const ctx = fakeCtx({ files: { ...CFG, [WT]: '' } })
+  const r = await jobSync(ctx, tracker(T(['factory:docs'], [C(1, 'op', withMarker('docs', `${link}\n\n${page}`))])), 7)
+  expect(ctx.files[`${DIR}/docs.md`]).toBe(page)
+  expect(r.rebuilt).toContain('docs.md')
+
+  for (const c of [C(1, 'op', withMarker('docs', link)), C(1, 'mallory', withMarker('docs', `${link}\n\n${page}`))]) {
+    const other = fakeCtx({ files: { ...CFG, [WT]: '' } })
+    const res = await jobSync(other, tracker(T(['factory:docs'], [c])), 7)
+    expect(other.files[`${DIR}/docs.md`]).toBeUndefined()
+    expect(res.rebuilt).not.toContain('docs.md')
+  }
 })
