@@ -186,7 +186,7 @@ export const TOOLS: ToolDef[] = [
   numberTool('approve', 'Record the human approval of a job in state approved or needs-human. Takes the issue or the PR number. Changes no label. Only the human calls it.', approve),
   numberTool(
     'merge',
-    'Merge the PR of an approved job: sync with the base branch, run the gate, approve, merge, set done, clean up. Runs up to 600 s per gate step: only factory:merger calls it.',
+    'Merge the PR of an approved job: sync with the base branch, run the gate, approve, merge, set done, clean up. With the wiki as docs target, it sets docs and keeps the job files. Runs up to 600 s per gate step: only factory:merger calls it.',
     merge,
   ),
   {

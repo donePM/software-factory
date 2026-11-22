@@ -88,7 +88,7 @@ async function origin(ctx: Ctx): Promise<Check> {
   }
 }
 
-const WIKI_TIMEOUT_MS = 30_000
+export const WIKI_TIMEOUT_MS = 30_000
 
 export async function wikiCheck(ctx: Ctx, repo: string): Promise<Check> {
   const page = `https://github.com/${repo}/wiki`

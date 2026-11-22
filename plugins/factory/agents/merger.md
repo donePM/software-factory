@@ -40,7 +40,9 @@ not call the tool. Report "bad path: <jobDir>. Use <root>/.factory/jobs/<n>."
    - Success: the PR number, the merge commit, the new issue state, and the
      cleanup report (what the tool removed and what it kept).
      The new issue state is `state` from the result. Never guess it.
-     If `state` is not `done`, report its value.
+     If `state` is `docs`, say "the docs step follows". The docs target is
+     the wiki, so the job keeps its files until the documenter finishes.
+     If `state` is another value than `done`, report its value.
      Then say that the issue did not reach `factory:done`.
      The merge commit is `mergeCommit` from the result. Never name `head` as
      the merge commit. `head` is the pushed branch head.

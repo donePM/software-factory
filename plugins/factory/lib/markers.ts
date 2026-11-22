@@ -1,6 +1,6 @@
 import type { Comment } from './types.ts'
 
-export type MarkerName = 'intake' | 'spec' | 'decision' | 'approval' | `round-${number}`
+export type MarkerName = 'intake' | 'spec' | 'decision' | 'approval' | 'docs' | `round-${number}`
 
 export const MARKER_LINE = /^<!--\s*factory:[^>]*-->\s*$/
 

@@ -12,7 +12,7 @@ export const TRANSITIONS: Record<State | 'backlog', State[]> = {
   review: ['build', 'approved', 'needs-human'],
   'needs-human': ['build', 'done', 'needs-human'],
   approved: ['build', 'done', 'needs-human'],
-  docs: ['needs-human'],
+  docs: ['done', 'needs-human'],
   done: [],
   rejected: [],
 }
@@ -21,7 +21,7 @@ export const TRANSITIONS: Record<State | 'backlog', State[]> = {
 export type TransitionOpts = { prMerged?: boolean }
 
 export function canTransition(from: State | null, to: State, opts: TransitionOpts = {}): boolean {
-  if (opts.prMerged === true && to === 'done' && from !== null && from !== 'done' && from !== 'rejected') return true
+  if (opts.prMerged === true && from !== null && from !== 'done' && from !== 'rejected' && (to === 'done' || (to === 'docs' && from !== 'docs'))) return true
   return TRANSITIONS[from ?? 'backlog'].includes(to)
 }
 

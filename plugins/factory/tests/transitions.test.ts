@@ -36,7 +36,18 @@ test('transitions without a forward path are rejected', () => {
   expect(canTransition('needs-design', 'spec')).toBe(false)
   expect(TRANSITIONS['needs-design']).toEqual([])
   expect(TRANSITIONS.fastlane).toEqual(['needs-human'])
-  expect(TRANSITIONS.docs).toEqual(['needs-human'])
+})
+
+test('docs leads to done or needs-human', () => {
+  expect(TRANSITIONS.docs).toEqual(['done', 'needs-human'])
+  expect(canTransition('docs', 'done')).toBe(true)
+  expect(canTransition('docs', 'needs-human')).toBe(true)
+  for (const s of STATUS.filter(s => s !== 'docs' && s !== 'done' && s !== 'rejected')) {
+    expect(canTransition(s, 'docs', { prMerged: true })).toBe(true)
+  }
+  for (const s of [null, 'docs', 'done', 'rejected'] as const) expect(canTransition(s, 'docs', { prMerged: true })).toBe(false)
+  expect(canTransition('approved', 'docs')).toBe(false)
+  expect(() => assertTransition('approved', 'docs')).toThrow()
 })
 
 test('the table matches the bootstrap plan', () => {

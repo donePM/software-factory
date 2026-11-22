@@ -51,6 +51,7 @@ function tracker(labels: string[], author = 'alice', initial: Comment[] = [], he
   }
   const t = {
     log, comments, posts, prs, prComments, states, assigns,
+    repo: 'a/b',
     login: async () => 'op',
     assign: async (n: number, on: boolean) => { assigns.push(`${on ? '+' : '-'}${n}`) },
     get: async () => ticket,
@@ -829,4 +830,58 @@ test('escalate has no autoMerge when merge.auto is on', async () => {
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'needs-human' })
   expect(r.state).toBe('needs-human')
   expect('autoMerge' in r).toBe(false)
+})
+
+const WIKI = `${DIR}/wiki`
+const DOCS = 'STATUS: DONE\n\n## Summary\nOne page.\n\n## Page\n# Add thing\n\n## Use\nRun it. Issue: #7.\n'
+const CLONE = ['git', 'clone', '--depth', '1', 'https://github.com/a/b.wiki.git', WIKI]
+const COMMIT = ['git', '-C', WIKI, 'commit', '-m', 'docs(wiki): document #7', '-m', 'Refs: #7']
+const PUSH = ['git', '-C', WIKI, 'push', 'origin', 'HEAD']
+const CHANGED: Reply = { argv: ['git', '-C', WIKI, 'status', '--porcelain'], result: { stdout: '?? Issue-7.md\n' } }
+const inDocs = (docs = DOCS, replies: Reply[] = [CHANGED]): Run => setup('docs', { pr: 9, round: 1, reviewed: HEAD }, { [`${DIR}/docs.md`]: docs }, { replies })
+const at = (ctx: Run['ctx'], argv: string[]): number => ctx.calls.findIndex(c => c.join(' ') === argv.join(' '))
+
+test('a docs job publishes the wiki page and finishes', async () => {
+  const { ctx, t } = inDocs()
+  const r = await jobAdvance(ctx, t, { issue: 7, to: 'done' })
+  expect(r.state).toBe('done')
+  expect(at(ctx, CLONE)).toBeGreaterThan(-1)
+  expect(ctx.files[`${WIKI}/Issue-7.md`]).toBe('# Add thing\n\n## Use\nRun it. Issue: #7.\n')
+  expect(ctx.calls).toContainEqual(['git', '-C', WIKI, 'add', '--', 'Issue-7.md'])
+  expect(at(ctx, CLONE)).toBeLessThan(at(ctx, COMMIT))
+  expect(at(ctx, COMMIT)).toBeLessThan(at(ctx, PUSH))
+  expect(t.comments).toEqual([{ name: 'docs', body: 'Docs: https://github.com/a/b/wiki/Issue-7' }])
+  expect(t.states).toEqual(['done'])
+  expect(t.log).toContain('close done')
+  expect(ctx.calls).toContainEqual(['rm', '-rf', DIR])
+  expect(r.cleanup?.removed).toContain(DIR)
+
+  const same = inDocs(DOCS, [])
+  expect((await jobAdvance(same.ctx, same.t, { issue: 7, to: 'done' })).state).toBe('done')
+  expect(at(same.ctx, COMMIT)).toBe(-1)
+  expect(at(same.ctx, PUSH)).toBe(-1)
+
+  for (const bad of ['STATUS: BLOCKED\n\n## Summary\nNo diff.\n', 'STATUS: DONE\n\n## Summary\nx\n\n## Page\n\n', 'STATUS: DONE\n\n## Summary\nx\n']) {
+    const b = inDocs(bad)
+    await rejects(jobAdvance(b.ctx, b.t, { issue: 7, to: 'done' }), 'docs-not-done')
+    expect(b.t.states).toEqual([])
+    expect(at(b.ctx, CLONE)).toBe(-1)
+  }
+})
+
+test('a failed wiki push moves a docs job to needs-human', async () => {
+  const fails: Reply[][] = [
+    [CHANGED, { argv: PUSH, result: { exitCode: 1, stderr: 'remote: Permission denied\n' } }],
+    [{ argv: CLONE, result: { exitCode: 128, stderr: 'fatal: repository not found\n' } }],
+  ]
+  for (const [replies, error] of [[fails[0]!, 'remote: Permission denied'], [fails[1]!, 'fatal: repository not found']] as const) {
+    const { ctx, t } = inDocs(DOCS, [...replies])
+    const r = await jobAdvance(ctx, t, { issue: 7, to: 'done' })
+    expect(r.state).toBe('needs-human')
+    expect(t.posts).toEqual([`Factory stopped: the wiki push failed: ${error}`])
+    expect(t.states).toEqual(['needs-human'])
+    expect(t.comments).toEqual([])
+    expect(t.log).toEqual([])
+    expect(ctx.calls).not.toContainEqual(['rm', '-rf', DIR])
+  }
 })

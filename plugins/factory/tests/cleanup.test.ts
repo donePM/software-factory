@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { cleanupJob, sweep } from '../lib/cleanup.ts'
+import { cleanupJob, finishMerged, sweep } from '../lib/cleanup.ts'
 import { defaultConfig } from '../lib/config.ts'
 import { invoke, TOOLS } from '../hooks/tools.ts'
 import type { Tracker } from '../lib/tracker.ts'
@@ -144,7 +144,7 @@ test('sweep skips folders that are not issue numbers', async () => {
   const r = await sweep(ctx, t)
   expect(t.log).toEqual([])
   expect(has(ctx.calls, 'rm')).toBe(false)
-  expect(r).toEqual({ removed: [], kept: [], finished: [] })
+  expect(r).toEqual({ removed: [], kept: [], finished: [], docs: [] })
 })
 
 test('sweep finishes a ticket in approved or review whose PR was merged on GitHub', async () => {
@@ -259,6 +259,26 @@ test('tool cleanup without an issue sweeps', async () => {
   const def = TOOLS.find(t => t.name === 'cleanup')!
   const ctx = ctxOf()
   const out = await invoke(def, ctx, {})
-  expect(out).toEqual({ result: JSON.stringify({ removed: [], kept: [], finished: [] }, null, 2) })
+  expect(out).toEqual({ result: JSON.stringify({ removed: [], kept: [], finished: [], docs: [] }, null, 2) })
   expect(ctx.calls).toContainEqual(['git', 'worktree', 'prune'])
+})
+
+const WIKI = { '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/a/b', 'main', []), docs: { target: 'wiki' } }) }
+
+test('sweep moves a merged job to docs with a wiki target and keeps it', async () => {
+  const ctx = ctxOf([], { ...WIKI, '/repo/.factory/jobs/9/job.md': 'x', [`${DIR}/job.md`]: 'x', '/repo/.factory/jobs/8/job.md': 'x' })
+  const t = tracker({
+    closed: [7],
+    labels: { 9: ['factory', 'factory:approved'], 7: ['factory', 'factory:docs'], 8: ['factory', 'factory:docs'] },
+    prs: { 9: { state: 'MERGED' }, 7: { state: 'MERGED' }, 8: { state: 'MERGED' } },
+  })
+  const r = await sweep(ctx, t)
+  expect(t.log.filter(l => l.startsWith('state') || l.startsWith('close'))).toEqual(['state 9 docs prMerged'])
+  expect(has(ctx.calls, 'rm')).toBe(false)
+  expect(has(ctx.calls, 'git', 'worktree', 'remove')).toBe(false)
+  expect(r.finished).toEqual(['#9: PR merged on GitHub, set to docs'])
+  expect([...r.docs].sort()).toEqual([7, 8, 9])
+  expect(r.removed).toEqual([])
+  expect(await finishMerged(ctx, t, await t.get(7))).toEqual({ removed: [], kept: [] })
+  expect(t.log.filter(l => l.startsWith('state') || l.startsWith('close'))).toEqual(['state 9 docs prMerged'])
 })

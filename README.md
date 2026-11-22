@@ -120,6 +120,11 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
    on, the factory does this step on its own after an `APPROVE`. After the merge the
    factory sets the issue to `done` and removes the worktree, the merged
    branch, and the job folder. Work that is not saved stays and is reported.
+7. **Docs.** With `docs.target` set to `wiki`, the merge sets the issue to
+   `docs`, not `done`. The documenter agent writes one wiki page into
+   `<jobDir>/docs.md`. The factory pushes it as the wiki page `Issue-<n>` and
+   posts the link in a `<!-- factory:docs -->` comment. Then it sets `done`
+   and cleans up. A failed wiki push sets `needs-human`. The merge stays.
 
 The factory account is assignee of the issue and the PR in `intake`, `spec`, `build`, and `review`, and not in wait or end states.
 
@@ -141,13 +146,13 @@ comments from the issue author and from you reach them.
 .factory/
   .gitignore                 # ignores all but config.json and checks.local.ts
   config.json                # tracker, base branch, concurrency, maxRounds, language, docs, protectedPaths (tracked)
-  jobs/<n>/                  # working copy: job.md, issue.md, intake.md, spec.md, round-N/, decision.md
+  jobs/<n>/                  # working copy: job.md, issue.md, intake.md, spec.md, round-N/, decision.md, docs.md
   worktrees/<n>/             # one worktree per job, branch factory/<n>
   gate/setup/                # result of the setup gate check
 ```
 
 `language` in `.factory/config.json` sets the language of the issues that `/factory:add` writes. The default is English.
-`docs.target` sets where the factory writes the docs: `docs` (the `docs/` folder) or `wiki` (the GitHub wiki). `/factory:setup` asks for it until you choose one.
+`docs.target` sets where the factory writes the docs: `docs` (the `docs/` folder) or `wiki` (the GitHub wiki). `/factory:setup` asks for it until you choose one. Only the `wiki` target writes docs now.
 
 ## Kanban board (optional)
 
@@ -208,7 +213,7 @@ plugins/factory/
   .claude-plugin/plugin.json
   pipeline.md                # the main session's event loop, read by /factory:run
   skills/{setup,add,run,status,approve,merge}/SKILL.md
-  agents/*.md                # intake, spec-writer, builder, 4 reviewers, approver, gate-runner, merger
+  agents/*.md                # intake, spec-writer, builder, 4 reviewers, approver, gate-runner, merger, documenter
   hooks/tools.ts             # registers the mcp__factory__* tools
   lib/                       # tool logic, stacks, config migrations
   tests/                     # claude plugin test plugins/factory

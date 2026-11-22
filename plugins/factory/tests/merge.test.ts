@@ -801,3 +801,35 @@ test('a failed backlog read does not fail a merge that is done', async () => {
   expect(r.syncs).toEqual([{ outcome: 'backlog-failed', error: expect.stringContaining('backlog boom') }])
   expect(ctx.calls.some(c => c[2] === WT8)).toBe(false)
 })
+
+const cfgWith = (docs?: { target: 'docs' | 'wiki' }): Record<string, string> =>
+  ({ '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('u', 'main', [{ id: 'node', path: '.' }]), ...(docs === undefined ? {} : { docs }) }) })
+
+test('merge with a wiki target moves the job to docs and keeps the job files', async () => {
+  const { ctx, t } = setup({ others: [{ n: 8, labels: ['factory:approved'] }] }, [], cfgWith({ target: 'wiki' }))
+  const r = await merge(ctx, t, 7)
+  expect(r).toMatchObject({ state: 'docs', cleanup: { removed: [], kept: [] }, syncs: [{ issue: 8, outcome: 'synced' }] })
+  expect(t.states).toEqual(['docs'])
+  expect(t.log.some(l => l.startsWith('close'))).toBe(false)
+  expect(ctx.calls).not.toContainEqual(['rm', '-rf', DIR])
+  expect(count(ctx.calls, 'git', 'worktree', 'remove')).toBe(0)
+  expect(await ctx.fs.exists(`${DIR}/job.md`)).toBe(true)
+
+  const gh = setup({ labels: ['factory:approved'], pr: { state: 'MERGED', mergeCommit: MERGE } }, [], cfgWith({ target: 'wiki' }))
+  const m = await merge(gh.ctx, gh.t, 7)
+  expect(m).toMatchObject({ state: 'docs', alreadyMerged: true, cleanup: { removed: [], kept: [] } })
+  expect(gh.t.log.some(l => l.startsWith('close'))).toBe(false)
+  expect(gh.ctx.calls).not.toContainEqual(['rm', '-rf', DIR])
+})
+
+test('merge without a wiki target still sets done and cleans up', async () => {
+  for (const files of [cfgWith(), cfgWith({ target: 'docs' })]) {
+    const { ctx, t } = setup({}, [], files)
+    const r = await merge(ctx, t, 7)
+    expect(r.state).toBe('done')
+    expect(t.states).toEqual(['done'])
+    expect(t.log).toContain('close done')
+    expect(ctx.calls).toContainEqual(['rm', '-rf', DIR])
+    expect(r.cleanup.removed).toContain(DIR)
+  }
+})

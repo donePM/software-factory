@@ -233,11 +233,13 @@ export async function merge(ctx: Ctx, t: Tracker, n: number): Promise<MergeResul
   if (after.state !== 'MERGED') {
     throw new FactoryError('merge-failed', `PR #${pr.number} is not merged`, 'Check the PR on GitHub. Then merge again.')
   }
-  await t.setState(issue, 'done')
-  await followState(t, [issue, pr.number], 'done')
+  // With a wiki target the documenter runs next, so the issue stays open and the job keeps its files.
+  const next = cfg.docs?.target === 'wiki' ? 'docs' : 'done'
+  await t.setState(issue, next, next === 'docs' ? { prMerged: true } : {})
+  await followState(t, [issue, pr.number], next)
   const done = await t.get(issue)
-  if (done.state !== 'closed') await t.close(issue, 'done')
+  if (next === 'done' && done.state !== 'closed') await t.close(issue, 'done')
   // shortcut: no retry when GitHub gives no merge commit, upgrade when a real run shows null.
-  const cleanup = await cleanupJob(ctx, t, issue, 'done')
+  const cleanup = next === 'done' ? await cleanupJob(ctx, t, issue, 'done') : { removed: [], kept: [] }
   return { issue, pr: pr.number, head: sha, mergeCommit: after.mergeCommit, alreadyMerged: false, cleanup, syncs: await syncOthers(ctx, t, issue, base), state: stateOf(done.labels) }
 }
