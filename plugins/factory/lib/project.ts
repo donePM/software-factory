@@ -172,46 +172,63 @@ export async function addToBacklog(ctx: Ctx, tracker: Pick<Tracker, 'repo'>, cfg
   return warnings
 }
 
-type RawItem = { content?: { url?: string }; factory?: string }
-export type Cards = Map<string | undefined, string | undefined>
+type RawItem = { id: string; content?: { url?: string }; factory?: string }
+type Card = { id: string; factory?: string }
+export type Cards = Map<string | undefined, Card>
 export type CardReader = (owner: string, number: number) => Promise<Cards>
 
 // The gh project calls (GraphQL) of each tool, with the board on:
 // - queue: one item-list when a ticket has no status label. Then view and field-list once, and item-add and item-edit for each new card.
 // - status: the queue calls. The board check uses the same item-list, or makes one item-list when the queue made none.
+//   For cards that differ from their label: view and field-list once, then one item-edit for each card.
 // - job_sync and job_advance: one item-edit for each label change that moves the card, with the ids in job.md.
 //   With no ids: view and field-list once, then item-add and item-edit.
 // item-list --limit 1000 can make several GraphQL requests, one for each page of cards.
 
-// Maps the issue URL of each card to its Factory option.
+// Maps the issue URL of each card to its item id and Factory option.
 export async function listCards(ctx: Ctx, owner: string, number: number): Promise<Cards> {
   // shortcut: one item-list page of 1000 cards, upgrade to paging when a board has more
   const { items } = await project<{ items: RawItem[] }>(ctx, ['item-list', String(number), '--owner', owner, '--limit', '1000'])
-  return new Map(items.map(i => [i.content?.url, i.factory]))
+  return new Map(items.map(i => [i.content?.url, { id: i.id, factory: i.factory }]))
 }
 
-// Reads the board only. The label wins, so each line tells the operator where to move the card.
+// Moves each card to the column of its label, because the label wins. A line remains for each card that does not move.
 export async function boardDrift(
   ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project'>, tickets: Ticket[], read: CardReader = (o, n) => listCards(ctx, o, n),
 ): Promise<string[]> {
   const p = cfg.project
   if (p?.enabled !== true) return []
   if (p.number === undefined) return [NO_NUMBER]
+  const owner = tracker.repo.split('/')[0]!
+  let cards: Cards
   try {
-    const cards = await read(tracker.repo.split('/')[0]!, p.number)
-    const lines: string[] = []
-    for (const t of tickets) {
-      const state = stateOf(t.labels)
-      // shortcut: a ticket with no card is not reported, upgrade when cards go missing
-      if (state === 'conflict' || !cards.has(t.url)) continue
-      const want = optionFor(state)
-      const has = cards.get(t.url)
-      if (has !== want) lines.push(`#${t.number} board says ${has ?? 'nothing'}, label says ${state ?? 'none'}: move the card to ${want}`)
-    }
-    return lines
+    cards = await read(owner, p.number)
   } catch (e) {
     return [`board check failed: ${warningOf(e)}`]
   }
+  const drift: { card: Card; want: FactoryOption; line: string }[] = []
+  for (const t of tickets) {
+    const state = stateOf(t.labels)
+    const card = cards.get(t.url)
+    // shortcut: a ticket with no card is not reported, upgrade when cards go missing
+    if (state === 'conflict' || card === undefined) continue
+    const want = optionFor(state)
+    if (card.factory !== want) {
+      drift.push({ card, want, line: `#${t.number} board says ${card.factory ?? 'nothing'}, label says ${state ?? 'none'}: move the card to ${want}` })
+    }
+  }
+  if (drift.length === 0) return []
+  let board: Board
+  try {
+    board = await loadBoard(ctx, owner, p.number)
+  } catch {
+    return drift.map(d => d.line)
+  }
+  const lines: string[] = []
+  for (const d of drift) {
+    await setOption(ctx, board, d.card.id, d.want).catch(() => lines.push(d.line))
+  }
+  return lines
 }
 
 // Connects the project (creates it when number is undefined) and adds each open ticket. A failure becomes a warning.
