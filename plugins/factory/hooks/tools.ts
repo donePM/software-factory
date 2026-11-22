@@ -10,7 +10,7 @@ import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
 import { STATUS, stateOf } from '../lib/labels.ts'
 import { githubTracker, repoFromUrl } from '../lib/github.ts'
 import { approve, merge } from '../lib/merge.ts'
-import { withBoard } from '../lib/project.ts'
+import { addToBacklog, withBoard } from '../lib/project.ts'
 import { guardBash, guardMain } from '../lib/guard.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
@@ -133,7 +133,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'issue_create',
     description:
-      'Create GitHub issues in order, each with the label factory (none when park is true). dependsOnRefs names the ref of an earlier item and becomes a Depends on line. Returns ref, number and url for each issue. Creates nothing when the input is bad.',
+      'Create GitHub issues in order, each with the label factory (none when park is true). dependsOnRefs names the ref of an earlier item and becomes a Depends on line. Returns ref, number and url for each issue. With the board on, it adds a Backlog card for each issue. Board problems come back as warnings next to created. Creates nothing when the input is bad.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -158,7 +158,11 @@ export const TOOLS: ToolDef[] = [
       required: ['items'],
       additionalProperties: false,
     },
-    handler: async (ctx, input) => issueCreate(githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url)), input),
+    handler: async (ctx, input) => {
+      const cfg = await loadConfig(ctx)
+      const tracker = githubTracker(ctx, repoFromUrl(cfg.tracker.url))
+      return issueCreate(tracker, input, ns => addToBacklog(ctx, tracker, cfg, ns))
+    },
   },
   issueTool('job_create', 'Start a job: set the intake label, create the worktree from origin/<base>, write job.md and issue.md.', async (ctx, t, n) => {
     const job = await jobCreate(ctx, t, n)

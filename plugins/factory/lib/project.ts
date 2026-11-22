@@ -24,6 +24,7 @@ type RawProject = { number: number; id: string; url: string }
 type RawField = { id: string; name: string; options?: { id: string; name: string }[] }
 
 const FIELD = 'Factory'
+export const NO_NUMBER = 'project.number is missing. Run /factory:setup project.'
 
 const project = async <T>(ctx: Ctx, argv: string[]): Promise<T> =>
   JSON.parse(await must(ctx, ['gh', 'project', ...argv, '--format', 'json'])) as T
@@ -72,7 +73,7 @@ export function withBoard(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project
   const setState: Tracker['setState'] = async (n, to, opts) => {
     await tracker.setState(n, to, opts)
     if (p.number === undefined) {
-      warnings.push('project.number is missing. Run /factory:setup project.')
+      warnings.push(NO_NUMBER)
       return
     }
     try {
@@ -86,17 +87,44 @@ export function withBoard(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project
   return { tracker: { ...tracker, setState }, warnings }
 }
 
+// Adds a Backlog card for each issue. A board failure becomes a warning.
+export async function addToBacklog(ctx: Ctx, tracker: Pick<Tracker, 'repo'>, cfg: Pick<Config, 'project'>, numbers: number[]): Promise<string[]> {
+  const p = cfg.project
+  if (p?.enabled !== true) return []
+  if (p.number === undefined) return [NO_NUMBER]
+  let board: Board
+  try {
+    board = await loadBoard(ctx, tracker.repo.split('/')[0]!, p.number)
+  } catch (e) {
+    return [messageOf(e)]
+  }
+  const warnings: string[] = []
+  for (const n of numbers) {
+    try {
+      await setOption(ctx, board, await addItem(ctx, board, `https://github.com/${tracker.repo}/issues/${n}`), 'Backlog')
+    } catch (e) {
+      warnings.push(`#${n}: ${messageOf(e)}`)
+    }
+  }
+  return warnings
+}
+
 type RawItem = { content?: { url?: string }; factory?: string }
+
+// Maps the issue URL of each card to its Factory option.
+export async function listCards(ctx: Ctx, owner: string, number: number): Promise<Map<string | undefined, string | undefined>> {
+  // shortcut: one item-list page of 1000 cards, upgrade to paging when a board has more
+  const { items } = await project<{ items: RawItem[] }>(ctx, ['item-list', String(number), '--owner', owner, '--limit', '1000'])
+  return new Map(items.map(i => [i.content?.url, i.factory]))
+}
 
 // Reads the board only. The label wins, so each line tells the operator where to move the card.
 export async function boardDrift(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project'>, tickets: Ticket[]): Promise<string[]> {
   const p = cfg.project
   if (p?.enabled !== true) return []
-  if (p.number === undefined) return ['project.number is missing. Run /factory:setup project.']
+  if (p.number === undefined) return [NO_NUMBER]
   try {
-    // shortcut: one item-list page of 1000 cards, upgrade to paging when a board has more
-    const { items } = await project<{ items: RawItem[] }>(ctx, ['item-list', String(p.number), '--owner', tracker.repo.split('/')[0]!, '--limit', '1000'])
-    const cards = new Map(items.map(i => [i.content?.url, i.factory]))
+    const cards = await listCards(ctx, tracker.repo.split('/')[0]!, p.number)
     const lines: string[] = []
     for (const t of tickets) {
       const state = stateOf(t.labels)

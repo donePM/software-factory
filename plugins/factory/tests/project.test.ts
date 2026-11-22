@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { STATUS } from '../lib/labels.ts'
-import { boardDrift, FACTORY_OPTIONS, optionFor, withBoard } from '../lib/project.ts'
+import { addToBacklog, boardDrift, FACTORY_OPTIONS, optionFor, withBoard } from '../lib/project.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import type { Ticket } from '../lib/types.ts'
 import { boardCalls, boardReplies, edit, itemList, ON, onBoard } from './support/board.ts'
@@ -116,4 +116,42 @@ test('boardDrift makes no project call with the project off and warns on failure
   expect(lines).toHaveLength(1)
   expect(lines[0]?.startsWith('board check failed: ')).toBe(true)
   expect(lines[0]).toContain('boom')
+})
+
+test('addToBacklog adds a Backlog card for each issue', async () => {
+  const ctx = fakeCtx({ replies: boardReplies })
+  expect(await addToBacklog(ctx, fake(), ON, [7, 8])).toEqual([])
+  expect(boardCalls(ctx.calls)).toEqual([
+    'gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit', 'gh project item-add', 'gh project item-edit',
+  ])
+  expect(ctx.calls).toContainEqual(['gh', 'project', 'item-add', '3', '--owner', 'o', '--url', url(7), '--format', 'json'])
+  expect(ctx.calls).toContainEqual(['gh', 'project', 'item-add', '3', '--owner', 'o', '--url', url(8), '--format', 'json'])
+  expect(ctx.calls.filter(c => c[2] === 'item-edit')).toEqual([edit('Backlog'), edit('Backlog')])
+})
+
+test('addToBacklog turns board failures into warnings and skips an off board', async () => {
+  const ctx = fakeCtx({
+    replies: [
+      { argv: ['gh', 'project', 'item-add', '3', '--owner', 'o', '--url', url(7)], result: { stdout: JSON.stringify({ id: 'I7' }) } },
+      { argv: ['gh', 'project', 'item-edit', '--id', 'I7'], result: { exitCode: 1, stderr: 'boom' } },
+      ...boardReplies,
+    ],
+  })
+  const warnings = await addToBacklog(ctx, fake(), ON, [7, 8])
+  expect(warnings).toHaveLength(1)
+  expect(warnings[0]?.startsWith('#7: ')).toBe(true)
+  expect(warnings[0]).toContain('boom')
+  expect(ctx.calls).toContainEqual(edit('Backlog'))
+  const view = fakeCtx({ replies: [{ argv: ['gh', 'project', 'view'], result: { exitCode: 1, stderr: 'no scope' } }] })
+  const failed = await addToBacklog(view, fake(), ON, [7])
+  expect(failed).toHaveLength(1)
+  expect(failed[0]).toContain('no scope')
+  for (const cfg of [{ project: { enabled: false, number: 3 } }, {}]) {
+    const off = fakeCtx({ replies: boardReplies })
+    expect(await addToBacklog(off, fake(), cfg, [7])).toEqual([])
+    expect(off.calls).toEqual([])
+  }
+  const none = fakeCtx({ replies: boardReplies })
+  expect(await addToBacklog(none, fake(), { project: { enabled: true } }, [7])).toEqual(['project.number is missing. Run /factory:setup project.'])
+  expect(none.calls).toEqual([])
 })

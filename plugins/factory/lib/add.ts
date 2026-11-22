@@ -34,7 +34,9 @@ function validate(input: AddInput): void {
   })
 }
 
-export async function issueCreate(t: Tracker, input: AddInput): Promise<Created[]> {
+export async function issueCreate(
+  t: Tracker, input: AddInput, board?: (numbers: number[]) => Promise<string[]>,
+): Promise<Created[] | { created: Created[]; warnings: string[] }> {
   validate(input)
   const labels = input.park === true ? [] : ['factory']
   const numbers = new Map<string, number>()
@@ -56,5 +58,7 @@ export async function issueCreate(t: Tracker, input: AddInput): Promise<Created[
     if (it.ref !== undefined) numbers.set(it.ref, number)
     out.push({ ref: it.ref ?? '', number, url: `https://github.com/${t.repo}/issues/${number}` })
   }
-  return out
+  if (board === undefined || input.park === true) return out
+  const warnings = await board(out.map(c => c.number))
+  return warnings.length === 0 ? out : { created: out, warnings }
 }

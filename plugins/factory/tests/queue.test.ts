@@ -5,6 +5,7 @@ import type { Tracker } from '../lib/tracker.ts'
 import type { Comment, Ticket } from '../lib/types.ts'
 import { withMarker } from '../lib/markers.ts'
 import { TOOLS } from '../hooks/tools.ts'
+import { boardCalls, boardReplies, edit, itemList, ON } from './support/board.ts'
 import { fakeCtx } from './support/host.ts'
 
 const cfg = { ...defaultConfig('u', 'main', []), concurrency: 2 }
@@ -212,4 +213,41 @@ test('tool queue returns the queue', async () => {
   const q = (await def.handler(c, {})) as { ready: { number: number }[]; slots: number }
   expect(nums(q.ready)).toEqual([5])
   expect(q.slots).toBe(4)
+})
+
+const onCfg = { ...cfg, ...ON }
+const boardTracker = (backlog: Ticket[]): Tracker => ({ ...tracker(backlog), repo: 'o/r' })
+
+test('queue adds a Backlog card only for a ticket without a card', async () => {
+  const c = fakeCtx({ replies: [itemList([{ url: 'u/1', factory: 'Intake' }]), ...boardReplies] })
+  const q = await queue(c, boardTracker([T(1), T(2), T(3, ['factory:build'])]), onCfg)
+  expect(q.warnings).toBeUndefined()
+  expect(boardCalls(c.calls)).toEqual(['gh project item-list', 'gh project view', 'gh project field-list', 'gh project item-add', 'gh project item-edit'])
+  expect(c.calls).toContainEqual(['gh', 'project', 'item-list', '3', '--owner', 'o', '--limit', '1000', '--format', 'json'])
+  expect(c.calls.filter(x => x[2] === 'item-add').map(x => x[7])).toEqual(['https://github.com/o/r/issues/2'])
+  expect(c.calls).toContainEqual(edit('Backlog'))
+  const all = fakeCtx({ replies: [itemList([{ url: 'u/1', factory: 'Intake' }, { url: 'u/2', factory: 'Done' }]), ...boardReplies] })
+  await queue(all, boardTracker([T(1), T(2), T(3, ['factory:build'])]), onCfg)
+  expect(boardCalls(all.calls)).toEqual(['gh project item-list'])
+  const busy = fakeCtx({ replies: [itemList([]), ...boardReplies] })
+  await queue(busy, boardTracker([T(3, ['factory:build'])]), onCfg)
+  expect(busy.calls).toEqual([])
+})
+
+test('queue reports board failures as warnings and makes no call with the board off', async () => {
+  const c = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-list'], result: { exitCode: 1, stderr: 'boom' } }, ...boardReplies] })
+  const q = await queue(c, boardTracker([T(1)]), onCfg)
+  expect(nums(q.ready)).toEqual([1])
+  expect(q.warnings).toHaveLength(1)
+  expect(q.warnings?.[0]).toContain('boom')
+  const bad = fakeCtx({ replies: [itemList([]), { argv: ['gh', 'project', 'item-edit'], result: { exitCode: 1, stderr: 'bad edit' } }, ...boardReplies] })
+  const q1 = await queue(bad, boardTracker([T(1)]), onCfg)
+  expect(q1.warnings).toHaveLength(1)
+  expect(q1.warnings?.[0]?.startsWith('#1: ')).toBe(true)
+  for (const off of [cfg, { ...cfg, project: { enabled: false, number: 3 } }]) {
+    const o = fakeCtx({ replies: [itemList([]), ...boardReplies] })
+    const qo = await queue(o, boardTracker([T(1)]), off)
+    expect(o.calls).toEqual([])
+    expect('warnings' in qo).toBe(false)
+  }
 })
