@@ -30,6 +30,12 @@ folder `<jobDir>`, as an absolute path. You get all other context from files.
   exist, read the main checkout. Read the tests and the conventions near the
   code, so that the spec fits what exists.
 
+## Code first
+The code and its tests are the only source of truth for what the repo does now.
+Docs, specs, comments, and other Markdown can be out of date.
+When they disagree with the code, the code wins.
+The job's `spec.md` still defines the new behavior to build.
+
 ## Write
 Write only `<jobDir>/spec.md`. Do not change code. Do not write other files.
 Do not call factory tools. You have no GitHub access.

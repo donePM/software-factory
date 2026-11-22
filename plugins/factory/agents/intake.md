@@ -28,6 +28,12 @@ folder `<jobDir>`, as an absolute path. You get all other context from files.
 - The repo, in the worktree from `job.md`. If the worktree does not exist, read
   the main checkout. Find the code, tests, and docs that the request touches.
 
+## Code first
+The code and its tests are the only source of truth for what the repo does now.
+Docs, specs, comments, and other Markdown can be out of date.
+When they disagree with the code, the code wins.
+The job's `spec.md` still defines the new behavior to build.
+
 ## Write
 Write only `<jobDir>/intake.md`. Do not change code. Do not write other files.
 Do not run commands. Do not call factory tools. You have no GitHub access.

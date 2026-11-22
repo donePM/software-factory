@@ -43,6 +43,12 @@ without a human step. An ESCALATE still waits for the human.
 Run every shell command as `cd <worktree> && ...`. Do not switch branches,
 check out other commits, or change files.
 
+## Code first
+The code and its tests are the only source of truth for what the repo does now.
+Docs, specs, comments, and other Markdown can be out of date.
+When they disagree with the code, the code wins.
+The job's `spec.md` still defines the new behavior to build.
+
 ## Decide
 Write `APPROVE` only when all of these are true:
 - The first line of `<roundDir>/checks.md` is `VERDICT: PASS`.
