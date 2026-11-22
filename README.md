@@ -161,6 +161,14 @@ The [setup guide](docs/setup.md#5-the-project-board-optional) shows the scope, t
   that runs `gh` or `git push`. This is a word match, not a sandbox: a command
   that hides `gh`, or a script in another language, can still reach GitHub as
   the operator.
+- A user `PreToolUse` hook that rewrites Bash commands (for example `git status`
+  to `rtk git status`) can make factory agents lose Bash calls. The factory
+  guard judges the command that the agent wrote. The hook then sends the new
+  command to the permission check. A background factory agent cannot answer a
+  permission prompt, so the call fails. To prevent this, do one of these steps:
+  - Make the hook skip input where `agent_type` starts with `factory:`.
+  - Add an allow rule with a narrow prefix for the wrapper, for example
+    `Bash(rtk git:*)`. Never allow `Bash(rtk:*)`: it also allows `rtk gh`.
 
 ## Developing the factory with the factory
 
