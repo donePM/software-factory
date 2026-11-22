@@ -19,6 +19,7 @@ Use plain words. The user may not be a developer.
      Then name each other approved job from the report. The factory merged the base branch into each one.
      A job with a `conflict` entry is now in build. Tell the user to run `/factory:run <n>` for it. The builder resolves the conflict, then the reviews run again. At the round limit, the entry says `needs-human`: a human decides how to go on.
      A job with a `failed` entry did not change. Its next `/factory:merge` syncs it.
+     A `backlog-failed` entry has no job: the factory could not read the list of other jobs. The merge is still done. No other job was synced. The next `/factory:merge` syncs them.
    - Error: give the error text and its `Fix` line.
      - `sync-conflict`: the branch conflicts with the base branch. The factory undid the merge. The job went back to build on its own, in a new round. Read `${CLAUDE_PLUGIN_ROOT}/pipeline.md` and follow it as `/factory:run <issue>`: start the builder. The builder merges the base branch, then the reviews run again. When the job is `approved` or `needs-human` again, tell the user to run `/factory:merge <issue>` again.
      - `sync-conflict-limit`: the branch conflicts with the base branch, and the job reached the round limit. The job is now `needs-human`. A human decides how to go on.
