@@ -388,3 +388,119 @@ test('pipeline finishes a docs job with a rebuilt docs.md', () => {
   expect(START_STEP_1).toContain('If its `rebuilt` list has `docs.md`, follow "documenter finished".')
   expect(START_STEP_1).toContain('Else start `factory:documenter` with its `<jobDir>`.')
 })
+
+// shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
+// PLANNER_FRONTMATTER, PLANNER_LANGUAGE, and PRODUCT_READY stand word for word in agents/planner.md.
+// CODE_FIRST stands word for word in intake, spec-writer, builder, the code|security|ux|ui reviewers, approver, and planner.
+const PLANNER_FRONTMATTER = [
+  '---',
+  'name: planner',
+  'description: Factory planner. Reads one product idea (idea.md) and the repo, and writes product.md with a goal and ordered slices. Writes no code.',
+  'tools: Read, Grep, Glob, Write',
+  'model: opus',
+  '---',
+].join('\n')
+
+const PLANNER_LANGUAGE = [
+  'Read the **Language** line in `<planDir>/idea.md`.',
+  'No line means English. Write the text for people in your file in that language.',
+  'Keep these parts in English: the machine-read first line (`STATUS:`), the',
+  'section headings, paths, and code. Keep the fixed keywords of the file format',
+  'in English (for example `S<n>`, `Files:`, `Needs`). For English, use Simplified Technical English',
+  '(ASD-STE100). For another language, use the STE principles in that language:',
+  'short sentences (at most 20 words), one instruction in each sentence,',
+  'the active voice, and clear words with one meaning.',
+].join('\n')
+
+const CODE_FIRST = [
+  '## Code first',
+  'The code and its tests are the only source of truth for what the repo does now.',
+  'Docs, specs, comments, and other Markdown can be out of date.',
+  'When they disagree with the code, the code wins.',
+  "The job's `spec.md` still defines the new behavior to build.",
+].join('\n')
+
+const PRODUCT_READY = [
+  'STATUS: READY',
+  '',
+  '## Goal',
+  'Shop owners can see, filter, and export their orders on one page.',
+  '',
+  '## Scope',
+  '- In: an order list page, a status filter, and a CSV export.',
+  '- Out: other export formats (Excel, PDF), because the idea asks only for CSV.',
+  '- Out: saved filters, because the idea does not ask for them.',
+  '',
+  '## Stack',
+  '- The TypeScript server in `src/`. `npm test` runs the tests.',
+  '',
+  '## Dependencies',
+  '- none.',
+  '',
+  '## Architecture',
+  '- `src/orders/list.ts`: reads the orders from the database layer.',
+  '- `src/orders/page.ts`: shows the order list page.',
+  '- `src/orders/export.ts`: returns the orders as CSV.',
+  '',
+  '## Slices',
+  'S1 The orders page lists each order with its number and date. Files: src/orders/list.ts, src/orders/page.ts. Needs none.',
+  'S2 The orders page filters the list by status. Files: src/orders/page.ts. Needs S1.',
+  'S3 `GET /orders.csv` returns one row for each order. Files: src/orders/export.ts. Needs S1.',
+  'S4 The orders page has an "Export CSV" button that links to `/orders.csv`. Files: src/orders/page.ts. Needs S3.',
+  '',
+  '## Open questions',
+  '- none.',
+].join('\n')
+
+test('planner frontmatter names the agent, the model, and the tools', () => {
+  const lines = PLANNER_FRONTMATTER.split('\n')
+  expect(lines[0]).toBe('---')
+  expect(lines.at(-1)).toBe('---')
+  const keys = Object.fromEntries(lines.slice(1, -1).map(l => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 2)]))
+  expect(Object.keys(keys)).toEqual(['name', 'description', 'tools', 'model'])
+  expect(keys.name).toBe('planner')
+  expect(keys.description ?? '').toMatch(/^\S.+\.$/)
+  expect(keys.tools).toBe('Read, Grep, Glob, Write')
+  expect(keys.model).toBe('opus')
+})
+
+test('planner language block reads idea.md and repeats the STE rules', () => {
+  expect(PLANNER_LANGUAGE.split('\n')[0]).toContain('`<planDir>/idea.md`')
+  for (const s of ['No line means English.', 'ASD-STE100', 'at most 20 words', 'the active voice']) {
+    expect(PLANNER_LANGUAGE).toContain(s)
+  }
+})
+
+test('code first section is the same in all nine agents', () => {
+  expect(CODE_FIRST.split('\n')).toEqual([
+    '## Code first',
+    'The code and its tests are the only source of truth for what the repo does now.',
+    'Docs, specs, comments, and other Markdown can be out of date.',
+    'When they disagree with the code, the code wins.',
+    "The job's `spec.md` still defines the new behavior to build.",
+  ])
+})
+
+test('planner example product.md starts with STATUS READY and has the sections in order', () => {
+  expect(PRODUCT_READY.split('\n')[0]).toBe('STATUS: READY')
+  const headings = (PRODUCT_READY.match(/^## .+$/gm) ?? []).map(h => h.slice(3))
+  expect(headings).toEqual(['Goal', 'Scope', 'Stack', 'Dependencies', 'Architecture', 'Slices', 'Open questions'])
+})
+
+const SLICE = /^S(\d+) .+\. Files: .+\. Needs (none|S\d+(?:, S\d+)*)\.$/
+
+test('planner example slices start with a walking skeleton and need only earlier slices', () => {
+  const slices = (lastSection(PRODUCT_READY, 'Slices') ?? '').split('\n').filter(l => l !== '')
+  expect(slices.length).toBeGreaterThan(2)
+  const needs = slices.map((l, i) => {
+    const m = SLICE.exec(l)
+    expect(m?.[1]).toBe(String(i + 1))
+    return m?.[2] === 'none' ? [] : (m?.[2] ?? '').split(', ').map(s => Number(s.slice(1)))
+  })
+  expect(needs[0]).toEqual([])
+  needs.slice(1).forEach((n, i) => {
+    expect(n.length).toBeGreaterThan(0)
+    for (const m of n) expect(m).toBeLessThan(i + 2)
+  })
+  expect(needs.filter(n => n.length === 1 && n[0] === 1).length).toBeGreaterThan(1)
+})
