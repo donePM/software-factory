@@ -16,6 +16,19 @@ test('must throws FactoryError on exit 1', async () => {
   expect(err.message).toContain('git status')
 })
 
+test('must names a GitHub rate limit and tells the operator to wait', async () => {
+  for (const stderr of ['GraphQL: API rate limit already exceeded for user ID 1.', 'You have exceeded a secondary rate limit.']) {
+    const ctx = fakeCtx({ replies: [{ argv: ['gh'], result: { exitCode: 1, stderr } }] })
+    const err = await must(ctx, ['gh', 'api', 'user']).catch(e => e)
+    expect(err.code).toBe('rate-limited')
+    expect(err.message).toContain(stderr)
+    expect(err.fix).toContain('Wait')
+    expect(ctx.calls).toHaveLength(1)
+  }
+  const git = fakeCtx({ replies: [{ argv: ['git'], result: { exitCode: 1, stderr: 'rate limit' } }] })
+  expect((await must(git, ['git', 'push']).catch(e => e)).code).toBe('command-failed')
+})
+
 test('rmrf refuses a path outside .factory', async () => {
   const ctx = fakeCtx({ root: '/repo' })
   const err = await rmrf(ctx, '/repo/src').catch(e => e)

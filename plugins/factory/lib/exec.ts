@@ -14,7 +14,12 @@ export class FactoryError extends Error {
 export async function must(ctx: Ctx, argv: readonly string[], opts?: RunOpts): Promise<string> {
   const r = await ctx.run(argv, opts)
   if (r.exitCode !== 0) {
-    throw new FactoryError('command-failed', `${argv[0]} ${argv[1] ?? ''}: ${r.stderr.trim()}`)
+    const message = `${argv[0]} ${argv[1] ?? ''}: ${r.stderr.trim()}`
+    // A retry at once makes a secondary rate limit last longer.
+    if (argv[0] === 'gh' && /rate limit/i.test(r.stderr)) {
+      throw new FactoryError('rate-limited', message, 'Wait some minutes until the GitHub rate limit resets. Then call the tool again. Do not retry at once.')
+    }
+    throw new FactoryError('command-failed', message)
   }
   return r.stdout.trim()
 }
