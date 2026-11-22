@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Plan a product idea with the planner. Show the plan, and create one factory issue for each slice after the operator says start.
+description: Plan a product idea. Show the plan and the possible duplicates. After start, create one issue for each slice without a duplicate.
 argument-hint: <idea> [--park]
 disable-model-invocation: true
 ---
@@ -25,7 +25,8 @@ Do not run Bash. Do not write files. The tools write `idea.md`, and the planner 
    - `body`: the slice line from `## Slices` and the Goal of the plan.
    - `ref`: `S<n>`, the number of the slice.
    - `dependsOnRefs`: the slices from its `Needs` list, for example `["S1"]`. Give no entry for `Needs none.`.
-   - `dependsOn`: the number of the duplicate issue for each left-out slice in its `Needs` list. Give no `dependsOnRefs` entry for a left-out slice.
+   - `dependsOn`: the number of the duplicate issue for each left-out slice in its `Needs` list. Give no `dependsOnRefs` entry for a left-out slice. Take the first hit when the slice has two or more hits.
+   - If no slice is left, call no `issue_create`. Tell the operator that every slice has a possible duplicate.
 7. Report the issue numbers with their links, in simple words.
    - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem only.
    - On `bad-input`, give the error text. Nothing was created. Fix the list and call `mcp__factory__issue_create` again.

@@ -653,7 +653,8 @@ const PLAN_SKILL_STEPS = [
   '   - `body`: the slice line from `## Slices` and the Goal of the plan.',
   '   - `ref`: `S<n>`, the number of the slice.',
   '   - `dependsOnRefs`: the slices from its `Needs` list, for example `["S1"]`. Give no entry for `Needs none.`.',
-  '   - `dependsOn`: the number of the duplicate issue for each left-out slice in its `Needs` list. Give no `dependsOnRefs` entry for a left-out slice.',
+  '   - `dependsOn`: the number of the duplicate issue for each left-out slice in its `Needs` list. Give no `dependsOnRefs` entry for a left-out slice. Take the first hit when the slice has two or more hits.',
+  '   - If no slice is left, call no `issue_create`. Tell the operator that every slice has a possible duplicate.',
 ].join('\n')
 
 const PLANNER_FEEDBACK = [
@@ -709,6 +710,12 @@ test('plan skill leaves out duplicates and passes park', () => {
   expect(start).toContain('Pass `park` when the flag was set.')
   expect(start).toContain('`dependsOn`: the number of the duplicate issue for each left-out slice in its `Needs` list.')
   expect(start).toContain('Give no `dependsOnRefs` entry for a left-out slice.')
+  expect(start).toContain('Take the first hit when the slice has two or more hits.')
+})
+
+test('plan skill creates no issue when every slice has a duplicate', () => {
+  const start = planSteps().find(s => s.includes('On "start"')) ?? ''
+  expect(start).toContain('If no slice is left, call no `issue_create`. Tell the operator that every slice has a possible duplicate.')
 })
 
 test('planner reads the feedback sections as data', () => {
