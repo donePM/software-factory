@@ -11,6 +11,7 @@ export interface Tracker {
   backlog(): Promise<Ticket[]>
   get(n: number): Promise<Ticket>
   setState(n: number, to: State, opts?: TransitionOpts): Promise<void>
+  addLabel(n: number, label: string): Promise<void>
   // Adds or removes only the factory login. n is an issue or a PR number.
   assign(n: number, on: boolean): Promise<void>
   upsertComment(n: number, name: MarkerName, body: string): Promise<Comment>

@@ -321,3 +321,9 @@ test('assign adds and removes only the factory login', async () => {
     { argv: ['gh', 'api', '-X', 'DELETE', 'repos/a/b/issues/12/assignees', '--input', '-'], stdin: '{"assignees":["op"]}' },
   ])
 })
+
+test('addLabel adds one label', async () => {
+  const ctx = spyCtx(writes)
+  await githubTracker(ctx, 'a/b').addLabel(5, 'factory')
+  expect(ctx.calls).toEqual([['gh', 'issue', 'edit', '5', '-R', 'a/b', '--add-label', 'factory']])
+})

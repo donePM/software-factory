@@ -100,6 +100,9 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
       if (from !== null) args.push('--remove-label', statusLabel(from))
       await gh(args)
     },
+    async addLabel(n, label) {
+      await gh(['issue', 'edit', String(n), '-R', repo, '--add-label', label])
+    },
     async assign(n, on) {
       const body = JSON.stringify({ assignees: [await t.login()] })
       await gh(['api', '-X', on ? 'POST' : 'DELETE', `repos/${repo}/issues/${n}/assignees`, '--input', '-'], body)

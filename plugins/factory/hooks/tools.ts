@@ -108,11 +108,13 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'queue',
-    description: 'List the backlog: running, waiting, blocked and ready tickets, free slots and the next tickets to start.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    handler: async ctx => {
+    description:
+      'List the backlog: running, waiting, blocked and ready tickets, free slots and the next tickets to start. With issue, next holds only that issue, and an open issue without the factory label gets it. Only /factory:run <n> gives issue.',
+    inputSchema: { type: 'object', properties: { issue: { type: 'integer', minimum: 1 } }, additionalProperties: false },
+    handler: async (ctx, input) => {
+      const n = input.issue === undefined ? undefined : issueOf(input)
       const cfg = await loadConfig(ctx)
-      return queue(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+      return queue(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg, n)
     },
   },
   {

@@ -1,4 +1,5 @@
 import type { Config } from './config.ts'
+import { FactoryError } from './exec.ts'
 import { RUNNING, stateOf } from './labels.ts'
 import { findMarked, isMarkerComment } from './markers.ts'
 import type { Tracker } from './tracker.ts'
@@ -55,8 +56,22 @@ async function answered(tr: Tracker, t: Ticket, operator: string): Promise<boole
   return full.comments.some(c => c.author === full.author && !isMarkerComment(c) && time(c.createdAt) > time(asked.updatedAt))
 }
 
-export async function queue(_ctx: Ctx, tr: Tracker, cfg: Config): Promise<Queue> {
+// Checks the issue that the operator named, and gives it the factory label when it has none.
+async function startable(tr: Tracker, n: number): Promise<Ticket> {
+  const t = await tr.get(n)
+  const s = stateOf(t.labels)
+  const cause = t.kind === 'pr' ? 'a pull request' : t.state === 'closed' ? 'closed' : s === 'done' || s === 'rejected' ? s : null
+  if (cause !== null) throw new FactoryError('not-startable', `#${n} is ${cause}`, 'Name an open issue that is not done or rejected.')
+  if (t.labels.includes('factory')) return t
+  await tr.addLabel(n, 'factory')
+  return { ...t, labels: ['factory', ...t.labels] }
+}
+
+// With issue, only that issue can be in next.
+export async function queue(_ctx: Ctx, tr: Tracker, cfg: Config, issue?: number): Promise<Queue> {
+  const named = issue === undefined ? undefined : await startable(tr, issue)
   const tickets = await tr.backlog()
+  if (named && !tickets.some(t => t.number === named.number)) tickets.push(named)
   const q: Queue = { running: [], waiting: [], ready: [], blocked: [], conflicts: [], slots: 0, next: [] }
   const open = new Map<number, boolean>()
   const isOpen = async (n: number, self: number): Promise<boolean> => {
@@ -105,6 +120,6 @@ export async function queue(_ctx: Ctx, tr: Tracker, cfg: Config): Promise<Queue>
   candidates.sort((a, b) => a.rank - b.rank || time(a.item.createdAt) - time(b.item.createdAt))
   for (const { item } of candidates) (item.blockedBy ? q.blocked : q.ready).push(item)
   q.slots = Math.max(0, cfg.concurrency - q.running.length)
-  q.next = q.ready.slice(0, q.slots)
+  q.next = (issue === undefined ? q.ready : q.ready.filter(i => i.number === issue)).slice(0, q.slots)
   return q
 }
