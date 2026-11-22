@@ -619,6 +619,16 @@ test('merge readies a draft PR before the merge', async () => {
   expect(t.log.indexOf('ready 9')).toBeLessThan(t.log.indexOf('merge 9'))
 })
 
+test('merge stops with a fix when a draft PR cannot leave draft', async () => {
+  const { ctx, t } = setup({ labels: ['factory:needs-human'], pr: { isDraft: true } })
+  t.prReady = async (p: number) => { t.log.push(`ready ${p}`); throw new Error('GraphQL: API rate limit already exceeded') }
+  const err = await merge(ctx, t, 7).catch(e => e)
+  expect(err).toMatchObject({ code: 'draft-pr' })
+  expect(err.message).toContain('rate limit')
+  expect(err.fix).toContain('Ready for review')
+  expect(t.merges).toEqual([])
+})
+
 test('merge does not ready a PR that is not a draft', async () => {
   const { ctx, t } = setup()
   await merge(ctx, t, 7)

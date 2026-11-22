@@ -228,7 +228,7 @@ const restPr = (o: Record<string, unknown> = {}) => ({
 const prOut = { number: 9, state: 'OPEN', isDraft: true, title: 't', body: 'b', author: 'op', headRefName: 'factory/5', headRefOid: 'abc', mergeCommit: null }
 const FIND_ARGV = ['gh', 'api', 'repos/a/b/pulls?head=a:factory/5&state=all&per_page=100', '--paginate', '--jq', '.[]']
 
-test('openPr opens a draft through REST, then adds the labels', async () => {
+test('openPr opens a normal PR through REST, then adds the labels', async () => {
   const ctx = spyCtx([
     { argv: ['gh', 'api', '-X', 'POST', 'repos/a/b/pulls'], result: { stdout: JSON.stringify(restPr({ html_url: 'https://github.com/a/b/pull/9' })) } },
     ...writes,
@@ -236,7 +236,7 @@ test('openPr opens a draft through REST, then adds the labels', async () => {
   const pr = await githubTracker(ctx, 'a/b').openPr('factory/5', 'main', 'feat: x', 'Body', ['factory:pr', 'type:feat'])
   expect(pr).toEqual({ number: 9, url: 'https://github.com/a/b/pull/9' })
   expect(ctx.stdins.map(s => [s.argv.join(' '), s.stdin === undefined ? undefined : JSON.parse(s.stdin)])).toEqual([
-    ['gh api -X POST repos/a/b/pulls --input -', { title: 'feat: x', head: 'factory/5', base: 'main', body: 'Body', draft: true }],
+    ['gh api -X POST repos/a/b/pulls --input -', { title: 'feat: x', head: 'factory/5', base: 'main', body: 'Body', draft: false }],
     ['gh api -X POST repos/a/b/issues/9/labels --input -', { labels: ['factory:pr', 'type:feat'] }],
   ])
   expect(graphql(ctx.calls)).toEqual([])
