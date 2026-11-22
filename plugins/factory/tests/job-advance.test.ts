@@ -82,6 +82,7 @@ function setup(state: string, over: Partial<Job> = {}, files: Record<string, str
   const replies: Reply[] = [
     ...(o.replies ?? []),
     { argv: ['git', '-C', WT, 'rev-parse', 'HEAD'], result: { stdout: `${HEAD}\n` } },
+    { argv: ['git', '-C', WT, 'merge-base', 'HEAD', 'origin/main'], result: { stdout: `${SHA}\n` } },
     { argv: ['git', '-C', WT, 'show', `${SHA}:package.json`], result: { stdout: pkg } },
     { argv: ['git', '-C', WT, 'show'], result: { exitCode: 128 } },
     { argv: ['git', '-C', WT, 'ls-files'], result: { stdout: 'package.json\n' } },
@@ -268,6 +269,17 @@ test('review records the pushed commit as the reviewed commit', async () => {
   await jobAdvance(ctx, t, { issue: 7, to: 'review' })
   expect((await readJob(ctx, 7)).reviewed).toBe(HEAD)
   expect(t.comments.find(c => c.name === 'intake')!.body).toContain(`- Reviewed: ${HEAD}\n`)
+})
+
+test('review writes the merge base with origin/main as Base', async () => {
+  const synced = 'e'.repeat(40)
+  const { ctx, t } = inBuild({}, { replies: [
+    { argv: ['git', '-C', WT, 'merge-base', 'HEAD', 'origin/main'], result: { stdout: `${synced}\n` } },
+    { argv: ['git', '-C', WT, 'show', `${synced}:package.json`], result: { stdout: pkg } },
+  ] })
+  await jobAdvance(ctx, t, { issue: 7, to: 'review' })
+  expect((await readJob(ctx, 7)).base).toBe(synced)
+  expect(t.comments.find(c => c.name === 'intake')!.body).toContain(`- Base: ${synced}\n`)
 })
 
 test('a new round clears the reviewed commit', async () => {
