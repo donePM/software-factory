@@ -307,6 +307,13 @@ test('a sync conflict starts a new build round', async () => {
   expect(count(ctx.calls, 'git', '-C', WT, 'push')).toBe(0)
 })
 
+test('the sync comment gives one step in each sentence', async () => {
+  const { ctx, t } = setup({}, [CONFLICT])
+  await merge(ctx, t, 7).catch(() => undefined)
+  expect(t.posts[0]).toContain('Round 2 starts. The builder merges origin/main. Then the reviews run again.')
+  expect(t.posts[0]).not.toContain(', then ')
+})
+
 test('the merge fixes give one step in each sentence', async () => {
   const conflict = setup({}, [CONFLICT])
   await expect(merge(conflict.ctx, conflict.t, 7)).rejects.toMatchObject({ code: 'sync-conflict', fix: 'The factory undid the merge and started round 2. Follow pipeline.md as /factory:run 7. The builder merges origin/main. Then the reviews run again.' })

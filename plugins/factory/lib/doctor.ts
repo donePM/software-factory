@@ -60,7 +60,7 @@ async function auth(ctx: Ctx): Promise<Auth> {
   const out = (check: Check): Auth => ({ check, text, login })
   if (r.exitCode !== 0) {
     if (/not logged in/i.test(text)) return out({ check: 'gh auth', ok: false, detail: 'gh is not logged in', fix: LOGIN })
-    return out({ check: 'gh auth', ok: false, detail: `gh auth status failed: ${first(text)}`, fix: 'Wait a moment, then run setup again.' })
+    return out({ check: 'gh auth', ok: false, detail: `gh auth status failed: ${first(text)}`, fix: 'Wait a moment. Then run setup again.' })
   }
   if (lacksScope(text, 'repo')) {
     return out({ check: 'gh auth', ok: false, detail: `${login} has no repo scope`, fix: 'gh auth refresh -s repo' })
