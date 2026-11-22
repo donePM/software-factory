@@ -206,6 +206,17 @@ test('tool gate fails when it cannot find the merge base', async () => {
   }
 })
 
+test('the gate fetch and merge-base fixes give one step in each sentence', async () => {
+  const cases: [Reply, string, string][] = [
+    [{ argv: ['git', '-C', WT7, 'fetch'], result: { exitCode: 1, stderr: 'offline' } }, 'fetch-failed', 'Check the network and the origin remote. Then run the gate again.'],
+    [{ argv: ['git', '-C', WT7, 'merge-base', 'HEAD', 'origin/main'], result: { exitCode: 1 } }, 'bad-job-base', 'Merge origin/main into the job branch. Then run the gate again.'],
+  ]
+  for (const [reply, code, fix] of cases) {
+    const ctx = jobCtx({ ...okFiles(), [`${WT7}/package.json`]: '{}' }, [reply])
+    await expect(gateDef().handler(ctx, { issue: 7 })).rejects.toMatchObject({ code, fix })
+  }
+})
+
 test('tool gate rejects a bad round', async () => {
   const props = gateDef().inputSchema.properties as { round: { pattern: string } }
   expect(new RegExp(props.round.pattern).test('../../..')).toBe(false)
