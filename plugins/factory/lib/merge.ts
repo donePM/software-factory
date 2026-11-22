@@ -102,12 +102,21 @@ async function toBuild(ctx: Ctx, t: Tracker, issue: number, from: State, origin:
 const conflictReason = (origin: string, branch: string): string => `merging ${origin} into ${branch} has a conflict.`
 
 export type Sync = { issue: number; outcome: 'synced' } | { issue: number; outcome: 'conflict'; state: State } | { issue: number; outcome: 'failed'; error: string }
+  | { outcome: 'backlog-failed'; error: string }
+
+const message = (e: unknown): string => e instanceof Error ? e.message : String(e)
 
 // Only approved jobs: no agent and no human uses their worktrees. An error in one job does not stop the next.
 // shortcut: no gate after a sync, the gate runs at the merge of each job. Upgrade when a red gate at merge time is common.
 async function syncOthers(ctx: Ctx, t: Tracker, merged: number, base: string): Promise<Sync[]> {
+  let backlog: Ticket[]
+  try {
+    backlog = await t.backlog()
+  } catch (e) {
+    return [{ outcome: 'backlog-failed', error: message(e) }]
+  }
   const syncs: Sync[] = []
-  for (const other of await t.backlog()) {
+  for (const other of backlog) {
     const m = other.number
     if (m === merged || stateOf(other.labels) !== 'approved') continue
     try {
@@ -123,7 +132,7 @@ async function syncOthers(ctx: Ctx, t: Tracker, merged: number, base: string): P
         syncs.push({ issue: m, outcome: 'conflict', state: (await toBuild(ctx, t, m, 'approved', `origin/${base}`, job.branch)).state })
       }
     } catch (e) {
-      syncs.push({ issue: m, outcome: 'failed', error: e instanceof Error ? e.message : String(e) })
+      syncs.push({ issue: m, outcome: 'failed', error: message(e) })
     }
   }
   return syncs

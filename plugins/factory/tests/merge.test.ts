@@ -695,3 +695,14 @@ test('a failed sync of one job does not stop the others', async () => {
   expect(t.states).toEqual(['done'])
   expect(t.events.filter(e => e.startsWith('setState'))).toEqual([])
 })
+
+test('a failed backlog read does not fail a merge that is done', async () => {
+  const { ctx, t } = setup({ others: [{ n: 8, labels: ['factory:approved'] }] })
+  t.backlog = async () => { throw new Error('backlog boom') }
+  const r = await merge(ctx, t, 7)
+  expect(r).toMatchObject({ head: HEAD, mergeCommit: MERGE, alreadyMerged: false })
+  expect(r.cleanup.removed).toContain(DIR)
+  expect(t.states).toEqual(['done'])
+  expect(r.syncs).toEqual([{ outcome: 'backlog-failed', error: expect.stringContaining('backlog boom') }])
+  expect(ctx.calls.some(c => c[2] === WT8)).toBe(false)
+})
