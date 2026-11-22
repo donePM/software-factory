@@ -221,6 +221,24 @@ test('statusFor shows the board differences', async () => {
   expect(same).not.toContain('Board differs from labels')
 })
 
+test('statusFor reads the board cards once', async () => {
+  const T = (n: number, labels: string[]): Ticket => ({
+    kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', ...labels],
+    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: `https://github.com/o/r/issues/${n}`, comments: [],
+  })
+  const tr = {
+    repo: 'o/r',
+    login: async () => 'op',
+    backlog: async () => [T(1, []), T(2, ['factory:build'])],
+    findPr: async () => null,
+  } as unknown as Tracker
+  const cfg = { ...defaultConfig('u', 'main', []), concurrency: 2, project: { enabled: true, number: 3 } }
+  const ctx = fakeCtx({ replies: [itemList([{ url: 'https://github.com/o/r/issues/1', factory: 'Backlog' }, { url: 'https://github.com/o/r/issues/2', factory: 'Review' }])] })
+  const text = await statusFor(ctx, tr, cfg)
+  expect(ctx.calls.filter(c => c[1] === 'project' && c[2] === 'item-list')).toHaveLength(1)
+  expect(text.split('\n').slice(-3)).toEqual(['', 'Board differs from labels', '  #2 board says Review, label says build: move the card to Build'])
+})
+
 test('statusFor moves a card that differs and shows no line for it', async () => {
   const T = (n: number, label: string): Ticket => ({
     kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', label],

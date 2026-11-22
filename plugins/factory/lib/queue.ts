@@ -1,7 +1,7 @@
 import type { Config } from './config.ts'
 import { FactoryError } from './exec.ts'
-import { addToBacklog, listCards, loadBoard, NO_NUMBER, setOption } from './project.ts'
-import type { Board, Card } from './project.ts'
+import { addToBacklog, listCards, loadBoard, NO_NUMBER, setOption, warningOf } from './project.ts'
+import type { Board, CardReader, Cards } from './project.ts'
 import { RUNNING, stateOf } from './labels.ts'
 import { findMarked, isMarkerComment } from './markers.ts'
 import type { Tracker } from './tracker.ts'
@@ -63,7 +63,7 @@ const messageOf = (e: unknown): string => (e instanceof Error ? e.message : Stri
 
 // Moves the open-column card of each closed issue with no status label to Done, or to Rejected when not planned.
 // shortcut: one get with comments for each open-column card that is not in the backlog, upgrade to a get without comments when the board has many such cards.
-async function closedCards(ctx: Ctx, tr: Tracker, number: number, tickets: Ticket[], cards: Map<string | undefined, Card>): Promise<string[]> {
+async function closedCards(ctx: Ctx, tr: Tracker, number: number, tickets: Ticket[], cards: Cards): Promise<string[]> {
   const known = new Set<string | undefined>(tickets.map(t => t.url))
   const prefix = `https://github.com/${tr.repo}/issues/`
   const warnings: string[] = []
@@ -84,16 +84,17 @@ async function closedCards(ctx: Ctx, tr: Tracker, number: number, tickets: Ticke
 }
 
 // Gives each ticket with no status label and no card a Backlog card, and moves the cards of closed issues.
-async function backlogCards(ctx: Ctx, tr: Tracker, cfg: Config, tickets: Ticket[]): Promise<string[]> {
+async function backlogCards(ctx: Ctx, tr: Tracker, cfg: Config, tickets: Ticket[], read: CardReader): Promise<string[]> {
   const p = cfg.project
   if (p?.enabled !== true) return []
   const loose = tickets.filter(t => stateOf(t.labels) === null)
   if (p.number === undefined) return loose.length === 0 ? [] : [NO_NUMBER]
-  let cards: Map<string | undefined, Card>
+  let cards: Cards
   try {
-    cards = await listCards(ctx, tr.repo.split('/')[0]!, p.number)
+    // shortcut: each queue call reads the board again, upgrade to a cache across tool calls when the rate limit stays a problem
+    cards = await read(tr.repo.split('/')[0]!, p.number)
   } catch (e) {
-    return [`board list failed: ${messageOf(e)}`]
+    return [`board list failed: ${warningOf(e)}`]
   }
   const missing = loose.filter(t => !cards.has(t.url)).map(t => t.number)
   const added = missing.length === 0 ? [] : await addToBacklog(ctx, tr, cfg, missing)
@@ -112,7 +113,7 @@ async function startable(tr: Tracker, n: number): Promise<Ticket> {
 }
 
 // With issue, only that issue can be in next.
-export async function queue(ctx: Ctx, tr: Tracker, cfg: Config, issue?: number): Promise<Queue> {
+export async function queue(ctx: Ctx, tr: Tracker, cfg: Config, issue?: number, read: CardReader = (o, n) => listCards(ctx, o, n)): Promise<Queue> {
   const named = issue === undefined ? undefined : await startable(tr, issue)
   const tickets = await tr.backlog()
   if (named && !tickets.some(t => t.number === named.number)) tickets.push(named)
@@ -167,7 +168,7 @@ export async function queue(ctx: Ctx, tr: Tracker, cfg: Config, issue?: number):
   for (const { item } of candidates) (item.blockedBy ? q.blocked : q.ready).push(item)
   q.slots = Math.max(0, cfg.concurrency - q.running.length)
   q.next = (issue === undefined ? q.ready : q.ready.filter(i => i.number === issue)).slice(0, q.slots)
-  const warnings = await backlogCards(ctx, tr, cfg, tickets)
+  const warnings = await backlogCards(ctx, tr, cfg, tickets, read)
   if (warnings.length > 0) q.warnings = warnings
   return q
 }
