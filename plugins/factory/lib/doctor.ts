@@ -123,7 +123,7 @@ export async function wikiCheck(ctx: Ctx, repo: string): Promise<Check> {
     return { check: 'wiki', ok: false, detail: `the wiki repo of ${repo} does not exist: ${first(ls.stderr)}`, fix: `Open ${page} and create the first page.` }
   }
   // A public wiki passes ls-remote without credentials. The dry-run push sends no objects and creates no ref.
-  const push = await ctx.run([...WIKI_GIT, '-C', ctx.root, 'push', '--dry-run', url, 'HEAD:refs/heads/factory-wiki-check'], WIKI_RUN)
+  const push = await ctx.run([...WIKI_GIT, '-C', ctx.root, 'push', '--dry-run', '--no-verify', url, 'HEAD:refs/heads/factory-wiki-check'], WIKI_RUN)
   if (push.exitCode !== 0) {
     return { check: 'wiki', ok: false, detail: `git cannot push to the wiki of ${repo}: ${first(push.stderr)}`, fix: `Run gh auth status. gh must be logged in with the repo scope and you need write access to ${repo}. Then run setup again.` }
   }
