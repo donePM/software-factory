@@ -207,13 +207,10 @@ test('slots never go below zero', async () => {
 
 test('tool queue returns the queue', async () => {
   const def = TOOLS.find(t => t.name === 'queue')!
-  const issue = { number: 5, title: 'T', body: '', labels: [{ name: 'factory' }], author: { login: 'a' }, createdAt: '2026-01-01T00:00:00Z', url: 'u/5', state: 'OPEN' }
+  const issue = { number: 5, title: 'T', body: '', labels: [{ name: 'factory' }], user: { login: 'a' }, created_at: '2026-01-01T00:00:00Z', html_url: 'u/5', state: 'open' }
   const c = fakeCtx({
     files: { '/repo/.factory/config.json': JSON.stringify(defaultConfig('https://github.com/a/b', 'main', [])) },
-    replies: [
-      { argv: ['gh', 'issue', 'list'], result: { stdout: JSON.stringify([issue]) } },
-      { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
-    ],
+    replies: [{ argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'], result: { stdout: JSON.stringify(issue) } }],
   })
   const q = (await def.handler(c, {})) as { ready: { number: number }[]; slots: number }
   expect(nums(q.ready)).toEqual([5])
@@ -309,19 +306,18 @@ test('queue without issue changes no label', async () => {
 test('tool queue takes an issue', async () => {
   const def = TOOLS.find(t => t.name === 'queue')!
   expect(def.inputSchema).toMatchObject({ properties: { issue: { type: 'integer', minimum: 1 } } })
-  const issue = { number: 9, title: 'T', body: '', labels: [], author: { login: 'a' }, createdAt: '2026-01-01T00:00:00Z', url: 'u/9', state: 'OPEN' }
+  const issue = { number: 9, title: 'T', body: '', labels: [], user: { login: 'a' }, created_at: '2026-01-01T00:00:00Z', html_url: 'u/9', state: 'open' }
   const c = fakeCtx({
     files: { '/repo/.factory/config.json': JSON.stringify(defaultConfig('https://github.com/a/b', 'main', [])) },
     replies: [
-      { argv: ['gh', 'issue', 'view', '9'], result: { stdout: JSON.stringify(issue) } },
+      { argv: ['gh', 'api', 'repos/a/b/issues/9'], result: { stdout: JSON.stringify(issue) } },
       { argv: ['gh', 'api', 'repos/a/b/issues/9/comments'] },
-      { argv: ['gh', 'issue', 'edit'] },
-      { argv: ['gh', 'issue', 'list'], result: { stdout: '[]' } },
+      { argv: ['gh', 'api', '-X', 'POST'] },
       { argv: ['gh', 'api', 'repos/a/b/issues?labels=factory&state=open&per_page=100'] },
     ],
   })
   const q = (await def.handler(c, { issue: 9 })) as { next: { number: number }[] }
-  expect(c.calls).toContainEqual(['gh', 'issue', 'edit', '9', '-R', 'a/b', '--add-label', 'factory'])
+  expect(c.calls).toContainEqual(['gh', 'api', '-X', 'POST', 'repos/a/b/issues/9/labels', '--input', '-'])
   expect(nums(q.next)).toEqual([9])
   for (const bad of [0, -1, 1.5, '9']) {
     await expect(def.handler(c, { issue: bad })).rejects.toMatchObject({ code: 'bad-input' })

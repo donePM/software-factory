@@ -565,14 +565,14 @@ test('job_advance sets the option of the new state on the board', async () => {
 })
 
 test('a failed project call leaves the transition done and returns a warning', async () => {
-  const raw = { number: 7, title: 'Add thing', body: 'b', labels: [{ name: 'factory' }, { name: 'factory:build' }], author: { login: 'alice' }, createdAt: '2026-01-01T00:00:00Z', url: 'https://github.com/o/r/issues/7', state: 'OPEN' }
+  const raw = { number: 7, title: 'Add thing', body: 'b', labels: [{ name: 'factory' }, { name: 'factory:build' }], user: { login: 'alice' }, created_at: '2026-01-01T00:00:00Z', html_url: 'https://github.com/o/r/issues/7', state: 'open', assignees: [] }
   const ctx = fakeCtx({
     files: {
       '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/o/r', 'main', []), ...ON }),
       [`${DIR}/job.md`]: renderJob({ ...J, round: 1 }),
     },
     replies: [
-      { argv: ['gh', 'issue', 'view'], result: { stdout: JSON.stringify(raw) } },
+      { argv: ['gh', 'api', 'repos/o/r/issues/7'], result: { stdout: JSON.stringify(raw) } },
       { argv: ['gh', 'api', 'user'], result: { stdout: 'op' } },
       { argv: ['gh', 'project', 'item-edit'], result: { exitCode: 1, stderr: 'item-edit refused' } },
       ...boardReplies,
@@ -581,7 +581,7 @@ test('a failed project call leaves the transition done and returns a warning', a
   })
   const out = await invoke(advDef(), ctx, { issue: 7, to: 'needs-human', reason: 'stuck' })
   expect('isError' in out).toBe(false)
-  expect(ctx.calls).toContainEqual(['gh', 'issue', 'edit', '7', '-R', 'o/r', '--add-label', 'factory:needs-human', '--remove-label', 'factory:build'])
+  expect(ctx.calls).toContainEqual(['gh', 'api', '-X', 'PUT', 'repos/o/r/issues/7/labels', '--input', '-'])
   const r = JSON.parse(out.result) as { state: string; warnings: string[] }
   expect(r.state).toBe('needs-human')
   expect(r.warnings).toHaveLength(1)

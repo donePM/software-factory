@@ -10,7 +10,8 @@ export interface Tracker {
   login(): Promise<string>
   backlog(): Promise<Ticket[]>
   get(n: number): Promise<Ticket>
-  setState(n: number, to: State, opts?: TransitionOpts): Promise<void>
+  // Returns the state before the change. A test fake may return nothing.
+  setState(n: number, to: State, opts?: TransitionOpts): Promise<State | null | void>
   addLabel(n: number, label: string): Promise<void>
   // Adds or removes only the factory login. n is an issue or a PR number.
   assign(n: number, on: boolean): Promise<void>
