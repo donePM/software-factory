@@ -120,18 +120,22 @@ export async function queue(ctx: Ctx, tr: Tracker, cfg: Config, issue?: number, 
   const tickets = await tr.backlog()
   if (named && !tickets.some(t => t.number === named.number)) tickets.push(named)
   const q: Queue = { running: [], waiting: [], ready: [], blocked: [], conflicts: [], slots: 0, next: [] }
-  const open = new Map<number, boolean>()
+  // The backlog list can be older than a close, so each dependency gets its own read.
+  // shortcut: one get with comments for each distinct dependency, upgrade to a get without comments when the backlog has many dependencies
+  const deps = new Map<number, Promise<boolean | string>>()
+  const depWarnings: string[] = []
   const isOpen = async (n: number, self: number): Promise<boolean> => {
     if (n === self) return true
-    // A backlog ticket is open: no call.
-    if (tickets.some(t => t.number === n && t.state === 'open')) return true
-    let v = open.get(n)
-    if (v === undefined) {
-      // Fail closed: a dependency that cannot be read counts as open.
-      v = await tr.get(n).then(d => d.state !== 'closed', () => true)
-      open.set(n, v)
+    let p = deps.get(n)
+    if (p === undefined) {
+      p = tr.get(n).then(d => d.state !== 'closed', messageOf)
+      deps.set(n, p)
     }
-    return v
+    const v = await p
+    if (typeof v === 'boolean') return v
+    // Fail closed: a dependency that cannot be read counts as open.
+    depWarnings.push(`#${self} waits for #${n}. The factory cannot read #${n}: ${v} Fix: Make sure that #${n} exists. Then run /factory:run again.`)
+    return true
   }
   const candidates: { item: QueueItem; rank: number }[] = []
   let operator: string | undefined
@@ -170,7 +174,7 @@ export async function queue(ctx: Ctx, tr: Tracker, cfg: Config, issue?: number, 
   for (const { item } of candidates) (item.blockedBy ? q.blocked : q.ready).push(item)
   q.slots = Math.max(0, cfg.concurrency - q.running.length)
   q.next = (issue === undefined ? q.ready : q.ready.filter(i => i.number === issue)).slice(0, q.slots)
-  const warnings = await backlogCards(ctx, tr, cfg, tickets, read)
+  const warnings = [...depWarnings, ...(await backlogCards(ctx, tr, cfg, tickets, read))]
   if (warnings.length > 0) q.warnings = warnings
   return q
 }

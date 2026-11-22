@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { defaultConfig } from '../lib/config.ts'
+import { queue } from '../lib/queue.ts'
 import type { Queue } from '../lib/queue.ts'
 import { causeOf, statusFor, statusText } from '../lib/status.ts'
 import type { Tracker } from '../lib/tracker.ts'
@@ -37,6 +38,46 @@ test('ready backlog without a run shows /factory:run', () => {
   expect(text).toContain('Ready (2)')
   expect(text).toContain('/factory:run')
   expect(text).not.toContain('Nothing to do')
+})
+
+test('blocked tickets show the open dependencies', () => {
+  const text = statusText('o/r', Q({ blocked: [{ ...item(7), blockedBy: [3, 4] }], slots: 2 }), {}, 2)
+  expect(text).toContain('Blocked (1)')
+  expect(lineWith(text, '#7')).toBe('  #7 t7  waits for #3, #4')
+})
+
+test('a conflict ticket shows the label fix', () => {
+  const text = statusText('o/r', Q({ conflicts: [9], slots: 2 }), {}, 2, { 9: 'Fix it' })
+  expect(text).toContain('Waiting for you')
+  expect(lineWith(text, '#9')).toBe('  #9 Fix it  conflict: remove all status labels but one. Then run /factory:run 9')
+})
+
+test('blocked work does not show the idle hint', () => {
+  expect(statusText('o/r', Q({ blocked: [{ ...item(7), blockedBy: [3] }], slots: 2 }), {}, 2)).not.toContain('Nothing to do')
+  expect(statusText('o/r', Q({ conflicts: [9], slots: 2 }), {}, 2)).not.toContain('Nothing to do')
+})
+
+test('statusFor shows the same ready tickets as queue', async () => {
+  const T = (n: number, labels: string[], body = ''): Ticket => ({
+    kind: 'issue', number: n, title: `t${n}`, body, author: 'a', labels: ['factory', ...labels],
+    state: 'open', createdAt: `2026-01-0${n}T00:00:00Z`, url: `u/${n}`, comments: [],
+  })
+  const tickets = [T(1, []), T(2, [], 'Depends on #4'), T(3, ['factory:spec', 'factory:build']), T(4, ['factory:needs-info']), T(5, ['bug'])]
+  const tr = {
+    repo: 'o/r',
+    login: async () => 'op',
+    backlog: async () => tickets,
+    get: async (n: number) => tickets.find(t => t.number === n)!,
+    findPr: async () => null,
+  } as unknown as Tracker
+  const cfg = { ...defaultConfig('u', 'main', []), concurrency: 2 }
+  const q = await queue(fakeCtx(), tr, cfg)
+  const text = await statusFor(fakeCtx(), tr, cfg)
+  const lines = text.split('\n')
+  const start = lines.indexOf(`Ready (${q.ready.length})`)
+  expect(start).toBeGreaterThan(-1)
+  expect(lines.slice(start + 1, start + 1 + q.ready.length)).toEqual(q.ready.map(i => `  #${i.number} ${i.title}`))
+  expect(q.ready.map(i => i.number)).toEqual([5, 1])
 })
 
 test('needs-human without a PR shows the answer hint', () => {
