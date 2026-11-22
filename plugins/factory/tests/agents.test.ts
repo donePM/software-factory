@@ -404,12 +404,12 @@ const PLANNER_FRONTMATTER = [
 const PLANNER_LANGUAGE = [
   'Read the **Language** line in `<planDir>/idea.md`.',
   'No line means English. Write the text for people in your file in that language.',
-  'Keep these parts in English: the machine-read first line (`STATUS:`), the',
-  'section headings, paths, and code. Keep the fixed keywords of the file format',
-  'in English (for example `S<n>`, `Files:`, `Needs`). For English, use Simplified Technical English',
-  '(ASD-STE100). For another language, use the STE principles in that language:',
-  'short sentences (at most 20 words), one instruction in each sentence,',
-  'the active voice, and clear words with one meaning.',
+  'Keep these parts in English: the machine-read first line (`STATUS:`), the section headings, paths, and code.',
+  'Keep the fixed keywords of the file format in English (for example `S<n>`, `Files:`, `Needs`).',
+  'For English, use Simplified Technical English (ASD-STE100).',
+  'For another language, use the STE principles in that language.',
+  'Write short sentences (at most 20 words), with one instruction in each sentence.',
+  'Use the active voice, and clear words with one meaning.',
 ].join('\n')
 
 const CODE_FIRST = [
@@ -519,12 +519,12 @@ const AUDITOR_FRONTMATTER = [
 const AUDITOR_LANGUAGE = [
   'Find `<root>` first (see below). Then read the `"language"` key in `<root>/.factory/config.json`.',
   'No line means English. Write the text for people in your file in that language.',
-  'Keep these parts in English: the machine-read first line (`STATUS:`), the',
-  'section headings, paths, and code. Keep the fixed keywords of the file format',
-  'in English (for example `Fix:`, `Upgrade:`, `- none.`). For English, use Simplified Technical English',
-  '(ASD-STE100). For another language, use the STE principles in that language:',
-  'short sentences (at most 20 words), one instruction in each sentence,',
-  'the active voice, and clear words with one meaning.',
+  'Keep these parts in English: the machine-read first line (`STATUS:`), the section headings, paths, and code.',
+  'Keep the fixed keywords of the file format in English (for example `Fix:`, `Upgrade:`, `- none.`).',
+  'For English, use Simplified Technical English (ASD-STE100).',
+  'For another language, use the STE principles in that language.',
+  'Write short sentences (at most 20 words), with one instruction in each sentence.',
+  'Use the active voice, and clear words with one meaning.',
 ].join('\n')
 
 const AUDITOR_TOPICS = [
@@ -806,6 +806,40 @@ test('audit skill body holds the problem, the fix, and file:line', () => {
 })
 
 // shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
+// JOB_LANGUAGE stands word for word in approver, builder, code-reviewer, documenter, intake, security-reviewer, spec-writer, ui-reviewer, and ux-reviewer.
+const JOB_LANGUAGE = [
+  'Read the **Language** line in the `## Job` section of `<jobDir>/job.md`.',
+  'No line means English. Write the text for people in your file in that language.',
+  'Keep these parts in English: the machine-read first lines and the section headings.',
+  'The machine-read first lines are `DECISION:`, `STATUS:`, `VERDICT:`, `RISK:`, `SURFACES:`, `LANE:`, and `Title:`.',
+  'Keep the fixed keywords of the file format in English, for example `AC-<n>`, `Test:`, `(regression)`, `[blocker]`, and `Fix:`.',
+  'Also keep marker comments, commit messages, PR titles, code, and code comments in English.',
+  'For English, use Simplified Technical English (ASD-STE100).',
+  'For another language, use the STE principles in that language.',
+  'Write short sentences (at most 20 words), with one instruction in each sentence.',
+  'Use the active voice, and clear words with one meaning.',
+].join('\n')
+
+const sentences = (block: string) => block.split('\n').join(' ').split(/(?<=[.?!])\s+/)
+
+test('job language block keeps each part in English', () => {
+  expect(JOB_LANGUAGE.split('\n')[0]).toContain('`<jobDir>/job.md`')
+  for (const s of [
+    '`DECISION:`', '`STATUS:`', '`VERDICT:`', '`RISK:`', '`SURFACES:`', '`LANE:`', '`Title:`',
+    'section headings', '`AC-<n>`', '`Test:`', '`(regression)`', '`[blocker]`', '`Fix:`',
+    'marker comments', 'commit messages', 'PR titles', 'code comments',
+    'ASD-STE100', 'at most 20 words', 'the active voice',
+  ]) {
+    expect(JOB_LANGUAGE).toContain(s)
+  }
+})
+
+test('agent language blocks have no sentence over 20 words', () => {
+  for (const block of [JOB_LANGUAGE, PLANNER_LANGUAGE, AUDITOR_LANGUAGE]) {
+    for (const s of sentences(block)) expect(s.split(/\s+/).length).toBeLessThanOrEqual(20)
+  }
+})
+
 // REVIEW_COMMITS is check 8 in agents/code-reviewer.md word for word.
 const REVIEW_COMMITS = [
   '8. **Commits:** list the commits with `git rev-list <base>..HEAD` in the',

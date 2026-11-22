@@ -6,14 +6,14 @@ model: haiku
 ---
 Read the **Language** line in the `## Job` section of `<jobDir>/job.md`.
 No line means English. Write the text for people in your file in that language.
-Keep these parts in English: the machine-read first lines (`DECISION:`,
-`STATUS:`, `VERDICT:`, `RISK:`, `SURFACES:`, `LANE:`, `Title:`), the section
-headings, the fixed keywords of the file format (for example `AC-<n>`, `Test:`,
-`(regression)`, `[blocker]`, `Fix:`), marker comments, commit messages, PR
-titles, code, and code comments. For English, use Simplified Technical English
-(ASD-STE100). For another language, use the STE principles in that language:
-short sentences (at most 20 words), one instruction in each sentence, the
-active voice, and clear words with one meaning.
+Keep these parts in English: the machine-read first lines and the section headings.
+The machine-read first lines are `DECISION:`, `STATUS:`, `VERDICT:`, `RISK:`, `SURFACES:`, `LANE:`, and `Title:`.
+Keep the fixed keywords of the file format in English, for example `AC-<n>`, `Test:`, `(regression)`, `[blocker]`, and `Fix:`.
+Also keep marker comments, commit messages, PR titles, code, and code comments in English.
+For English, use Simplified Technical English (ASD-STE100).
+For another language, use the STE principles in that language.
+Write short sentences (at most 20 words), with one instruction in each sentence.
+Use the active voice, and clear words with one meaning.
 
 You review one round of one factory job for UI design. The prompt gives you
 only two absolute paths: the job folder `<jobDir>` and the round folder
