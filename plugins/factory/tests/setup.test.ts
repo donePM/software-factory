@@ -294,3 +294,32 @@ test('setup tool previews the project without project calls', async () => {
   expect(Object.keys(ctx.files)).toEqual([])
   expect(projectCalls(ctx.calls)).toEqual([])
 })
+
+test('preview asks about the board when the config has no project answer', async () => {
+  const fresh = await setup(fakeCtx({ replies: replies() }), { apply: false })
+  expect(fresh.askProject).toBe(true)
+  const { project: _, ...noBlock } = stored()
+  const old = await setup(fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify(noBlock) } }), { apply: false })
+  expect(old.askProject).toBe(true)
+})
+
+test('a stored project answer does not ask again', async () => {
+  for (const enabled of [true, false]) {
+    const ctx = fakeCtx({ replies: replies(), files: { [CFG]: JSON.stringify({ ...stored(), project: { enabled } }) } })
+    expect((await setup(ctx, { apply: false })).askProject).toBe(false)
+  }
+})
+
+test('the answer no makes no project call and writes enabled false', async () => {
+  const { project: _, ...noBlock } = stored()
+  const ctx = fakeCtx({ replies: [projectScope, ...replies()], files: { [CFG]: JSON.stringify(noBlock) } })
+  const r = await setup(ctx, { apply: true, project: false })
+  expect(projectCalls(ctx.calls)).toEqual([])
+  expect(r.project).toBeUndefined()
+  expect(JSON.parse(ctx.files[CFG]!).project).toEqual({ enabled: false })
+
+  const kept = fakeCtx({ replies: [projectScope, ...replies()], files: { [CFG]: JSON.stringify({ ...stored(), project: { enabled: true, number: 7 } }) } })
+  await setup(kept, { apply: true, project: false })
+  expect(projectCalls(kept.calls)).toEqual([])
+  expect(JSON.parse(kept.files[CFG]!).project).toEqual({ enabled: false, number: 7 })
+})

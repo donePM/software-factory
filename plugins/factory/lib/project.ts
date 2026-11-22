@@ -3,7 +3,7 @@ import { FactoryError, must } from './exec.ts'
 import { stateOf } from './labels.ts'
 import type { Config } from './config.ts'
 import type { Tracker } from './tracker.ts'
-import type { Ctx, State } from './types.ts'
+import type { Ctx, State, Ticket } from './types.ts'
 
 export const FACTORY_OPTIONS = [
   'Backlog', 'Intake', 'Spec', 'Design', 'Build', 'Review', 'Waiting', 'Ready to merge', 'Docs', 'Done', 'Rejected',
@@ -84,6 +84,32 @@ export function withBoard(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project
     }
   }
   return { tracker: { ...tracker, setState }, warnings }
+}
+
+type RawItem = { content?: { url?: string }; factory?: string }
+
+// Reads the board only. The label wins, so each line tells the operator where to move the card.
+export async function boardDrift(ctx: Ctx, tracker: Tracker, cfg: Pick<Config, 'project'>, tickets: Ticket[]): Promise<string[]> {
+  const p = cfg.project
+  if (p?.enabled !== true) return []
+  if (p.number === undefined) return ['project.number is missing. Run /factory:setup project.']
+  try {
+    // shortcut: one item-list page of 1000 cards, upgrade to paging when a board has more
+    const { items } = await project<{ items: RawItem[] }>(ctx, ['item-list', String(p.number), '--owner', tracker.repo.split('/')[0]!, '--limit', '1000'])
+    const cards = new Map(items.map(i => [i.content?.url, i.factory]))
+    const lines: string[] = []
+    for (const t of tickets) {
+      const state = stateOf(t.labels)
+      // shortcut: a ticket with no card is not reported, upgrade when cards go missing
+      if (state === 'conflict' || !cards.has(t.url)) continue
+      const want = optionFor(state)
+      const has = cards.get(t.url)
+      if (has !== want) lines.push(`#${t.number} board says ${has ?? 'nothing'}, label says ${state ?? 'none'}: move the card to ${want}`)
+    }
+    return lines
+  } catch (e) {
+    return [`board check failed: ${messageOf(e)}`]
+  }
 }
 
 // Connects the project (creates it when number is undefined) and adds each open ticket. A failure becomes a warning.
