@@ -380,7 +380,11 @@ test('asks for the docs target until one is stored', async () => {
 })
 
 const wikiView = (on: boolean): Reply => ({ argv: ['gh', 'repo', 'view', 'a/b', '--json', 'hasWikiEnabled'], result: { stdout: JSON.stringify({ hasWikiEnabled: on }) } })
-const lsRemote = (exitCode: number): Reply => ({ argv: ['git', 'ls-remote', 'https://github.com/a/b.wiki.git'], result: { exitCode } })
+const GH_GIT = ['git', '-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
+const LS = [...GH_GIT, 'ls-remote', 'https://github.com/a/b.wiki.git']
+const DRY = [...GH_GIT, '-C', '/repo', 'push', '--dry-run', 'https://github.com/a/b.wiki.git', 'HEAD:refs/heads/factory-wiki-check']
+const lsRemote = (exitCode: number): Reply => ({ argv: LS, result: { exitCode } })
+const dryPush = (exitCode: number): Reply => ({ argv: DRY, result: { exitCode, stderr: exitCode === 0 ? '' : 'fatal: could not read Username\n' } })
 
 test('stores the docs target', async () => {
   const fresh = fakeCtx({ replies: replies() })
@@ -391,7 +395,7 @@ test('stores the docs target', async () => {
   await setup(custom, { apply: true, docs: 'docs' })
   expect(JSON.parse(custom.files[CFG]!).docs).toEqual({ target: 'docs', path: 'manual/' })
 
-  const wiki = fakeCtx({ replies: [wikiView(true), lsRemote(0), ...replies()], files: { [CFG]: JSON.stringify(stored()) } })
+  const wiki = fakeCtx({ replies: [wikiView(true), lsRemote(0), dryPush(0), ...replies()], files: { [CFG]: JSON.stringify(stored()) } })
   await setup(wiki, { apply: true, docs: 'wiki' })
   expect(JSON.parse(wiki.files[CFG]!).docs).toEqual({ target: 'wiki' })
 
@@ -411,10 +415,17 @@ test('reports the missing wiki steps', async () => {
     const r = await setup(ctx, { apply: true, docs: 'wiki' })
     return { r, ctx }
   }
-  const ok = await run([wikiView(true), lsRemote(0)])
+  const ok = await run([wikiView(true), lsRemote(0), dryPush(0)])
   expect(ok.ctx.calls).toContainEqual(['gh', 'repo', 'view', 'a/b', '--json', 'hasWikiEnabled'])
-  expect(ok.ctx.calls).toContainEqual(['git', 'ls-remote', 'https://github.com/a/b.wiki.git'])
+  expect(ok.ctx.calls).toContainEqual(LS)
+  expect(ok.ctx.calls).toContainEqual(DRY)
   expect(ok.r.wiki!.ok).toBe(true)
+
+  const push = await run([wikiView(true), lsRemote(0), dryPush(128)])
+  expect(push.r.wiki!.ok).toBe(false)
+  expect(push.r.wiki!.detail).toBe('git cannot push to the wiki of a/b: fatal: could not read Username')
+  expect(push.r.wiki!.fix).toContain('gh auth status')
+  expect(push.r.next).toContain(push.r.wiki!.fix!)
 
   const off = await run([wikiView(false), lsRemote(128)])
   expect(off.r.wiki!.ok).toBe(false)
@@ -433,7 +444,7 @@ test('reports the missing wiki steps', async () => {
 
   const none = fakeCtx({ replies: replies() })
   expect((await setup(none, { apply: true, docs: 'docs' })).wiki).toBeUndefined()
-  expect(none.calls.some(c => c[1] === 'repo' || c[1] === 'ls-remote')).toBe(false)
+  expect(none.calls.some(c => c[1] === 'repo' || c.includes('ls-remote') || c.includes('push'))).toBe(false)
 })
 
 const enableArgv = ['gh', 'repo', 'edit', 'a/b', '--enable-wiki']
@@ -461,7 +472,7 @@ test('enables the wiki when it is off', async () => {
 })
 
 test('keeps a wiki that is on', async () => {
-  const ctx = fakeCtx({ replies: [wikiView(true), lsRemote(0), ...replies()] })
+  const ctx = fakeCtx({ replies: [wikiView(true), lsRemote(0), dryPush(0), ...replies()] })
   const r = await setup(ctx, { apply: true, docs: 'wiki' })
   expect(ctx.calls.some(isEdit)).toBe(false)
   expect(r.wiki!.ok).toBe(true)
