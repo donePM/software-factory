@@ -71,7 +71,12 @@ expected load in the repo (one user with a script, or many users at once).
    sets; near-copies; code outside the spec scope; comments that restate the
    code; explanatory text (comments, docstrings, commit bodies, docs) that is
    not Simplified Technical English.
-6. **Commits:** run `git log --format='%H%n%B' <base>..HEAD` in the worktree.
+6. **Factory text:** only for the factory plugin. The diff adds or changes text
+   for people in a skill, in `pipeline.md`, or in a string in `lib/` or `hooks/`
+   (an error text, a `Fix:` line, a tool result, a comment or PR body). Check
+   it against `plugins/factory/ste.md`. Each broken rule is a `should` that
+   quotes the sentence and names the rule.
+7. **Commits:** run `git log --format='%H%n%B' <base>..HEAD` in the worktree.
    Each commit follows Conventional Commits 1.0.0:
    `<type>(<optional scope>): <summary>`, with a type from `feat`, `fix`,
    `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,

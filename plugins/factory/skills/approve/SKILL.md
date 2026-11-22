@@ -8,6 +8,7 @@ Plugin root: `${CLAUDE_PLUGIN_ROOT}`
 Number: $ARGUMENTS
 
 Use plain words. The user may not be a developer.
+Follow `${CLAUDE_PLUGIN_ROOT}/ste.md` for all text to the user.
 
 1. Call the tool `mcp__factory__approve` with `number` set to the number above.
 2. On success, say who approved and how:

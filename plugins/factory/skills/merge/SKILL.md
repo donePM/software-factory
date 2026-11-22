@@ -8,6 +8,7 @@ Plugin root: `${CLAUDE_PLUGIN_ROOT}`
 Number: $ARGUMENTS
 
 Use plain words. The user may not be a developer.
+Follow `${CLAUDE_PLUGIN_ROOT}/ste.md` for all text to the user.
 
 1. Say in one sentence: "This call is your approval: the factory will sync the branch, run the gate and merge the PR."
 2. Never call the tool `mcp__factory__merge` in this session. The gate can run a long time.
