@@ -7,6 +7,7 @@ import { doctor } from '../lib/doctor.ts'
 import { runGate } from '../lib/gate.ts'
 import { gateJob } from '../lib/gatejob.ts'
 import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
+import { withWaitNotify } from '../lib/notify.ts'
 import { STATUS, stateOf } from '../lib/labels.ts'
 import { githubTracker, repoFromUrl } from '../lib/github.ts'
 import { approve, merge } from '../lib/merge.ts'
@@ -39,9 +40,11 @@ function issueOf(input: { issue?: unknown }): number {
 // Runs a tool with a tracker that also updates the project board. Board problems come back as warnings.
 async function boarded(ctx: Ctx, run: (t: Tracker) => Promise<unknown>): Promise<unknown> {
   const cfg = await loadConfig(ctx)
-  const { tracker, warnings, save } = withBoard(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+  const waits = withWaitNotify(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+  const { tracker, warnings, save } = withBoard(ctx, waits.tracker, cfg)
   // The tool can write job.md after a label change: save the looked up board ids after it ends.
-  const out = await run(tracker).finally(save)
+  // A tool can set a waiting state and then throw: notify also then.
+  const out = await run(tracker).finally(save).finally(waits.flush)
   if (warnings.length === 0) return out
   // The tool can have its own warnings: keep them.
   const own = (out as { warnings?: unknown }).warnings
@@ -267,13 +270,22 @@ async function gateTool(ctx: Ctx, input: { issue?: unknown; round?: string }): P
 const DEFAULT_TIMEOUT_MS = 120000
 const MAX_TIMEOUT_MS = 600000
 
-// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep and fs.
+// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep, fs and ui.
 export async function makeCtx($: any): Promise<Ctx> {
   const root: string = await $.session.root()
   return {
     root,
     now: () => new Date(),
     sleep: ms => $.clock.sleep(ms),
+    // A failed toast does not stop the native notification.
+    notify: async text => {
+      try {
+        $.ui.toast(text)
+      } catch {}
+      try {
+        await $.ui.notify(text)
+      } catch {}
+    },
     run: (argv, opts) =>
       $.process.run(argv, {
         ...opts,
