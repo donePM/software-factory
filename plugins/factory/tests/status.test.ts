@@ -5,7 +5,7 @@ import { causeOf, statusFor, statusText } from '../lib/status.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import { withMarker } from '../lib/markers.ts'
 import type { Comment, Ticket } from '../lib/types.ts'
-import { itemList } from './support/board.ts'
+import { boardReplies, itemList } from './support/board.ts'
 import { fakeCtx } from './support/host.ts'
 
 const Q = (o: Partial<Queue> = {}): Queue => ({ running: [], waiting: [], ready: [], blocked: [], conflicts: [], slots: 0, next: [], ...o })
@@ -214,6 +214,27 @@ test('statusFor shows the board differences', async () => {
   expect(lines.slice(-3)).toEqual(['', 'Board differs from labels', '  #1 board says Review, label says build: move the card to Build'])
   const same = await statusFor(fakeCtx({ replies: [itemList([{ url: 'https://github.com/o/r/issues/1', factory: 'Build' }])] }), tr, cfg)
   expect(same).not.toContain('Board differs from labels')
+})
+
+test('statusFor moves a card that differs and shows no line for it', async () => {
+  const T = (n: number, label: string): Ticket => ({
+    kind: 'issue', number: n, title: `t${n}`, body: '', author: 'a', labels: ['factory', label],
+    state: 'open', createdAt: '2026-01-01T00:00:00Z', url: `https://github.com/o/r/issues/${n}`, comments: [],
+  })
+  const tr = {
+    repo: 'o/r',
+    login: async () => 'op',
+    backlog: async () => [T(1, 'factory:build'), T(2, 'factory:review')],
+    findPr: async () => null,
+  } as unknown as Tracker
+  const cfg = { ...defaultConfig('u', 'main', []), concurrency: 2, project: { enabled: true, number: 3 } }
+  const cards = itemList([{ url: 'https://github.com/o/r/issues/1', factory: 'Review' }, { url: 'https://github.com/o/r/issues/2', factory: 'Build' }])
+  const ctx = fakeCtx({ replies: [...boardReplies, cards] })
+  expect(await statusFor(ctx, tr, cfg)).not.toContain('Board differs from labels')
+  expect(ctx.calls.filter(c => c[2] === 'item-edit').map(c => c[4])).toEqual(['I0', 'I1'])
+  const limit = fakeCtx({ replies: [{ argv: ['gh', 'project', 'item-edit', '--id', 'I1'], result: { exitCode: 1, stderr: 'rate limit' } }, ...boardReplies, cards] })
+  const lines = (await statusFor(limit, tr, cfg)).split('\n')
+  expect(lines.slice(-3)).toEqual(['', 'Board differs from labels', '  #2 board says Build, label says review: move the card to Review'])
 })
 
 test('statusFor shows the round limit step', async () => {
