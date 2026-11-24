@@ -123,7 +123,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'queue',
     description:
-      'List the backlog: running, waiting, blocked and ready tickets, free slots and the next tickets to start. With issue, next holds only that issue, and an open issue without the factory label gets it. Only /factory:run <n> gives issue.',
+      'List the backlog: running, waiting, blocked and ready tickets, free slots and the next tickets to start. Running and waiting jobs come right to left on the board. Without issue, a job in approved or needs-human holds new issues: heldBy names these jobs, and next holds only needs-human jobs with unblocked: true. With issue, next holds only that issue, and an open issue without the factory label gets it. Only /factory:run <n> gives issue.',
     inputSchema: { type: 'object', properties: { issue: { type: 'integer', minimum: 1 } }, additionalProperties: false },
     handler: async (ctx, input) => {
       const n = input.issue === undefined ? undefined : issueOf(input)

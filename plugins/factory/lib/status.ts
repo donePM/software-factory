@@ -1,9 +1,9 @@
 import type { Config } from './config.ts'
 import { branchName } from './jobfile.ts'
-import { findMarked, stripMarker } from './markers.ts'
+import { stripMarker } from './markers.ts'
 import { boardDrift, listCards } from './project.ts'
 import type { CardReader, Cards } from './project.ts'
-import { queue } from './queue.ts'
+import { escalationOf, queue, rightToLeft, STOP, stopOf } from './queue.ts'
 import type { Queue } from './queue.ts'
 import type { Tracker } from './tracker.ts'
 import type { Comment, Ctx } from './types.ts'
@@ -11,16 +11,14 @@ import type { Comment, Ctx } from './types.ts'
 // merge is true only when a merge is a valid next step (an approver escalation).
 export type Cause = { reason: string; merge: boolean }
 
-const STOP = 'Factory stopped: '
 const firstLine = (text: string): string => (text.split(/\r\n|\r|\n/, 1)[0] ?? '').trim()
 
 // Only operator comments count: an issue author can post a fake stop comment.
 export function causeOf(comments: Comment[], operator: string): Cause | undefined {
-  const stop = comments.filter(c => c.author === operator && c.body.startsWith(STOP)).at(-1)
-  const decision = findMarked(comments, 'decision', operator)
-  const body = decision === undefined ? '' : stripMarker(decision.body)
-  if (decision !== undefined && /^DECISION: ESCALATE\s*$/m.test(body)
-    && (stop === undefined || Date.parse(decision.updatedAt) > Date.parse(stop.createdAt))) {
+  const stop = stopOf(comments, operator)
+  const decision = escalationOf(comments, operator)
+  if (decision !== undefined && (stop === undefined || Date.parse(decision.updatedAt) > Date.parse(stop.createdAt))) {
+    const body = stripMarker(decision.body)
     const question = /^## Question\s*$\s*^(.*\S.*)$/m.exec(body)?.[1]
     return { reason: `Approver escalated: ${firstLine(question ?? 'see the PR')}`, merge: true }
   }
@@ -57,7 +55,7 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
   if (q.blocked.length > 0) section(`Blocked (${q.blocked.length})`, q.blocked.map(i => `#${i.number} ${i.title}  waits for ${(i.blockedBy ?? []).map(d => `#${d}`).join(', ')}`))
   if (q.running.length > 0) section('Running', q.running.map(r => `${label(r.number, titles)}  ${r.state}`))
   const rows: string[] = []
-  for (const w of q.waiting) {
+  for (const w of [...q.waiting].sort(rightToLeft)) {
     const pr = prs[w.number]
     const link = pr === undefined || (w.state !== 'approved' && w.state !== 'needs-human') ? '' : ` (https://github.com/${repo}/pull/${pr})`
     rows.push(`${label(w.number, titles)}  ${hintOf(repo, w.number, w.state, causes[w.number], autoMerge, closed)}${link}`)
@@ -66,6 +64,8 @@ export function statusText(repo: string, q: Queue, prs: Record<number, number>, 
   if (rows.length > 0) section('Waiting for you', rows)
   if (q.running.length === 0 && q.ready.length === 0 && q.blocked.length === 0 && rows.length === 0) {
     lines.push('', 'Nothing to do. Add work with /factory:add <text>')
+  } else if (q.heldBy.length > 0 && q.ready.length > 0) {
+    lines.push('', `New issues wait for ${q.heldBy.map(n => `#${n}`).join(', ')}. Finish these jobs first.`)
   } else if (q.running.length === 0 && q.ready.length > 0) {
     lines.push('', 'Start the ready work with /factory:run')
   }
@@ -87,7 +87,14 @@ export type StatusData = {
 export async function statusData(ctx: Ctx, base: Tracker, cfg: Config): Promise<StatusData> {
   // The queue and the board check share one backlog read and one card read.
   const backlog = base.backlog()
-  const tr: Tracker = { ...base, backlog: () => backlog }
+  // The queue and the cause lookup share one read of each needs-human ticket.
+  const gets = new Map<number, ReturnType<Tracker['get']>>()
+  const get = (n: number): ReturnType<Tracker['get']> => {
+    let p = gets.get(n)
+    if (p === undefined) gets.set(n, (p = base.get(n)))
+    return p
+  }
+  const tr: Tracker = { ...base, backlog: () => backlog, get }
   let cards: Promise<Cards> | undefined
   const read: CardReader = (owner, n) => (cards ??= listCards(ctx, owner, n))
   const q = await queue(ctx, tr, cfg, undefined, read)
