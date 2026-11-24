@@ -8,6 +8,7 @@ import type { Ctx, Reviewer } from './types.ts'
 
 export type JobRound = { round: number | null; reviewsDone: Reviewer[] }
 export type Snapshot = {
+  repo: string
   time: string
   slots: { used: number; total: number }
   ready: number
@@ -40,6 +41,7 @@ export function buildSnapshot(repo: string, cfg: { concurrency: number; merge: {
     }
   }
   return {
+    repo,
     time: now.toISOString(),
     slots: { used: d.q.running.length, total: cfg.concurrency },
     ready: d.q.ready.length,
