@@ -164,20 +164,37 @@ test('a missing tool without a requires entry says install <cmd>', async () => {
   expect(r.report).toContain('install sh')
 })
 
-const tsPlugin = (exitCode: number): ReturnType<typeof fakeCtx> =>
+const tsPlugin = (exitCode: number, stdout = '', stderr = 'engine types not found'): ReturnType<typeof fakeCtx> =>
   make({
     stacks: [{ id: 'claude-plugin', path: 'p' }],
     ls: 'p/.claude-plugin/plugin.json\np/tsconfig.json\n',
-    replies: [{ argv: ['sh', '-c'], result: { exitCode, stderr: 'engine types not found' } }],
+    replies: [{ argv: ['sh', '-c'], result: { exitCode, stdout, stderr } }],
   })
 
+test('a fallback to other engine types is noted with both versions', async () => {
+  const r = await runGate(tsPlugin(0, 'engine types: used 2.1.330, wanted 2.1.326\n', ''), { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('PASS')
+  expect(r.report).toContain(
+    '| 0 ms |\n\nEngine types: 2.1.330. Note: `claude --version` is 2.1.326, so the gate used the types of 2.1.330.\n',
+  )
+})
+
+test('checks.md names the engine types version', async () => {
+  const r = await runGate(tsPlugin(0, 'engine types: used 2.1.330, wanted 2.1.330\n', ''), { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('PASS')
+  expect(r.report).toContain('\n\nEngine types: 2.1.330.\n')
+  expect(r.report).not.toContain('Note:')
+})
+
 test('a missing engine types file is a host problem', async () => {
-  const r = await runGate(tsPlugin(69), { worktree: WT, round: 'setup' })
+  const r = await runGate(tsPlugin(69, '', 'engine types not found for 2.1.326, found: none: x\n'), { worktree: WT, round: 'setup' })
   expect(r.verdict).toBe('FAIL')
   expect(r.host).toEqual([
-    'typecheck (claude-plugin): engine types not found. Restart Claude Code so that the session runs the installed CLI version. Then open the plugin-authoring skill once.',
+    'typecheck (claude-plugin): engine types not found for 2.1.326. Found: none. Restart Claude Code so that the session runs the installed CLI version. Then open the plugin-authoring skill once.',
   ])
   expect(r.report).toContain(`## Host problem\n- ${r.host[0]}`)
+  const u = await runGate(tsPlugin(69), { worktree: WT, round: 'setup' })
+  expect(u.host[0]).toContain('engine types not found for unknown. Found: none.')
 })
 
 test('a tsc error is not a host problem', async () => {

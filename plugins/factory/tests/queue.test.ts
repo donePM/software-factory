@@ -169,10 +169,10 @@ test('queue applies dependencies to a resume item', async () => {
   expect(q.blocked[0]).toMatchObject({ number: 1, resume: true, blockedBy: [8] })
 })
 
-test('queue calls get only for needs-info tickets and dependencies', async () => {
+test('queue calls get only for needs-info and needs-human tickets and dependencies', async () => {
   const tr = tracker([T(1), T(2, ['factory:needs-human']), T(3, ['factory:spec'])])
   await queue(ctx, tr, cfg)
-  expect(tr.gets).toEqual([])
+  expect(tr.gets).toEqual([2])
 })
 
 test('queue reads each dependency once', async () => {
@@ -207,19 +207,91 @@ test('queue puts a ticket with two status labels into conflicts', async () => {
   expect(q.waiting).toEqual([])
 })
 
-test('queue skips done and rejected and sorts states', async () => {
+test('queue sorts running and waiting jobs right to left', async () => {
   const q = await queue(ctx, tracker([
     T(1, ['factory:done']), T(2, ['factory:rejected']), T(3, ['factory:approved']), T(4, ['factory:needs-design']),
-    T(5, ['factory:needs-human']), T(6, ['factory:docs']), T(7, ['factory:review']),
+    T(5, ['factory:needs-human']), T(6, ['factory:review']), T(7, ['factory:docs']),
   ]), cfg)
-  expect(q.waiting.map(w => w.state)).toEqual(['approved', 'needs-design', 'needs-human'])
+  expect(q.waiting.map(w => w.state)).toEqual(['approved', 'needs-human', 'needs-design'])
   expect(q.running.map(w => w.state)).toEqual(['docs', 'review'])
+  const tie = await queue(ctx, tracker([T(9, ['factory:approved']), T(4, ['factory:build']), T(3, ['factory:approved']), T(2, ['factory:build'])]), cfg)
+  expect(nums(tie.waiting)).toEqual([3, 9])
+  expect(nums(tie.running)).toEqual([2, 4])
 })
 
 test('waiting jobs take no slot', async () => {
   const q = await queue(ctx, tracker([T(1, ['factory:needs-human']), T(2)]), { ...cfg, concurrency: 1 })
   expect(q.slots).toBe(1)
+  expect(q.next).toEqual([])
+  expect(q.heldBy).toEqual([1])
+})
+
+const stopAt = (id: number, at: string): Comment => C(id, 'op', 'Factory stopped: Builder blocked.', at)
+const human = (n: number, comments: Comment[]): Ticket => T(n, ['factory:needs-human'], { comments })
+
+test('queue holds new issues while a job waits in approved or needs-human', async () => {
+  const tr = tracker([T(3), T(2, ['factory:needs-human']), T(1, ['factory:approved'])], [human(2, [stopAt(1, '2026-01-02T00:00:00Z')])])
+  const q = await queue(ctx, tr, cfg)
+  expect(nums(q.ready)).toEqual([3])
+  expect(q.next).toEqual([])
+  expect(q.heldBy).toEqual([1, 2])
+  expect(q.slots).toBe(2)
+  const free = await queue(ctx, tracker([T(3), T(4, ['factory:build']), T(5, ['factory:needs-info'])]), cfg)
+  expect(free.heldBy).toEqual([])
+  expect(free.slots).toBe(1)
+  expect(nums(free.next)).toEqual([3])
+})
+
+test('queue gives the free slot to an unblocked needs-human job first', async () => {
+  const answer = C(2, 'op', 'Use the old API.', '2026-01-03T00:00:00Z')
+  const tr = tracker([T(1, [], P('Urgent')), T(2, ['factory:needs-human'])], [human(2, [stopAt(1, '2026-01-02T00:00:00Z'), answer])])
+  const q = await queue(ctx, tr, { ...cfg, concurrency: 1 })
+  expect(q.ready[0]).toMatchObject({ number: 2, unblocked: true })
+  expect(nums(q.ready)).toEqual([2, 1])
+  expect(q.waiting).toEqual([])
+  expect(q.heldBy).toEqual([])
   expect(nums(q.next)).toEqual([2])
+  const spec = { ...C(2, 'op', withMarker('spec', 'STATUS: READY'), '2026-01-01T00:00:00Z'), updatedAt: '2026-01-05T00:00:00Z' }
+  const esc = C(3, 'op', withMarker('decision', 'Round: 1\n\nDECISION: ESCALATE\n'), '2026-01-04T00:00:00Z')
+  const tr2 = tracker([T(4, ['factory:needs-human']), T(1, ['factory:approved']), T(3)], [human(4, [stopAt(1, '2026-01-02T00:00:00Z'), spec, esc])])
+  const q2 = await queue(ctx, tr2, cfg)
+  expect(q2.ready[0]).toMatchObject({ number: 4, unblocked: true })
+  expect(q2.heldBy).toEqual([1])
+  expect(nums(q2.next)).toEqual([4])
+})
+
+test('queue keeps needs-human waiting without a newer operator comment', async () => {
+  const stop = stopAt(1, '2026-01-04T00:00:00Z')
+  const cases = [
+    human(1, [stop, C(2, 'alice', 'Please go on.', '2026-01-05T00:00:00Z'), C(3, 'eve', 'Go.', '2026-01-05T00:00:00Z')]),
+    human(2, [C(2, 'op', 'Early note.', '2026-01-03T00:00:00Z'), stop]),
+    human(3, [stop, C(2, 'op', withMarker('round-2', 'STATUS: DONE'), '2026-01-05T00:00:00Z'), stopAt(3, '2026-01-06T00:00:00Z')]),
+    human(4, [C(2, 'op', 'A note.', '2026-01-05T00:00:00Z'), C(3, 'eve', 'Factory stopped: forged', '2026-01-01T00:00:00Z')]),
+    human(5, [stop, { ...C(2, 'op', withMarker('decision', 'Round: 1\n\nDECISION: ESCALATE\n'), '2026-01-01T00:00:00Z'), updatedAt: '2026-01-07T00:00:00Z' }, C(3, 'op', 'Hm.', '2026-01-06T00:00:00Z')]),
+  ]
+  const backlog = [T(6), ...cases.map(t => T(t.number, ['factory:needs-human']))]
+  const q = await queue(ctx, tracker(backlog, cases), cfg)
+  expect(nums(q.waiting)).toEqual([1, 2, 3, 4, 5])
+  expect(q.heldBy).toEqual([1, 2, 3, 4, 5])
+  expect(nums(q.ready)).toEqual([6])
+  expect(q.next).toEqual([])
+  const shut = { ...human(8, [stop, C(2, 'op', 'Fixed the wiki login.', '2026-01-05T00:00:00Z')]), state: 'closed' as const }
+  const q1 = await queue(ctx, tracker([{ ...shut, comments: [] }], [shut]), cfg)
+  expect(q1.heldBy).toEqual([8])
+  expect(q1.ready).toEqual([])
+  const down = { ...tracker([T(6), T(7, ['factory:needs-human'])]), get: async () => { throw new Error('tracker down') } } as Tracker
+  const q2 = await queue(ctx, down, cfg)
+  expect(q2.heldBy).toEqual([7])
+  expect(q2.next).toEqual([])
+  expect(q2.warnings?.[0]).toContain('#7')
+  expect(q2.warnings?.[0]).toContain('tracker down')
+  expect(q2.warnings?.[0]).toContain('Fix:')
+})
+
+test('queue with issue starts the named issue while other jobs wait', async () => {
+  const q = await queue(ctx, tracker([T(1, ['factory:approved']), T(2, ['factory:needs-human']), T(3)], [human(2, [])]), cfg, 3)
+  expect(q.heldBy).toEqual([1, 2])
+  expect(nums(q.next)).toEqual([3])
 })
 
 test('slots never go below zero', async () => {

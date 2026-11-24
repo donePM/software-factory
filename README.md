@@ -84,6 +84,8 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 |---|---|
 | `/factory:setup` | Checks the tools, writes the config and the labels, runs a first gate check |
 | `/factory:add <todos> [--park]` | Turns free text into issues, one per piece of work, after you confirm. `--park` leaves off the `factory` label |
+| `/factory:plan <idea> [--park]` | Plans a product idea in slices and shows the plan. Answer "change" to give feedback, or "start" to create one issue for each slice without a possible duplicate. `--park` creates the issues without the `factory` label |
+| `/factory:audit [part]` | Audits the repo, or the folder `part`, and shows the numbered findings. Pick findings, for example "2 and 5" or "all must fix". Each picked finding without a duplicate becomes one issue |
 | `/factory:run [n]` | Starts the ready issues (or only issue `n`) and drives them to `approved` or `needs-human`. An open issue `n` without the `factory` label gets the label and starts |
 | `/factory:status` | Shows free slots and the ready, running, and waiting jobs, with the next command for each |
 | `/factory:approve <n>` | Records your approval on the PR (or as a comment when it is your own PR). Merges nothing |
@@ -96,10 +98,16 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 1. **Add work.** `/factory:add add a --json flag to the export command` creates
    an issue with the `factory` label. Or add the label to an existing issue.
    `Depends on #12` in the issue body holds it back until #12 is closed.
+   Name a priority, for example "make it urgent", and the new issue gets that `Priority` value.
 2. **Run.** `/factory:run` takes the ready issues bugs first, then by priority and age.
    The priority comes from the GitHub issue field `Priority`, not from labels:
    `Urgent`, `High`, `Medium`, and `Low` map to `critical`, `high`, `medium`, and `low`.
-   An issue without the field counts as `medium`. The
+   An issue without the field counts as `medium`.
+   The factory works from right to left on the board: it finishes the job nearest to `done` first.
+   A job in `approved` or `needs-human` holds new issues. `queue` names these jobs in `heldBy`,
+   and `/factory:status` shows their next human step. When you comment in a `needs-human` issue
+   after the stop, or change its spec, the job is unblocked. Then it gets the next free slot.
+   `/factory:run <n>` still starts issue `n`. The
    intake agent accepts the issue, asks the author questions (`needs-info`),
    or rejects it. The spec writer writes testable acceptance criteria. The
    builder works test-first in `.factory/worktrees/<n>` on branch `factory/<n>`.
@@ -184,7 +192,9 @@ The [setup guide](docs/setup.md#5-the-project-board-optional) shows the scope, t
   to `rtk git status`) can make factory agents lose Bash calls. The factory
   guard judges the command that the agent wrote. The hook then sends the new
   command to the permission check. A background factory agent cannot answer a
-  permission prompt, so the call fails. To prevent this, do one of these steps:
+  permission prompt, so the call fails. The reviewers then use the plain
+  `git -C` command and the `Read` and `Grep` tools. But only the two steps
+  below stop the failed calls. To prevent this, do one of these steps:
   - Make the hook skip input where `agent_type` starts with `factory:`.
   - Add an allow rule with a narrow prefix for the wrapper, for example
     `Bash(rtk git:*)`. Never allow `Bash(rtk:*)`: it also allows `rtk gh`.
@@ -219,7 +229,7 @@ plugins/factory/
   .claude-plugin/plugin.json
   pipeline.md                # the main session's event loop, read by /factory:run
   skills/{setup,add,run,status,approve,merge}/SKILL.md
-  agents/*.md                # intake, spec-writer, builder, 4 reviewers, approver, gate-runner, merger, documenter
+  agents/*.md                # intake, spec-writer, builder, 4 reviewers, approver, gate-runner, merger, documenter, planner, auditor
   hooks/tools.ts             # registers the mcp__factory__* tools
   lib/                       # tool logic, stacks, config migrations
   tests/                     # claude plugin test plugins/factory

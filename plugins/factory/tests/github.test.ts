@@ -256,6 +256,20 @@ test('createIssue sends the body on stdin', async () => {
   expect(JSON.parse(s.stdin!)).toEqual({ title: 'Title', body: 'Body', labels: ['factory', 'type:feat'] })
 })
 
+test('setPriority writes the option name to the Priority field', async () => {
+  const fields = [{ id: 7, name: 'Size' }, { id: 9, name: 'Priority', options: [{ id: 301, name: 'High' }] }].map(f => JSON.stringify(f)).join('\n')
+  const ctx = spyCtx([
+    { argv: ['gh', 'api', 'orgs/a/issue-fields'], result: { stdout: fields } },
+    { argv: ['gh', 'api', '-X', 'POST', 'repos/a/b/issues/12/issue-field-values'], result: { stdout: '{}' } },
+  ])
+  await githubTracker(ctx, 'a/b').setPriority(12, 'High')
+  expect(ctx.stdins.map(s => s.argv)).toEqual([
+    ['gh', 'api', 'orgs/a/issue-fields', '--paginate', '--jq', '.[]'],
+    ['gh', 'api', '-X', 'POST', 'repos/a/b/issues/12/issue-field-values', '--input', '-'],
+  ])
+  expect(JSON.parse(ctx.stdins[1]!.stdin!)).toEqual({ issue_field_values: [{ field_id: 9, value: 'High' }] })
+})
+
 const restPr = (o: Record<string, unknown> = {}) => ({
   number: 9, state: 'open', draft: true, title: 't', body: 'b', user: { login: 'op' }, node_id: 'PR_9',
   head: { ref: 'factory/5', sha: 'abc' }, merged_at: null, merge_commit_sha: 'test-merge', ...o,

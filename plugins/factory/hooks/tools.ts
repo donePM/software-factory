@@ -7,14 +7,17 @@ import { doctor } from '../lib/doctor.ts'
 import { runGate } from '../lib/gate.ts'
 import { gateJob } from '../lib/gatejob.ts'
 import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
+import { withWaitNotify } from '../lib/notify.ts'
 import { STATUS, stateOf } from '../lib/labels.ts'
-import { githubTracker, repoFromUrl } from '../lib/github.ts'
+import { githubTracker, PRIORITIES, repoFromUrl } from '../lib/github.ts'
 import { approve, merge } from '../lib/merge.ts'
+import { planCreate, planFeedback } from '../lib/plan.ts'
 import { addToBacklog, withBoard } from '../lib/project.ts'
 import { guardBash, guardMain } from '../lib/guard.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
-import { statusFor } from '../lib/status.ts'
+import { renderStatus, statusData } from '../lib/status.ts'
+import { refreshSnapshot, writeSnapshot } from '../lib/view.ts'
 import type { Tracker } from '../lib/tracker.ts'
 import type { Ctx, State } from '../lib/types.ts'
 
@@ -35,11 +38,13 @@ function issueOf(input: { issue?: unknown }): number {
 }
 
 // Runs a tool with a tracker that also updates the project board. Board problems come back as warnings.
-async function boarded(ctx: Ctx, run: (t: Tracker) => Promise<unknown>): Promise<unknown> {
+export async function boarded(ctx: Ctx, run: (t: Tracker) => Promise<unknown>): Promise<unknown> {
   const cfg = await loadConfig(ctx)
-  const { tracker, warnings, save } = withBoard(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+  const waits = withWaitNotify(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+  const { tracker, warnings, save } = withBoard(ctx, waits.tracker, cfg)
   // The tool can write job.md after a label change: save the looked up board ids after it ends.
-  const out = await run(tracker).finally(save)
+  // A tool can set a waiting state and then throw: notify also then.
+  const out = await run(tracker).finally(save).finally(waits.flush)
   if (warnings.length === 0) return out
   // The tool can have its own warnings: keep them.
   const own = (out as { warnings?: unknown }).warnings
@@ -118,7 +123,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'queue',
     description:
-      'List the backlog: running, waiting, blocked and ready tickets, free slots and the next tickets to start. With issue, next holds only that issue, and an open issue without the factory label gets it. Only /factory:run <n> gives issue.',
+      'List the backlog: running, waiting, blocked and ready tickets, free slots and the next tickets to start. Running and waiting jobs come right to left on the board. Without issue, a job in approved or needs-human holds new issues: heldBy names these jobs, and next holds only needs-human jobs with unblocked: true. With issue, next holds only that issue, and an open issue without the factory label gets it. Only /factory:run <n> gives issue.',
     inputSchema: { type: 'object', properties: { issue: { type: 'integer', minimum: 1 } }, additionalProperties: false },
     handler: async (ctx, input) => {
       const n = input.issue === undefined ? undefined : issueOf(input)
@@ -132,7 +137,11 @@ export const TOOLS: ToolDef[] = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     handler: async ctx => {
       const cfg = await loadConfig(ctx)
-      return statusFor(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+      const tr = githubTracker(ctx, repoFromUrl(cfg.tracker.url))
+      const d = await statusData(ctx, tr, cfg)
+      // A failed snapshot never fails the tool.
+      await writeSnapshot(ctx, tr.repo, cfg, d).catch(() => undefined)
+      return renderStatus(tr.repo, cfg, d)
     },
   },
   {
@@ -144,7 +153,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'issue_create',
     description:
-      'Create GitHub issues in order, each with the label factory (none when park is true). dependsOnRefs names the ref of an earlier item and becomes a Depends on line. Returns ref, number and url for each issue. With the board on, it adds a Backlog card for each issue. Board problems come back as warnings next to created. Creates nothing when the input is bad.',
+      'Create GitHub issues in order, each with the label factory (none when park is true). dependsOnRefs names the ref of an earlier item and becomes a Depends on line. Returns ref, number and url for each issue. priority sets the issue field Priority by its option name. With the board on, it adds a Backlog card for each issue. Priority and board problems come back as warnings next to created. Creates nothing when the input is bad.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -159,6 +168,7 @@ export const TOOLS: ToolDef[] = [
               dependsOn: { type: 'array', items: { type: 'integer', minimum: 1 } },
               ref: { type: 'string', minLength: 1 },
               dependsOnRefs: { type: 'array', items: { type: 'string' } },
+              priority: { type: 'string', enum: PRIORITIES },
             },
             required: ['title', 'body'],
             additionalProperties: false,
@@ -174,6 +184,23 @@ export const TOOLS: ToolDef[] = [
       const tracker = githubTracker(ctx, repoFromUrl(cfg.tracker.url))
       return issueCreate(tracker, input, ns => addToBacklog(ctx, tracker, cfg, ns))
     },
+  },
+  {
+    name: 'plan_create',
+    description: 'Write a product idea to idea.md in the next free plan folder .factory/plans/<n>. Returns planDir for factory:planner.',
+    inputSchema: { type: 'object', properties: { idea: { type: 'string', minLength: 1 } }, required: ['idea'], additionalProperties: false },
+    handler: (ctx, input) => planCreate(ctx, input),
+  },
+  {
+    name: 'plan_feedback',
+    description: 'Add the words of the operator as the next "## Feedback K" section to <planDir>/idea.md. Returns planDir and K.',
+    inputSchema: {
+      type: 'object',
+      properties: { planDir: { type: 'string', minLength: 1 }, feedback: { type: 'string', minLength: 1 } },
+      required: ['planDir', 'feedback'],
+      additionalProperties: false,
+    },
+    handler: (ctx, input) => planFeedback(ctx, input),
   },
   issueTool('job_create', 'Start a job: set the intake label, create the worktree from origin/<base>, write job.md and issue.md.', async (ctx, t, n) => {
     const job = await jobCreate(ctx, t, n)
@@ -244,13 +271,23 @@ async function gateTool(ctx: Ctx, input: { issue?: unknown; round?: string }): P
 const DEFAULT_TIMEOUT_MS = 120000
 const MAX_TIMEOUT_MS = 600000
 
-// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep and fs.
+// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep, fs and ui.
 export async function makeCtx($: any): Promise<Ctx> {
   const root: string = await $.session.root()
   return {
     root,
     now: () => new Date(),
     sleep: ms => $.clock.sleep(ms),
+    status: text => void Promise.resolve($.ui.status(text)).catch(() => undefined),
+    // A failed toast does not stop the native notification.
+    notify: async text => {
+      try {
+        $.ui.toast(text)
+      } catch {}
+      try {
+        await $.ui.notify(text)
+      } catch {}
+    },
     run: (argv, opts) =>
       $.process.run(argv, {
         ...opts,
@@ -267,6 +304,9 @@ export async function makeCtx($: any): Promise<Ctx> {
   }
 }
 
+// status writes its snapshot itself, from the data of its text.
+export const SNAPSHOT_TOOLS = ['job_create', 'job_advance', 'job_sync', 'merge', 'cleanup']
+
 export type ToolOutcome = { result: string } | { isError: true; result: string }
 
 export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<ToolOutcome> {
@@ -274,6 +314,9 @@ export async function invoke(def: ToolDef, ctx: Ctx, input: unknown): Promise<To
     const out = await def.handler(ctx, input)
     // Text results (status) go out as they are, not as a quoted JSON string.
     const result = typeof out === 'string' ? out : JSON.stringify(out, null, 2)
+    // shortcut: no snapshot after a failed tool, upgrade when the view shows stale state after an error
+    // A failed snapshot never fails the tool.
+    if (SNAPSHOT_TOOLS.includes(def.name)) await refreshSnapshot(ctx).catch(() => undefined)
     return { result }
   } catch (err) {
     if (err instanceof FactoryError) {

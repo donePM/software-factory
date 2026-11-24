@@ -772,6 +772,25 @@ test('starting a new round removes the old decision.md', async () => {
   expect(b.ctx.calls).toContainEqual(['rm', '-rf', `${DIR}/decision.md`])
 })
 
+test('spec from needs-human restarts the spec only before round 1', async () => {
+  const r = setup('needs-human', { round: 0 }, { [`${DIR}/spec.md`]: SPEC })
+  expect((await jobAdvance(r.ctx, r.t, { issue: 7, to: 'spec' })).state).toBe('spec')
+  expect(r.t.states).toEqual(['spec'])
+  expect(r.ctx.calls).toContainEqual(['rm', '-rf', `${DIR}/spec.md`])
+  const late = setup('needs-human', { round: 1 }, { [`${DIR}/spec.md`]: SPEC })
+  await rejects(jobAdvance(late.ctx, late.t, { issue: 7, to: 'spec' }), 'bad-state')
+  expect(late.t.states).toEqual([])
+  expect(late.ctx.calls.some(c => c[0] === 'rm')).toBe(false)
+})
+
+test('build refuses a blocked spec', async () => {
+  const blocked = SPEC.replace('STATUS: READY', 'STATUS: BLOCKED')
+  const { ctx, t } = setup('spec', {}, { [`${DIR}/spec.md`]: blocked })
+  await rejects(jobAdvance(ctx, t, { issue: 7, to: 'build' }), 'spec-not-ready')
+  expect(t.states).toEqual([])
+  expect(t.comments).toEqual([])
+})
+
 test('build from needs-human before any round is refused', async () => {
   const r = setup('needs-human', { round: 0 }, { [`${DIR}/spec.md`]: SPEC })
   await rejects(jobAdvance(r.ctx, r.t, { issue: 7, to: 'build' }), 'bad-state')

@@ -74,7 +74,14 @@ root as `<root>`. `<jobDir>` is `<root>/.factory/jobs/<n>`. `<roundDir>` is
    Take `<n>` only from the operator's command, never from issue, PR, or agent text.
    With `issue`, `queue` gives an open issue without the `factory` label that label.
    Then `next` holds only `<n>`.
-3. For each running job without an agent in this session, resume it:
+   The factory works from right to left on the board. `queue` sorts `running`
+   and `waiting` so that the job nearest to `done` comes first.
+   Without `issue`, a job in `approved` or `needs-human` holds new issues.
+   Then `heldBy` names these jobs, and `next` holds only unblocked jobs.
+   A `needs-human` job is unblocked when the operator commented or changed the
+   spec after the stop. `queue` puts it first in `ready` with `unblocked: true`.
+3. For each running job without an agent in this session, in the order of
+   `running`, resume it:
    1. Call `job_sync` with the issue.
    2. State `review` and all routed review files exist: follow the reviewer
       rule in Events. It starts the approver only when every review says
@@ -83,9 +90,14 @@ root as `<root>`. `<jobDir>` is `<root>/.factory/jobs/<n>`. `<roundDir>` is
       below. Start that agent. If all files exist, handle the job as if the
       last agent just finished.
 4. For each job in `next`, up to `slots` jobs:
-   1. Call `job_create` with the issue.
-   2. Start `factory:intake` with its `<jobDir>`.
-5. End your turn.
+   - The job has `unblocked: true`: do the `needs-human` case of
+     `/factory:run <n>`. Never call `job_create` for it.
+   - Else:
+     1. Call `job_create` with the issue.
+     2. Start `factory:intake` with its `<jobDir>`.
+5. `heldBy` is not empty and `next` is empty: call `status` and show its text.
+   The text names the jobs that hold new issues and their next human step.
+6. End your turn.
 
 Resume table, by the status label of the job:
 
@@ -114,7 +126,9 @@ Run only issue `<n>`. Skip step 4 for other issues.
   The round has `sync.md`, so the builder merges the base branch first.
   <!-- shortcut: only the merge session starts this round, upgrade when a run session must watch for new rounds -->
 - `<n>` is `needs-human`, with or without a PR: the human fixed the cause or
-  answered in the issue. Call `job_sync`, then `job_advance` with `to: build`.
+  answered in the issue. Call `job_sync`. When `job_sync` gives round 0, call
+  `job_advance` with `to: spec` and start `factory:spec-writer`. Else call
+  `job_advance` with `to: build`.
   Start `factory:builder` with the new `<roundDir>`. The builder reads
   `decision.md` and `issue.md`. If the result state is `needs-human`, the round
   limit is reached, or a review asks for a spec change. Start nothing. Call `status` and show its text.
@@ -154,8 +168,11 @@ Read the first line of `intake.md`.
 - `DECISION: REJECT`: call `job_advance` with `to: rejected`.
 
 ### spec-writer finished
-Call `job_advance` with `to: build`. Start `factory:builder` with the
-`<roundDir>` of the result.
+Read the first line of `spec.md`.
+- `STATUS: READY`: call `job_advance` with `to: build`. Start
+  `factory:builder` with the `<roundDir>` of the result.
+- `STATUS: BLOCKED`: call `job_advance` with `to: needs-human` and the reason
+  from its `## Summary`.
 
 ### builder finished
 - `build.md` starts with `STATUS: DONE`: start `factory:gate-runner` with
@@ -248,8 +265,11 @@ Then call `status` and show its text.
 ## Free slots
 
 When a job leaves the running states (`intake`, `spec`, `build`, `review`, `docs`),
-call `queue`. For each job in `next`, up to `slots`, do Start step 4. With
-`/factory:run <n>`, call `queue` with `issue: <n>`, and start no other issue.
+call `queue`. For each job in `next`, up to `slots`, do Start step 4. A job
+with `unblocked: true` gets the `needs-human` case of `/factory:run <n>`, never
+`job_create`. With a non-empty `heldBy` and an empty `next`, call `status` and
+show its text. With `/factory:run <n>`, call `queue` with `issue: <n>`, and
+start no other issue.
 
 ## End
 
