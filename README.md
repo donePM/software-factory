@@ -129,9 +129,12 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
    factory sets the issue to `done` and removes the worktree, the merged
    branch, and the job folder. Work that is not saved stays and is reported.
 7. **Docs.** With `docs.target` set to `wiki`, the merge sets the issue to
-   `docs`, not `done`. The documenter agent writes one wiki page into
-   `<jobDir>/docs.md`. The factory pushes it as the wiki page `Issue-<n>` and
-   posts the link and the full `docs.md` text in a `<!-- factory:docs -->` comment.
+   `docs`, not `done`. The wiki has one page for each feature, and `Home.md`
+   links all feature pages. The documenter agent reads a clone of the wiki.
+   It writes the full new text of each feature page that the change touches,
+   and of `Home.md`, into `<jobDir>/docs.md`. The factory pushes these pages
+   in one commit. It deletes the old `Issue-<digits>.md` pages. It posts the
+   links of the pages and the full `docs.md` text in a `<!-- factory:docs -->` comment.
    With this comment, `job_sync` rebuilds `docs.md` on another machine.
    Then it sets `done` and cleans up. A failed wiki push sets `needs-human`. The merge stays.
    `/factory:status` shows the closed job. Fix the cause. Then run

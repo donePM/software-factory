@@ -81,10 +81,12 @@ This loads the branch code in that process only.
   The auditor reads the repo, or one folder of it, and writes
   `.factory/audit/audit.md` with ranked findings. `/factory:audit [part]` starts it.
   Only the findings that the operator picks become issues through `issue_create`.
-  With `docs.target: wiki`, the merge sets `docs`. The documenter
-  writes `docs.md`. `job_advance` with `to: done` pushes the wiki page, posts
-  the `<!-- factory:docs -->` comment with the link and the `docs.md` text, and sets `done`.
-  It also pushes the pages in `docs/wiki/` of the job worktree, for example `Home.md`.
+  With `docs.target: wiki`, the merge sets `docs`. `job_sync` clones
+  the wiki into `<jobDir>/wiki`. The documenter reads it and writes `docs.md` with
+  one `## Page <Name>.md` section for each changed feature page, and `Home.md` as the index.
+  `job_advance` with `to: done` pushes these pages in one commit, deletes the old
+  `Issue-<digits>.md` pages, posts the `<!-- factory:docs -->` comment with the page
+  links and the `docs.md` text, and sets `done`.
   Models and tools are set in their frontmatter; reviewer models come from
   `## Route` in `job.md`.
 - Skills (`/factory:setup|add|plan|audit|run|status|approve|merge`) are thin entry points.
