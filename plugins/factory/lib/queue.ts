@@ -154,16 +154,18 @@ export async function queue(ctx: Ctx, tr: Tracker, cfg: Config, issue?: number, 
   // shortcut: one get with comments for each distinct dependency, upgrade to a get without comments when the backlog has many dependencies
   const deps = new Map<number, Promise<boolean | string>>()
   const depWarnings: string[] = []
-  const isOpen = async (n: number, self: number): Promise<boolean> => {
+  const blocks = async (n: number, self: number): Promise<boolean> => {
     if (n === self) return true
     let p = deps.get(n)
     if (p === undefined) {
-      p = tr.get(n).then(d => d.state !== 'closed', messageOf)
+      // A dependency is done only with factory:done, or when it is closed as completed and not rejected.
+      p = tr.get(n).then(d => !(d.labels.includes('factory:done') ||
+        (d.state === 'closed' && d.stateReason === 'completed' && !d.labels.includes('factory:rejected'))), messageOf)
       deps.set(n, p)
     }
     const v = await p
     if (typeof v === 'boolean') return v
-    // Fail closed: a dependency that cannot be read counts as open.
+    // Fail closed: a dependency that cannot be read blocks.
     depWarnings.push(`#${self} waits for #${n}. The factory cannot read #${n}: ${v} Fix: Make sure that #${n} exists. Then run /factory:run again.`)
     return true
   }
@@ -209,7 +211,7 @@ export async function queue(ctx: Ctx, tr: Tracker, cfg: Config, issue?: number, 
       }
     }
     const blockers: number[] = []
-    for (const d of dependsOn(t.body)) if (await isOpen(d, t.number)) blockers.push(d)
+    for (const d of dependsOn(t.body)) if (await blocks(d, t.number)) blockers.push(d)
     if (blockers.length > 0) item.blockedBy = blockers
     const bug = t.labels.some(l => BUG_LABELS.includes(l))
     candidates.push({ item, rank: (bug ? 0 : ORDER.length) + ORDER.indexOf(item.priority as (typeof ORDER)[number]) })

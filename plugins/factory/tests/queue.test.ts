@@ -119,9 +119,37 @@ test('queue blocks on an unknown dependency and on a self-dependency', async () 
 })
 
 test('queue lists only open dependencies in blockedBy', async () => {
-  const closed = T(4, [], { state: 'closed' })
+  const closed = T(4, [], { state: 'closed', stateReason: 'completed' })
   const q = await queue(ctx, tracker([T(1, [], { body: 'Depends on #4, #5' }), T(5)], [closed]), cfg)
   expect(q.blocked[0]?.blockedBy).toEqual([5])
+})
+
+test('queue blocks a ticket whose dependency is closed as not planned', async () => {
+  const q = await queue(ctx, tracker([T(1, [], { body: 'Depends on #4' })], [T(4, [], { state: 'closed', stateReason: 'not_planned' })]), cfg)
+  expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[1, [4]]])
+  expect(q.ready).toEqual([])
+})
+
+test('queue blocks a ticket whose dependency is rejected', async () => {
+  const q = await queue(ctx, tracker([T(1, [], { body: 'Depends on #4' })], [T(4, ['factory:rejected'], { state: 'closed', stateReason: 'completed' })]), cfg)
+  expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[1, [4]]])
+  expect(q.ready).toEqual([])
+})
+
+test('queue blocks a ticket whose dependency is closed without completed', async () => {
+  const q = await queue(ctx, tracker([T(1, [], { body: 'Depends on #4' }), T(2, [], { body: 'Depends on #5' })], [
+    T(4, [], { state: 'closed' }), T(5, [], { state: 'closed', stateReason: 'duplicate' }),
+  ]), cfg)
+  expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[1, [4]], [2, [5]]])
+  expect(q.ready).toEqual([])
+})
+
+test('queue frees a ticket whose dependency is completed or done', async () => {
+  const q = await queue(ctx, tracker([T(1, [], { body: 'Depends on #4' }), T(2, [], { body: 'Depends on #5' })], [
+    T(4, [], { state: 'closed', stateReason: 'completed' }), T(5, ['factory:done'], { state: 'closed', stateReason: 'not_planned' }),
+  ]), cfg)
+  expect(nums(q.ready)).toEqual([1, 2])
+  expect(q.blocked).toEqual([])
 })
 
 const marked = C(1, 'op', withMarker('intake', 'Which db?'), '2026-01-02T00:00:00Z')
@@ -176,7 +204,7 @@ test('queue calls get only for needs-info and needs-human tickets and dependenci
 })
 
 test('queue reads each dependency once', async () => {
-  const tr = tracker([T(1, [], { body: 'Depends on #3, #4' }), T(2, [], { body: 'Depends on #3' }), T(3)], [T(4, [], { state: 'closed' })])
+  const tr = tracker([T(1, [], { body: 'Depends on #3, #4' }), T(2, [], { body: 'Depends on #3' }), T(3)], [T(4, [], { state: 'closed', stateReason: 'completed' })])
   const q = await queue(ctx, tr, cfg)
   expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[1, [3]], [2, [3]]])
   expect(tr.gets).toEqual([3, 4])
