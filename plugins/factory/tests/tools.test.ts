@@ -5,7 +5,7 @@ import { invoke, makeCtx, serve, TOOLS, type ToolDef } from '../hooks/tools.ts'
 import { renderJob } from '../lib/jobfile.ts'
 import { fakeCtx, fakeHost, type Reply } from './support/host.ts'
 
-export const EXPECTED: string[] = ['approve', 'cleanup', 'doctor', 'gate', 'issue_create', 'issue_search', 'job_advance', 'job_create', 'job_sync', 'merge', 'migrate', 'plan_create', 'plan_feedback', 'queue', 'setup', 'status']
+export const EXPECTED: string[] = ['approve', 'cleanup', 'doctor', 'gate', 'issue_comment', 'issue_create', 'issue_search', 'job_advance', 'job_create', 'job_sync', 'merge', 'migrate', 'plan_create', 'plan_feedback', 'queue', 'setup', 'status']
 
 test('registers exactly the expected tools undeferred', async ($, on) => {
   const { registered } = fakeHost(on)

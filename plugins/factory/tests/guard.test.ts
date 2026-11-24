@@ -135,6 +135,16 @@ test('the main session cannot run Bash after /factory:run', async ($, on) => {
   expect(ran).toEqual([])
 })
 
+for (const command of ['factory:feedback', 'factory:answer']) {
+  test(`the main session cannot run Bash after /factory:feedback or /factory:answer (${command})`, async ($, on) => {
+    const ran = runHost(on)
+    await $.command.run({ command } as never)
+    const r = await $.tool.call({ tool: 'Bash', command: 'ls' })
+    expect((r as { deny?: string }).deny).toContain('main session')
+    expect(ran).toEqual([])
+  })
+}
+
 test('the main session runs Bash when no factory run started', async ($, on) => {
   const ran = runHost(on)
   await $.tool.call({ tool: 'Bash', command: 'ls' })

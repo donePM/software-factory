@@ -87,6 +87,8 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 | `/factory:plan <idea> [--park]` | Plans a product idea in slices and shows the plan. Answer "change" to give feedback, or "start" to create one issue for each slice without a possible duplicate. `--park` creates the issues without the `factory` label |
 | `/factory:audit [part]` | Audits the repo, or the folder `part`, and shows the numbered findings. Pick findings, for example "2 and 5" or "all must fix". Each picked finding without a duplicate becomes one issue |
 | `/factory:run [n]` | Starts the ready issues (or only issue `n`) and drives them to `approved` or `needs-human`. An open issue `n` without the `factory` label gets the label and starts |
+| `/factory:feedback <n> <text>` | Posts your text as a comment on the `needs-human` job `n`. Then it runs the job as `/factory:run <n>` |
+| `/factory:answer <n> <text>` | Posts your answer as a comment on the `needs-info` job `n`. Then it runs the job as `/factory:run <n>` |
 | `/factory:status` | Shows free slots and the ready, running, and waiting jobs, with the next command for each |
 | `/factory:approve <n>` | Records your approval on the PR (or as a comment when it is your own PR). Merges nothing |
 | `/factory:merge <n>` | Syncs the branch with the base branch, runs the gate, and merges the PR. This call is your approval |

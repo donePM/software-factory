@@ -78,7 +78,7 @@ This loads the branch code in that process only.
 - `plugins/factory/pipeline.md` is the main session's event loop. `/factory:run`
   reads it. The main session starts agents in the background, reacts to their
   notifications, and calls only short tools (`cleanup`, `queue`, `job_create`,
-  `job_sync`, `job_advance`, `status`, `approve`).
+  `job_sync`, `job_advance`, `status`, `approve`, `issue_comment`).
 - `plugins/factory/agents/*.md`: `intake`, `spec-writer`, `builder`, the
   `code|security|ux|ui` reviewers, `approver`, `gate-runner`, `merger`,
   `documenter`, `planner`, and `auditor`. The planner reads `<planDir>/idea.md` and writes
@@ -96,7 +96,7 @@ This loads the branch code in that process only.
   links and the `docs.md` text, and sets `done`.
   Models and tools are set in their frontmatter; reviewer models come from
   `## Route` in `job.md`.
-- Skills (`/factory:setup|add|plan|audit|run|status|approve|merge|reject`) are thin entry points.
+- Skills (`/factory:setup|add|plan|audit|run|feedback|answer|status|approve|merge|reject`) are thin entry points.
   Each passes `${CLAUDE_PLUGIN_ROOT}`.
 - Local working copy: `.factory/jobs/<n>/` (`job.md`, `issue.md`, `intake.md`, `running.md`,
   `spec.md`, `round-N/`, `decision.md`, `docs.md`) and `.factory/worktrees/<n>/`. Both are

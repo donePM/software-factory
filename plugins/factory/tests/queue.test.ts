@@ -162,11 +162,15 @@ test('queue resumes needs-info after an author answer', async () => {
   expect(q.waiting).toEqual([])
 })
 
-test('queue does not resume needs-info on an operator note', async () => {
-  const full = T(1, ['factory:needs-info'], { comments: [marked, C(2, 'op', 'note', '2026-01-03T00:00:00Z')] })
-  const q = await queue(ctx, tracker([T(1, ['factory:needs-info'])], [full]), cfg)
-  expect(q.ready).toEqual([])
-  expect(q.waiting).toEqual([{ number: 1, state: 'needs-info' }])
+test('queue resumes needs-info after an operator answer, not after a stop or marker comment', async () => {
+  const answer = T(1, ['factory:needs-info'], { comments: [marked, C(2, 'op', 'Postgres', '2026-01-03T00:00:00Z')] })
+  const stop = T(2, ['factory:needs-info'], { comments: [marked, C(3, 'op', 'Factory stopped: x', '2026-01-03T00:00:00Z')] })
+  const mark = T(3, ['factory:needs-info'], { comments: [marked, C(4, 'op', withMarker('spec', 'x'), '2026-01-03T00:00:00Z')] })
+  const old = T(4, ['factory:needs-info'], { comments: [marked, C(5, 'op', 'early', '2026-01-01T00:00:00Z')] })
+  const backlog = [1, 2, 3, 4].map(n => T(n, ['factory:needs-info']))
+  const q = await queue(ctx, tracker(backlog, [answer, stop, mark, old]), cfg)
+  expect(q.ready).toEqual([expect.objectContaining({ number: 1, resume: true })])
+  expect(nums(q.waiting)).toEqual([2, 3, 4])
 })
 
 test('queue keeps needs-info waiting without an intake marker, or when the answer is older', async () => {

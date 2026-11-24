@@ -2,6 +2,7 @@ import type { EngineInterface, Register, RenderElement, UiPressArgument } from '
 import { FactoryError } from '../lib/exec.ts'
 import { issueCreate, issueSearch } from '../lib/add.ts'
 import { cleanupJob, sweep } from '../lib/cleanup.ts'
+import { issueComment } from '../lib/comment.ts'
 import { configPath, loadConfig, migrate } from '../lib/config.ts'
 import { doctor } from '../lib/doctor.ts'
 import { runGate } from '../lib/gate.ts'
@@ -189,6 +190,19 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'issue_comment',
+    description:
+      'Post the text as one operator comment on a job in the state needs-human or needs-info. Refuses another state, an empty text, and a text that looks like a factory comment. Only the human calls it, through /factory:feedback or /factory:answer.',
+    inputSchema: {
+      type: 'object',
+      properties: { issue: { type: 'integer', minimum: 1 }, text: { type: 'string' }, state: { type: 'string', enum: ['needs-human', 'needs-info'] } },
+      required: ['issue', 'text', 'state'],
+      additionalProperties: false,
+    },
+    handler: async (ctx, input) =>
+      issueComment(githubTracker(ctx, repoFromUrl((await loadConfig(ctx)).tracker.url)), { issue: issueOf(input), text: input.text, state: input.state }),
+  },
+  {
     name: 'plan_create',
     description: 'Write a product idea to idea.md in the next free plan folder .factory/plans/<n>. Returns planDir for factory:planner.',
     inputSchema: { type: 'object', properties: { idea: { type: 'string', minLength: 1 } }, required: ['idea'], additionalProperties: false },
@@ -350,10 +364,12 @@ export const register: Register = on => {
   // shortcut: the flag stays until the session ends, upgrade when an end event of the run exists.
   let running = false
   let pinned = false
-  on('command.run', { command: 'factory:run' }, async (_$, e, next) => {
-    running = true
-    return next(e)
-  })
+  for (const command of ['factory:run', 'factory:feedback', 'factory:answer']) {
+    on('command.run', { command }, async (_$, e, next) => {
+      running = true
+      return next(e)
+    })
+  }
   on('session.start', async ($, e, next) => {
     for (const t of TOOLS) {
       await $.tool.register({ name: t.name, description: t.description, inputSchema: t.inputSchema, isDeferred: false })
