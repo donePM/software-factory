@@ -19,6 +19,7 @@ claude plugin validate .                          # marketplace manifest
 claude plugin validate plugins/factory            # plugin manifest and mod
 claude plugin test plugins/factory                # mod tests (tests/*.test.ts)
 tsc -p plugins/factory                            # type check against the engine types
+node plugins/factory/scripts/texts.ts             # write tests/generated/texts.ts (--check only compares)
 claude --plugin-dir plugins/factory               # load the plugin without installing (never while the factory runs on this repo)
 ```
 
@@ -27,7 +28,12 @@ claude --plugin-dir plugins/factory               # load the plugin without inst
 `plugin-authoring/types/claude-code.d.ts` there).
 In a job worktree, `job_create` and `job_sync` write these types, as the gate does.
 
-CI (`.github/workflows/checks.yml`) runs the four check commands on each PR and
+Plugin tests have no fs. So tests of agent text import `tests/generated/texts.ts`,
+which holds the text of each agent, skill, and `pipeline.md` file. The file is committed.
+After a change to one of these files, run the generator and commit its output.
+The gate and CI fail when the file differs from the text files.
+
+CI (`.github/workflows/checks.yml`) runs the four check commands and the texts check on each PR and
 each push to `main`. It reads the types from `.github/types/claude-code.d.ts`.
 To update, copy the bundled file of a new CLI version to that path. In the same
 commit, set that CLI version in the `npm install -g` step of the workflow.
@@ -139,8 +145,8 @@ This loads the branch code in that process only.
 - The `## Code first` section is the same in nine agents: `intake`, `spec-writer`, `builder`,
   the `code|security|ux|ui` reviewers, `approver`, and `planner`: change it in all places. The new-code
   rule lives in `agents/builder.md` and `agents/code-reviewer.md`: change them in both places.
-- The `## Bash` section is the same in the four `code|security|ux|ui` reviewers
-  and in `REVIEW_BASH` of `tests/agents.test.ts`: change it in all places.
+- The `## Bash` section is the same in the four `code|security|ux|ui` reviewers:
+  change it in all places. `tests/agents.test.ts` reads it from the generated texts module.
 - `plugins/factory/ste.md` holds the STE rules for text for people. The
   language block of each agent repeats these rules: change them in both places.
 - Lean rules (option ladder, `shortcut:` comments, "no case, no finding") appear

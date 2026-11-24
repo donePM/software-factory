@@ -4,6 +4,7 @@ import { FactoryError } from './exec.ts'
 import { TYPES_FIX, TYPES_MISSING_EXIT } from './stacks/claude-plugin.ts'
 import { detectAll, resolveSteps, STACKS } from './stacks/index.ts'
 import type { Detection, ReadFile, Step, StepName } from './stacks/types.ts'
+import { renderTexts, TEXTS_MODULE, TEXTS_SCRIPT } from './texts.ts'
 import type { Ctx } from './types.ts'
 
 export type GateInput = { worktree: string; round: string; base?: string; prTitle?: string; jobDir?: string }
@@ -126,6 +127,20 @@ function fixFor(step: Step, ds: Detection[], wt: string): string {
   return `install ${step.argv[0]}`
 }
 
+// A plugin that commits the texts module gets it checked before its tests run: a stale module tests old text.
+async function staleTexts(ctx: Ctx, wt: string, ds: Detection[]): Promise<string[]> {
+  const out: string[] = []
+  for (const d of ds.filter(x => x.stack === 'claude-plugin' && x.variant === 'plugin')) {
+    const dir = d.path === '.' ? wt : `${wt}/${d.path}`
+    const file = `${dir}/${TEXTS_MODULE}`
+    if (!(await ctx.fs.exists(file))) continue
+    if ((await ctx.fs.read(file)) !== (await renderTexts(ctx.fs, dir))) {
+      out.push(`${at(d.path, TEXTS_MODULE)} differs from the agent, skill, and pipeline files. Run \`node ${at(d.path, TEXTS_SCRIPT)}\` and commit the file.`)
+    }
+  }
+  return out
+}
+
 const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, ' ')
 
 export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
@@ -147,6 +162,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   }
   const missingStacks = refs.filter(r => !all.some(d => d.stack === r.id && d.path === r.path)).map(r => `${r.id} ${r.path}`)
   const planned = planGate(await resolveSteps(ctx, wt, read, refs, ds), ds)
+  const stale = await staleTexts(ctx, wt, ds)
 
   const steps: StepResult[] = []
   const outputs: string[] = []
@@ -190,7 +206,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   const red = steps.filter(s => s.exitCode !== 0)
   // A job gate needs the configured stacks: with none, a branch could drop a stack and its checks.
   const noStacks = input.jobDir !== undefined && refs.length === 0
-  const verdict = red.length + commits.length + prot.length + dirty.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null || noStacks ? 'FAIL' : 'PASS'
+  const verdict = red.length + stale.length + commits.length + prot.length + dirty.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null || noStacks ? 'FAIL' : 'PASS'
 
   const lines: string[] = [`VERDICT: ${verdict}`, '', '## Summary', '']
   lines.push(`${steps.length - red.length} of ${steps.length} steps passed. Round: ${input.round}.`, '')
@@ -199,6 +215,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   if (engine.length > 0) lines.push('', ...engine)
   for (const s of red.filter(x => x.exitCode === 127)) lines.push('', `Missing tool for ${s.name}: ${fixFor(s, ds, wt)}`)
   if (host.length > 0) lines.push('', '## Host problem', ...host.map(h => `- ${h}`))
+  if (stale.length > 0) lines.push('', '## Generated files', ...stale.map(s => `- ${s}`))
   if (commits.length > 0) {
     lines.push('', '## Commits')
     for (const c of commits) lines.push(`- ${c.sha.slice(0, 12)}: ${c.problem}`)
