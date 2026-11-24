@@ -18,6 +18,8 @@ export type Config = {
   routing: Record<'low' | 'medium' | 'high', Models>
   surfaces: Record<string, Models>
   protectedPaths: string[]
+  // Shell commands that the gate runs in the worktree after the stack steps.
+  checks?: string[]
   project?: { enabled: boolean; number?: number }
   language?: string
   docs?: { target: 'docs' | 'wiki'; path?: string }
@@ -121,6 +123,7 @@ export function validateConfig(x: unknown): string[] {
   if (!isObj(x.surfaces)) errs.push('surfaces must be an object')
   else for (const [k, v] of Object.entries(x.surfaces)) checkModels(errs, `surfaces.${k}`, v)
   if (!isStrings(x.protectedPaths)) errs.push('protectedPaths must be an array of strings')
+  if (x.checks !== undefined && (!isStrings(x.checks) || x.checks.includes(''))) errs.push('checks must be an array of non-empty strings')
   if (x.project !== undefined) {
     if (!isObj(x.project)) errs.push('project must be an object')
     else {

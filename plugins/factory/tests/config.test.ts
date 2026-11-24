@@ -140,3 +140,13 @@ test('loads a config without docs', async () => {
   expect(c.docs).toBeUndefined()
   expect(CONFIG_VERSION).toBe(1)
 })
+
+test('validateConfig checks the custom checks', () => {
+  const c = defaultConfig(url, 'main', [])
+  expect(c).not.toHaveProperty('checks')
+  expect(validateConfig({ ...c, checks: [] })).toEqual([])
+  expect(validateConfig({ ...c, checks: ['sh scripts/check.sh', 'npm run e2e'] })).toEqual([])
+  for (const checks of ['npm test', {}, null, [3], ['ok', ''], [['x']]]) {
+    expect(validateConfig({ ...c, checks })).toEqual(['checks must be an array of non-empty strings'])
+  }
+})

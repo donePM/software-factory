@@ -283,7 +283,7 @@ und vom Operator.
 ```
 .factory/
   config.json          versioniert: Tracker, Parallelität, Routing, Doku, Stacks
-  checks.local.ts      optional, versioniert: eigene Zusatz-Checks
+  checks.local.ts      entfällt: eigene Zusatz-Checks stehen in config.json unter "checks"
   .gitignore           ignoriert alles unten
   jobs/<id>/           Arbeitskopie eines laufenden Jobs (wird am Ende gelöscht)
   worktrees/<id>/      Worktree auf factory/<id> (wird am Ende gelöscht)

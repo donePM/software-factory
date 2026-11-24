@@ -66,6 +66,7 @@ The settings are in `.factory/config.json`. Change them in a text editor, then c
 | `baseBranch` | The branch that the factory starts from and merges into | the default branch of `origin` |
 | `merge.auto` | `true`: the factory merges a job after the approver says `APPROVE`, with no `/factory:merge`. An `ESCALATE` still waits for you | off |
 | `protectedPaths` | Files that a job must not change. A change in these files fails the gate | the config and `.factory/checks.local.ts` |
+| `checks` | Extra shell commands that the gate runs after the stack steps. Each entry is a shell command that runs in the repo root of the job worktree. A command that does not exit with 0 fails the gate. Add each script file that a check runs to `protectedPaths`. If you do not do this, a job can change the script | none |
 | `routing` | The reviewers and their models for each risk level: `low`, `medium`, `high` | `code` always, `security` for `high` |
 | `surfaces` | More reviewers for each type of change, for example `ui` or `api` | `ux` and `ui` for UI work, `security` for `api` |
 
