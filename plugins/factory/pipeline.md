@@ -126,7 +126,9 @@ Run only issue `<n>`. Skip step 4 for other issues.
   The round has `sync.md`, so the builder merges the base branch first.
   <!-- shortcut: only the merge session starts this round, upgrade when a run session must watch for new rounds -->
 - `<n>` is `needs-human`, with or without a PR: the human fixed the cause or
-  answered in the issue. Call `job_sync`, then `job_advance` with `to: build`.
+  answered in the issue. Call `job_sync`. When `job_sync` gives round 0, call
+  `job_advance` with `to: spec` and start `factory:spec-writer`. Else call
+  `job_advance` with `to: build`.
   Start `factory:builder` with the new `<roundDir>`. The builder reads
   `decision.md` and `issue.md`. If the result state is `needs-human`, the round
   limit is reached, or a review asks for a spec change. Start nothing. Call `status` and show its text.
@@ -166,8 +168,11 @@ Read the first line of `intake.md`.
 - `DECISION: REJECT`: call `job_advance` with `to: rejected`.
 
 ### spec-writer finished
-Call `job_advance` with `to: build`. Start `factory:builder` with the
-`<roundDir>` of the result.
+Read the first line of `spec.md`.
+- `STATUS: READY`: call `job_advance` with `to: build`. Start
+  `factory:builder` with the `<roundDir>` of the result.
+- `STATUS: BLOCKED`: call `job_advance` with `to: needs-human` and the reason
+  from its `## Summary`.
 
 ### builder finished
 - `build.md` starts with `STATUS: DONE`: start `factory:gate-runner` with

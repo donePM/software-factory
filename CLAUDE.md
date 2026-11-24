@@ -135,6 +135,8 @@ This loads the branch code in that process only.
 - The `## Code first` section is the same in nine agents: `intake`, `spec-writer`, `builder`,
   the `code|security|ux|ui` reviewers, `approver`, and `planner`: change it in all places. The new-code
   rule lives in `agents/builder.md` and `agents/code-reviewer.md`: change them in both places.
+- The `## Bash` section is the same in the four `code|security|ux|ui` reviewers
+  and in `REVIEW_BASH` of `tests/agents.test.ts`: change it in all places.
 - `plugins/factory/ste.md` holds the STE rules for text for people. The
   language block of each agent repeats these rules: change them in both places.
 - Lean rules (option ladder, `shortcut:` comments, "no case, no finding") appear

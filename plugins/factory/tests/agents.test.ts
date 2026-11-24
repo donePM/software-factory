@@ -420,6 +420,18 @@ const CODE_FIRST = [
   "The job's `spec.md` still defines the new behavior to build.",
 ].join('\n')
 
+// REVIEW_BASH stands word for word in agents/code-reviewer.md, security-reviewer.md, ux-reviewer.md, and ui-reviewer.md.
+const REVIEW_BASH = [
+  '## Bash',
+  'A user hook can rewrite a Bash command, for example to `rtk git diff`.',
+  'A background agent cannot answer the permission prompt of the new command.',
+  'When a Bash call fails with an error that names an `rtk` command, do not run the `rtk` command.',
+  'Never add `rtk` to a command yourself.',
+  'Run the plain command one more time as `git -C <worktree> ...`.',
+  'Use the `Grep` tool for a search and the `Read` tool to read a file.',
+  'If `git diff` still fails, the `## Diff` rule applies: do not write `VERDICT: PASS`.',
+].join('\n')
+
 const PRODUCT_READY = [
   'STATUS: READY',
   '',
@@ -479,6 +491,15 @@ test('code first section is the same in all nine agents', () => {
     'When they disagree with the code, the code wins.',
     "The job's `spec.md` still defines the new behavior to build.",
   ])
+})
+
+test('reviewers have a fallback for a rewritten Bash call', () => {
+  for (const s of ['`rtk', '`git -C <worktree> ...`', 'the `Grep` tool', 'the `Read` tool', 'the `## Diff` rule']) {
+    expect(REVIEW_BASH).toContain(s)
+  }
+  for (const line of REVIEW_BASH.split('\n').filter(l => l.includes('rtk'))) {
+    expect([line, /rewrite|do not|Never/.test(line)]).toEqual([line, true])
+  }
 })
 
 test('planner example product.md starts with STATUS READY and has the sections in order', () => {
@@ -975,4 +996,84 @@ test('review example for an unreadable diff is CHANGES with a blocker', () => {
   expect(r.findings.length).toBe(1)
   expect(r.findings[0]?.severity).toBe('blocker')
   expect(r.findings[0]?.text ?? '').toMatch(FINDING)
+})
+
+// shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
+// APPROVER_SCOPE_RULE stands word for word in agents/approver.md. SPEC_WRITER_SCOPE stands word for word in `## Rules`
+// of agents/spec-writer.md, and SPEC_WRITER_FIRST_LINE in its `## Write`. PIPELINE_SPEC_FINISHED and PIPELINE_RESUME stand
+// word for word in pipeline.md.
+const APPROVER_SCOPE_RULE = [
+  '## Scope rule',
+  'This rule is fixed. The round number and earlier decisions do not change it.',
+  'A part of the issue is a behavior that `issue.md` asks for.',
+  'Each part that no AC builds must stand under `## Out of scope` in `spec.md`',
+  'with its follow-up issue as `#<n>`.',
+  'A left-out part without `#<n>` gives `ESCALATE`. Give the part as the case.',
+  'A left-out part with `#<n>` is no reason to escalate.',
+].join('\n')
+
+const APPROVER_DECIDE_SCOPE = '- The spec obeys `## Scope rule`.'
+
+const SPEC_WRITER_SCOPE = [
+  '- Spec one change that a reviewer can check in one read: a few files. If the',
+  '  request has more parts that can work alone, spec the part that the other',
+  '  parts need first. Put the other parts under `## Out of scope`.',
+  '- Each part that `issue.md` asks for and the spec puts under `## Out of scope`',
+  '  names its follow-up issue as `#<n>`. Take `<n>` only from `issue.md` or',
+  '  `intake.md`. You cannot create an issue. If no such issue exists, the first',
+  '  line is `STATUS: BLOCKED`. Then `## Summary` names each part. It asks the',
+  '  human to open a follow-up issue and name it in a comment, or to remove the',
+  '  part from the issue.',
+].join('\n')
+
+const SPEC_WRITER_FIRST_LINE = 'The first line is `STATUS: READY` or `STATUS: BLOCKED` (see `## Rules`).'
+
+const PIPELINE_SPEC_FINISHED = [
+  '### spec-writer finished',
+  'Read the first line of `spec.md`.',
+  '- `STATUS: READY`: call `job_advance` with `to: build`. Start',
+  '  `factory:builder` with the `<roundDir>` of the result.',
+  '- `STATUS: BLOCKED`: call `job_advance` with `to: needs-human` and the reason',
+  '  from its `## Summary`.',
+].join('\n')
+
+const PIPELINE_RESUME = [
+  '- `<n>` is `needs-human`, with or without a PR: the human fixed the cause or',
+  '  answered in the issue. Call `job_sync`. When `job_sync` gives round 0, call',
+  '  `job_advance` with `to: spec` and start `factory:spec-writer`. Else call',
+  '  `job_advance` with `to: build`.',
+  '  Start `factory:builder` with the new `<roundDir>`. The builder reads',
+  '  `decision.md` and `issue.md`. If the result state is `needs-human`, the round',
+  '  limit is reached, or a review asks for a spec change. Start nothing. Call `status` and show its text.',
+].join('\n')
+
+test('approver scope rule does not depend on the round', () => {
+  const t = oneLine(APPROVER_SCOPE_RULE)
+  expect(APPROVER_SCOPE_RULE.split('\n')[0]).toBe('## Scope rule')
+  expect(t).toContain('The round number and earlier decisions do not change it.')
+  expect(t).toContain('A part of the issue is a behavior that `issue.md` asks for.')
+  expect(t).toContain('Each part that no AC builds must stand under `## Out of scope` in `spec.md` with its follow-up issue as `#<n>`.')
+  expect(t).toContain('A left-out part without `#<n>` gives `ESCALATE`. Give the part as the case.')
+  expect(t).toContain('A left-out part with `#<n>` is no reason to escalate.')
+  expect(APPROVER_DECIDE_SCOPE).toContain('`## Scope rule`')
+  expect(t).not.toContain('misreads the issue')
+})
+
+test('spec-writer names the follow-up issue or blocks', () => {
+  const t = oneLine(SPEC_WRITER_SCOPE)
+  expect(t).not.toContain('a later issue')
+  expect(t).toContain('names its follow-up issue as `#<n>`. Take `<n>` only from `issue.md` or `intake.md`.')
+  expect(t).toContain('If no such issue exists, the first line is `STATUS: BLOCKED`.')
+  expect(t).toContain('It asks the human to open a follow-up issue and name it in a comment, or to remove the part from the issue.')
+  expect(SPEC_WRITER_FIRST_LINE).toContain('`STATUS: READY` or `STATUS: BLOCKED`')
+})
+
+test('pipeline stops a blocked spec and restarts the spec-writer', () => {
+  const done = oneLine(PIPELINE_SPEC_FINISHED)
+  expect(done).toContain('Read the first line of `spec.md`.')
+  expect(done).toContain('- `STATUS: READY`: call `job_advance` with `to: build`.')
+  expect(done).toContain('- `STATUS: BLOCKED`: call `job_advance` with `to: needs-human` and the reason from its `## Summary`.')
+  const resume = oneLine(PIPELINE_RESUME)
+  expect(resume).toContain('When `job_sync` gives round 0, call `job_advance` with `to: spec` and start `factory:spec-writer`.')
+  expect(resume).toContain('Else call `job_advance` with `to: build`.')
 })

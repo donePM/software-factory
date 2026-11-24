@@ -70,7 +70,7 @@ function unblocked(comments: Comment[], operator: string): boolean {
   return comments.some(c => c.author === operator && !isMarkerComment(c) && !c.body.startsWith(STOP) && time(c.createdAt) > cause)
 }
 
-const WAITING: State[] = ['needs-info', 'needs-human', 'approved', 'needs-design']
+export const WAITING: State[] = ['needs-info', 'needs-human', 'approved', 'needs-design']
 const time = (s: string): number => Date.parse(s)
 const ORDER = ['critical', 'high', 'medium', 'low'] as const
 const BUG_LABELS = ['type:fix', 'bug']
