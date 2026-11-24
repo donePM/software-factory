@@ -675,7 +675,10 @@ const PLAN_SKILL_STEPS = [
   '   - `ref`: `S<n>`, the number of the slice.',
   '   - `dependsOnRefs`: the slices from its `Needs` list, for example `["S1"]`. Give no entry for `Needs none.`.',
   '   - `dependsOn`: the number of the duplicate issue for each left-out slice in its `Needs` list. Give no `dependsOnRefs` entry for a left-out slice. Take the first hit when the slice has two or more hits.',
+  '   - `priority`: pass `Urgent`, `High`, `Medium`, or `Low` only when the operator names that priority for the item. Else pass no `priority`.',
   '   - If no slice is left, call no `issue_create`. Tell the operator that every slice has a possible duplicate.',
+  '7. Report the issue numbers with their links, in simple words.',
+  '   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem or a Priority problem.',
 ].join('\n')
 
 const PLANNER_FEEDBACK = [
@@ -771,8 +774,9 @@ const AUDIT_SKILL_STEPS = [
   '7. Call `mcp__factory__issue_create` once with one item for each remaining pick, in finding order.',
   '   - `title`: the fix of the finding, short, in the imperative mood.',
   '   - `body`: the problem, the fix, and the `file:line` of the finding.',
+  '   - `priority`: pass `Urgent`, `High`, `Medium`, or `Low` only when the operator names that priority for the item. Else pass no `priority`.',
   '8. Report the issue numbers with their links, in simple words.',
-  '   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem only.',
+  '   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem or a Priority problem.',
   '   - On `bad-input`, give the error text. Nothing was created. Fix the list and call `mcp__factory__issue_create` again.',
   '   - On `partial-create`, give the created numbers with their links and the item that failed. To retry, send only the failed item and the items after it.',
 ].join('\n')
@@ -824,6 +828,28 @@ test('audit skill body holds the problem, the fix, and file:line', () => {
   expect(AUDIT_SKILL_STEPS).toContain('one item for each remaining pick, in finding order')
   expect(AUDIT_SKILL_STEPS).toContain('`body`: the problem, the fix, and the `file:line` of the finding.')
   for (const s of ['`warnings`', '`bad-input`', '`partial-create`']) expect(AUDIT_SKILL_STEPS).toContain(s)
+})
+
+// shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
+// ADD_SKILL_STEPS stands word for word in skills/add/SKILL.md.
+const ADD_SKILL_STEPS = [
+  '6. After the user confirms, call `mcp__factory__issue_create` once with all items in order, and `park` when the flag was set. Leave out the pieces the user dropped as duplicates.',
+  '   - `priority`: pass `Urgent`, `High`, `Medium`, or `Low` only when the operator names that priority for the item. Else pass no `priority`.',
+  '7. Report the issue numbers with their links, in simple words.',
+  '   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem or a Priority problem.',
+].join('\n')
+
+const PRIORITY_LINE = '   - `priority`: pass `Urgent`, `High`, `Medium`, or `Low` only when the operator names that priority for the item. Else pass no `priority`.'
+const WARNING_LINE = '   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem or a Priority problem.'
+
+test('skills pass the priority that the operator names', () => {
+  for (const steps of [ADD_SKILL_STEPS, PLAN_SKILL_STEPS, AUDIT_SKILL_STEPS]) {
+    const parts = steps.split(/\n(?=\d+\. )/)
+    const create = parts.find(s => s.includes('call `mcp__factory__issue_create` once') || s.includes('Call `mcp__factory__issue_create` once')) ?? ''
+    expect(create.split('\n')).toContain(PRIORITY_LINE)
+    expect(steps.split('\n')).toContain(WARNING_LINE)
+    expect(steps).not.toContain('A warning is a board problem only.')
+  }
 })
 
 // shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.

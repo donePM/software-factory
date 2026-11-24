@@ -8,8 +8,9 @@ import { fakeCtx } from './support/host.ts'
 
 type Made = { title: string; body: string; labels: string[] }
 
-function fakeTracker(start = 10, failAt = 0): { t: Tracker; made: Made[] } {
+function fakeTracker(start = 10, failAt = 0, priorityFails = false): { t: Tracker; made: Made[]; priorities: [number, string][] } {
   const made: Made[] = []
+  const priorities: [number, string][] = []
   const t = {
     repo: 'a/b',
     createIssue: async (title: string, body: string, labels: string[]) => {
@@ -17,9 +18,13 @@ function fakeTracker(start = 10, failAt = 0): { t: Tracker; made: Made[] } {
       made.push({ title, body, labels })
       return start + made.length - 1
     },
+    setPriority: async (n: number, name: string) => {
+      priorities.push([n, name])
+      if (priorityFails) throw new Error('HTTP 422')
+    },
     searchIssues: async (query: string) => [{ number: 3, title: `hit ${query}`, labels: ['factory'] }],
   } as unknown as Tracker
-  return { t, made }
+  return { t, made, priorities }
 }
 
 const bad = (p: Promise<unknown>): Promise<void> => expect(p).rejects.toMatchObject({ code: 'bad-input' })
@@ -51,6 +56,41 @@ test('issue_create adds the new factory issues to the board backlog', async () =
   expect(seen).toHaveLength(1)
   const warned = await issueCreate(fakeTracker().t, { items: [items[0]!] }, async () => ['#10: boom'])
   expect(warned).toEqual({ created: [{ ref: '', number: 10, url: 'https://github.com/a/b/issues/10' }], warnings: ['#10: boom'] })
+})
+
+test('issue_create sets the Priority field by option name', async () => {
+  const { t, priorities } = fakeTracker()
+  const r = await issueCreate(t, { items: [{ title: 'Fix x', body: 'b', priority: 'Urgent' }] }, async () => [])
+  expect(priorities).toEqual([[10, 'Urgent']])
+  expect(r).toEqual([{ ref: '', number: 10, url: 'https://github.com/a/b/issues/10' }])
+})
+
+test('issue_create writes no Priority field without priority', async () => {
+  const one = fakeTracker()
+  await issueCreate(one.t, { items: [{ title: 'Fix x', body: 'b' }] })
+  expect(one.priorities).toEqual([])
+  const two = fakeTracker()
+  await issueCreate(two.t, { items: [{ title: 'A', body: 'b' }, { title: 'B', body: 'b', priority: 'Low' }] })
+  expect(two.priorities).toEqual([[11, 'Low']])
+})
+
+test('issue_create warns when the Priority write fails', async () => {
+  const items = [{ title: 'A', body: 'b', priority: 'High' }, { title: 'B', body: 'b' }]
+  const { t, made } = fakeTracker(10, 0, true)
+  const r = await issueCreate(t, { items }, async () => ['#11: boom'])
+  expect(made).toHaveLength(2)
+  expect(r).toEqual({
+    created: [{ ref: '', number: 10, url: 'https://github.com/a/b/issues/10' }, { ref: '', number: 11, url: 'https://github.com/a/b/issues/11' }],
+    warnings: ['#10: Priority High not set: HTTP 422', '#11: boom'],
+  })
+  const parked = await issueCreate(fakeTracker(10, 0, true).t, { items, park: true }, async () => ['#11: boom'])
+  expect(parked).toMatchObject({ warnings: ['#10: Priority High not set: HTTP 422'] })
+})
+
+test('issue_create rejects an unknown priority', async () => {
+  const { t, made } = fakeTracker()
+  await bad(issueCreate(t, { items: [{ title: 'A', body: 'b' }, { title: 'B', body: 'b', priority: 'urgent' }] }))
+  expect(made).toEqual([])
 })
 
 test('issue_create links a later item to an earlier one', async () => {

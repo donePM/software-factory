@@ -1,7 +1,8 @@
 import { FactoryError } from './exec.ts'
+import { PRIORITIES } from './github.ts'
 import type { Tracker } from './tracker.ts'
 
-export type AddItem = { title: string; body: string; dependsOn?: number[]; ref?: string; dependsOnRefs?: string[] }
+export type AddItem = { title: string; body: string; dependsOn?: number[]; ref?: string; dependsOnRefs?: string[]; priority?: string }
 export type AddInput = { items: AddItem[]; park?: boolean }
 export type Created = { ref: string; number: number; url: string }
 
@@ -20,6 +21,9 @@ function validate(input: AddInput): void {
     const at = `item ${i + 1}`
     if (typeof it.title !== 'string' || it.title.trim() === '') throw bad(`${at}: title must not be empty`)
     if (typeof it.body !== 'string') throw bad(`${at}: body must be a string`)
+    if (it.priority !== undefined && !PRIORITIES.includes(it.priority)) {
+      throw bad(`${at}: priority must be one of ${PRIORITIES.join(', ')}, got ${JSON.stringify(it.priority)}`)
+    }
     for (const n of it.dependsOn ?? []) {
       if (typeof n !== 'number' || !Number.isInteger(n) || n < 1) throw bad(`${at}: dependsOn must hold positive integers, got ${JSON.stringify(n)}`)
     }
@@ -41,6 +45,7 @@ export async function issueCreate(
   const labels = input.park === true ? [] : ['factory']
   const numbers = new Map<string, number>()
   const out: Created[] = []
+  const warnings: string[] = []
   for (const [i, it] of input.items.entries()) {
     const deps = [...(it.dependsOn ?? []), ...(it.dependsOnRefs ?? []).map(r => numbers.get(r)!)]
     const lines = deps.map(n => `Depends on #${n}`)
@@ -56,9 +61,14 @@ export async function issueCreate(
         `Do not create the created issues again. Retry from item ${i + 1} only.`)
     }
     if (it.ref !== undefined) numbers.set(it.ref, number)
+    // The issue exists, so a failed Priority write is a warning, not an error.
+    if (it.priority !== undefined) {
+      await t.setPriority(number, it.priority).catch((e: unknown) => {
+        warnings.push(`#${number}: Priority ${it.priority} not set: ${e instanceof Error ? e.message : String(e)}`)
+      })
+    }
     out.push({ ref: it.ref ?? '', number, url: `https://github.com/${t.repo}/issues/${number}` })
   }
-  if (board === undefined || input.park === true) return out
-  const warnings = await board(out.map(c => c.number))
+  if (board !== undefined && input.park !== true) warnings.push(...await board(out.map(c => c.number)))
   return warnings.length === 0 ? out : { created: out, warnings }
 }
