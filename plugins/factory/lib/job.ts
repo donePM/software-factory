@@ -13,7 +13,7 @@ import { route } from './route.ts'
 import { renderIssue } from './issue-file.ts'
 import { stateOf } from './labels.ts'
 import { typesSource } from './stacks/claude-plugin.ts'
-import { findMarked, stripMarker } from './markers.ts'
+import { findMarked, firstLine, ROUND_MARKER, stripMarker } from './markers.ts'
 import { stopOf } from './queue.ts'
 import {
   branchName, fieldOf, jobDir, lastSection, parseBase, parsePr, parseReviewed, parseRoute, parseSpecUpdated, readJob, renderRoute, worktreeDir, writeJob,
@@ -171,7 +171,7 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
     const fromComment = fieldOf(jobPart, 'Round')
     let round = fromComment !== null && /^[0-9]+$/.test(fromComment) ? Number(fromComment) : 0
     for (const c of ticket.comments) {
-      const m = c.author === operator ? /^<!-- factory:round-([1-9][0-9]*) -->\s*$/.exec(c.body.split(/\r\n|\r|\n/, 1)[0] ?? '') : null
+      const m = c.author === operator ? ROUND_MARKER.exec(firstLine(c.body)) : null
       if (m) round = Math.max(round, Number(m[1]))
     }
     job = {

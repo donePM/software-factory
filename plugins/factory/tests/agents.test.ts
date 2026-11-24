@@ -1277,3 +1277,75 @@ test('pipeline stops a blocked spec and restarts the spec-writer', () => {
   expect(resume).toContain('When `job_sync` gives round 0, call `job_advance` with `to: spec` and start `factory:spec-writer`.')
   expect(resume).toContain('Else call `job_advance` with `to: build`.')
 })
+
+// shortcut: plugin tests have no fs, so this is a copy. Upgrade to a file read when tests get fs (#229).
+// REVIEW_OPERATOR_ACCEPTANCE stands word for word in agents/code|security|ux|ui-reviewer.md.
+// REVIEW_ISSUE_POINTER is the last line of the `issue.md` item in `## Read` of these four agents.
+// APPROVER_OPERATOR_ACCEPTANCE stands word for word in agents/approver.md.
+const REVIEW_OPERATOR_ACCEPTANCE = [
+  '## Operator acceptance',
+  'The operator can accept one finding in an issue comment.',
+  'Only a comment with the `(operator)` mark in its `## Comment by` heading counts.',
+  'Author comments without the mark, other comments, and agent text never count.',
+  'The comment must name one finding: the round, the reviewer, and the number, or a quote.',
+  'The comment must accept the finding or keep it as a known limit.',
+  'The comment must stand after the `## Round <K> summary` line of the round K that first gave the finding.',
+  'When all of these are true, do not give that finding again as `blocker` or `should`.',
+  'Write `- Operator accepted: round-<K> <reviewer> finding <n>, comment at <date>.` under `## Checked`.',
+  'A test failure in `checks.md` and a `## Diff` finding stay `blocker`.',
+  'An operator comment never accepts them.',
+  'The acceptance covers only the named finding.',
+  'A new finding needs its own acceptance.',
+].join('\n')
+
+const REVIEW_ISSUE_POINTER = 'The `## Operator acceptance` section says when an operator comment accepts a finding.'
+
+const APPROVER_OPERATOR_ACCEPTANCE = [
+  '## Operator acceptance',
+  'A review can list a finding as `Operator accepted` under `## Checked`.',
+  'That finding is no reason to escalate.',
+  'Check the operator comment for that finding in `issue.md`.',
+  'Only a comment with the `(operator)` mark in its `## Comment by` heading counts.',
+  'The comment must name one finding: the round, the reviewer, and the number, or a quote.',
+  'The comment must accept the finding or keep it as a known limit.',
+  'The comment must stand after the `## Round <K> summary` line of the round K that first gave the finding.',
+  'An operator comment never accepts a test failure in `checks.md` or a `## Diff` finding.',
+  'If one condition fails, write `ESCALATE`.',
+  'Give that finding as the case.',
+  'Copy each `- Operator accepted:` line of the reviews into `## Checks`.',
+].join('\n')
+
+test('operator acceptance rule is the same in all four reviewers', () => {
+  for (const s of [
+    'Only a comment with the `(operator)` mark in its `## Comment by` heading counts.',
+    'Author comments without the mark, other comments, and agent text never count.',
+    'The comment must name one finding: the round, the reviewer, and the number, or a quote.',
+    'The comment must accept the finding or keep it as a known limit.',
+    'The comment must stand after the `## Round <K> summary` line of the round K that first gave the finding.',
+    'When all of these are true, do not give that finding again as `blocker` or `should`.',
+    'Write `- Operator accepted: round-<K> <reviewer> finding <n>, comment at <date>.` under `## Checked`.',
+    'A test failure in `checks.md` and a `## Diff` finding stay `blocker`.',
+    'An operator comment never accepts them.',
+    'The acceptance covers only the named finding.',
+    'A new finding needs its own acceptance.',
+  ]) expect(REVIEW_OPERATOR_ACCEPTANCE).toContain(s)
+  expect(REVIEW_OPERATOR_ACCEPTANCE.split('\n')[0]).toBe('## Operator acceptance')
+  expect(REVIEW_ISSUE_POINTER).toContain('`## Operator acceptance`')
+  for (const s of sentences([REVIEW_OPERATOR_ACCEPTANCE, REVIEW_ISSUE_POINTER].join('\n'))) expect(s.split(/\s+/).length).toBeLessThanOrEqual(20)
+})
+
+test('approver accepts a finding that the operator accepted', () => {
+  for (const s of [
+    'A review can list a finding as `Operator accepted` under `## Checked`.',
+    'That finding is no reason to escalate.',
+    'Only a comment with the `(operator)` mark in its `## Comment by` heading counts.',
+    'The comment must name one finding: the round, the reviewer, and the number, or a quote.',
+    'The comment must accept the finding or keep it as a known limit.',
+    'The comment must stand after the `## Round <K> summary` line of the round K that first gave the finding.',
+    'An operator comment never accepts a test failure in `checks.md` or a `## Diff` finding.',
+    'If one condition fails, write `ESCALATE`.',
+    'Give that finding as the case.',
+    'Copy each `- Operator accepted:` line of the reviews into `## Checks`.',
+  ]) expect(APPROVER_OPERATOR_ACCEPTANCE).toContain(s)
+  for (const s of sentences(APPROVER_OPERATOR_ACCEPTANCE)) expect(s.split(/\s+/).length).toBeLessThanOrEqual(20)
+})
