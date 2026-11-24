@@ -455,3 +455,41 @@ test('gate passes when the repo has no workflow folder', async () => {
   expect(r.verdict).toBe('PASS')
   expect(ctx.files['/repo/.factory/gate/setup/checks.md']!).not.toContain('## Unpinned actions')
 })
+
+const withChecks = (checks: string[], replies: Reply[] = []): ReturnType<typeof fakeCtx> =>
+  make({ files: { '/repo/.factory/config.json': cfg(undefined, { checks }) }, replies })
+
+test('gate runs the custom checks after the stack steps in the worktree', async () => {
+  const ctx = withChecks(['sh scripts/a.sh', 'cd web && make e2e'])
+  const seen: { argv: string[]; opts: unknown }[] = []
+  const inner = ctx.run
+  const wrapped: Ctx = { ...ctx, run: (argv, opts) => { seen.push({ argv: [...argv], opts }); return inner(argv, opts) } }
+  const r = await runGate(wrapped, { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('PASS')
+  const custom = seen.filter(s => s.argv[0] === 'sh')
+  expect(custom.map(s => s.argv)).toEqual([['sh', '-c', 'sh scripts/a.sh'], ['sh', '-c', 'cd web && make e2e']])
+  for (const s of custom) expect(s.opts).toEqual({ cwd: WT, timeoutMs: 600000 })
+  const last = seen.map(s => s.argv[0]).lastIndexOf('npm')
+  expect(seen.indexOf(custom[0]!)).toBeGreaterThan(last)
+  expect(r.steps.slice(-2).map(s => [s.name, s.stack])).toEqual([['check', 'custom'], ['check', 'custom']])
+})
+
+test('gate lists each custom check in checks.md and checks.log', async () => {
+  const ctx = withChecks(['sh scripts/a.sh'])
+  const r = await runGate(ctx, { worktree: WT, round: 'setup' })
+  const md = ctx.files['/repo/.factory/gate/setup/checks.md']!
+  expect(md).toContain('| check | custom | `sh scripts/a.sh` | 0 | 0 ms |')
+  expect(md).toContain(`${r.steps.length} of ${r.steps.length} steps passed.`)
+  expect(ctx.files['/repo/.factory/gate/setup/checks.log']).toContain('### check (custom): sh -c sh scripts/a.sh\nexit 0\n')
+})
+
+test('gate fails on a red custom check and runs the rest', async () => {
+  const ctx = withChecks(['false', 'true'], [{ argv: ['sh', '-c', 'false'], result: { exitCode: 1 } }])
+  const r = await runGate(ctx, { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('FAIL')
+  expect(r.steps.filter(s => s.name === 'check').map(s => s.exitCode)).toEqual([1, 0])
+  expect(ctx.calls.some(c => c.join(' ') === 'sh -c true')).toBe(true)
+  const md = ctx.files['/repo/.factory/gate/setup/checks.md']!
+  expect(md).toContain('| check | custom | `false` | 1 |')
+  expect(md).not.toContain('Missing tool')
+})
