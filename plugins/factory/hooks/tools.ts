@@ -1,8 +1,8 @@
-import type { EngineInterface, Register, RenderElement } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, UiPressArgument } from 'claude-code'
 import { FactoryError } from '../lib/exec.ts'
 import { issueCreate, issueSearch } from '../lib/add.ts'
 import { cleanupJob, sweep } from '../lib/cleanup.ts'
-import { loadConfig, migrate } from '../lib/config.ts'
+import { configPath, loadConfig, migrate } from '../lib/config.ts'
 import { doctor } from '../lib/doctor.ts'
 import { runGate } from '../lib/gate.ts'
 import { gateJob } from '../lib/gatejob.ts'
@@ -18,6 +18,7 @@ import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
 import { renderStatus, statusData } from '../lib/status.ts'
 import { PANE, paneRows, paneTitle, parseSnapshot } from '../lib/pane.ts'
+import type { PaneRow } from '../lib/pane.ts'
 import { refreshSnapshot, statusPath, writeSnapshot } from '../lib/view.ts'
 import type { Snapshot } from '../lib/view.ts'
 import type { Tracker } from '../lib/tracker.ts'
@@ -357,7 +358,7 @@ export const register: Register = on => {
     for (const t of TOOLS) {
       await $.tool.register({ name: t.name, description: t.description, inputSchema: t.inputSchema, isDeferred: false })
     }
-    await $.command.register({ name: 'factory-pane', description: 'Open the factory pane: slots, ready count and running jobs' })
+    await $.command.register({ name: 'factory-pane', description: 'Open the factory pane: slots, ready count, running jobs and the next step for you' })
     const snap = e.isInteractive ? await readSnapshot($) : null
     if (snap !== null) {
       // A pane that another plugin holds rejects the open. The session start must not fail on it.
@@ -378,9 +379,15 @@ export const register: Register = on => {
       $.ui.status(undefined)
       pinned = false
     }
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Link, Text } = $.ui.resolve(e)
+    const cell = (r: PaneRow) => {
+      const copy = r.copy
+      if (copy !== undefined) return h(Button, { key: 'copy', label: r.text, onPress: (press: UiPressArgument) => $.ui.copy({ text: copy, surface: press.surface }) })
+      return r.href === undefined ? h(Text, { bold: r.bold }, r.text) : h(Link, { href: r.href, label: r.text })
+    }
+    const hasConfig = await $.fs.exists(configPath(await $.session.root()))
     // A Text drops its key, so a keyed Box holds each row.
-    const rows = paneRows(await readSnapshot($)).map(r => h(Box, { key: r.key }, h(Text, { bold: r.bold }, r.text)))
+    const rows = paneRows(await readSnapshot($), hasConfig).map(r => h(Box, { key: r.key }, cell(r)))
     return h(Box, { flexDirection: 'column' }, ...rows) as RenderElement
   })
   // Serve only at tool.run: it fires after the permission check, so tools like merge stay gated.
