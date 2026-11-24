@@ -97,11 +97,17 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 
 1. **Add work.** `/factory:add add a --json flag to the export command` creates
    an issue with the `factory` label. Or add the label to an existing issue.
-   `Depends on #12` in the issue body holds it back until #12 is closed.
+   `Depends on #12` in the issue body holds it back until #12 is closed as completed or is done.
+   Name a priority, for example "make it urgent", and the new issue gets that `Priority` value.
 2. **Run.** `/factory:run` takes the ready issues bugs first, then by priority and age.
    The priority comes from the GitHub issue field `Priority`, not from labels:
    `Urgent`, `High`, `Medium`, and `Low` map to `critical`, `high`, `medium`, and `low`.
-   An issue without the field counts as `medium`. The
+   An issue without the field counts as `medium`.
+   The factory works from right to left on the board: it finishes the job nearest to `done` first.
+   A job in `approved` or `needs-human` holds new issues. `queue` names these jobs in `heldBy`,
+   and `/factory:status` shows their next human step. When you comment in a `needs-human` issue
+   after the stop, or change its spec, the job is unblocked. Then it gets the next free slot.
+   `/factory:run <n>` still starts issue `n`. The
    intake agent accepts the issue, asks the author questions (`needs-info`),
    or rejects it. The spec writer writes testable acceptance criteria. The
    builder works test-first in `.factory/worktrees/<n>` on branch `factory/<n>`.
@@ -123,9 +129,12 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
    factory sets the issue to `done` and removes the worktree, the merged
    branch, and the job folder. Work that is not saved stays and is reported.
 7. **Docs.** With `docs.target` set to `wiki`, the merge sets the issue to
-   `docs`, not `done`. The documenter agent writes one wiki page into
-   `<jobDir>/docs.md`. The factory pushes it as the wiki page `Issue-<n>` and
-   posts the link and the full `docs.md` text in a `<!-- factory:docs -->` comment.
+   `docs`, not `done`. The wiki has one page for each feature, and `Home.md`
+   links all feature pages. The documenter agent reads a clone of the wiki.
+   It writes the full new text of each feature page that the change touches,
+   and of `Home.md`, into `<jobDir>/docs.md`. The factory pushes these pages
+   in one commit. It deletes the old `Issue-<digits>.md` pages. It posts the
+   links of the pages and the full `docs.md` text in a `<!-- factory:docs -->` comment.
    With this comment, `job_sync` rebuilds `docs.md` on another machine.
    Then it sets `done` and cleans up. A failed wiki push sets `needs-human`. The merge stays.
    `/factory:status` shows the closed job. Fix the cause. Then run
@@ -183,7 +192,9 @@ The [setup guide](docs/setup.md#5-the-project-board-optional) shows the scope, t
   to `rtk git status`) can make factory agents lose Bash calls. The factory
   guard judges the command that the agent wrote. The hook then sends the new
   command to the permission check. A background factory agent cannot answer a
-  permission prompt, so the call fails. To prevent this, do one of these steps:
+  permission prompt, so the call fails. The reviewers then use the plain
+  `git -C` command and the `Read` and `Grep` tools. But only the two steps
+  below stop the failed calls. To prevent this, do one of these steps:
   - Make the hook skip input where `agent_type` starts with `factory:`.
   - Add an allow rule with a narrow prefix for the wrapper, for example
     `Bash(rtk git:*)`. Never allow `Bash(rtk:*)`: it also allows `rtk gh`.

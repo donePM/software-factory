@@ -111,6 +111,16 @@ test('the guard denies gh before a PreToolUse rewrite', async ($, on) => {
   expect(ran).toEqual([])
 })
 
+test('the guard lets a rewritten git diff and grep pass', async ($, on) => {
+  host(on)
+  const seen = rewriteHook(on)
+  for (const command of ['git diff abc...HEAD', 'grep -rn x .']) {
+    const r = await $.tool.call({ tool: 'Bash', command, agentId: 'f1' })
+    expect(String((r as { deny?: string }).deny ?? '')).not.toContain('no GitHub access')
+  }
+  expect(seen).toEqual(['git diff abc...HEAD', 'grep -rn x .'])
+})
+
 // A fake core for command.run, so that the mod hook can call next(e).
 function runHost(on: On): string[] {
   on('command.run', async () => ({ text: 'ran' }) as never)

@@ -62,6 +62,7 @@ Write `APPROVE` only when all of these are true:
   `pass` counts as a `pass` row when `spec.md` marks that AC `(regression)`.
   It is no reason to escalate.
 - The diff stays inside the scope of `spec.md`.
+- The spec obeys `## Scope rule`.
 - Each `shortcut:` comment that the diff adds names a limit and when to
   upgrade. The expected load does not cross that limit yet.
 
@@ -69,11 +70,18 @@ Write `ESCALATE` when one of them is false. Also write `ESCALATE` when the
 change needs the judgment of a human. These changes need it:
 - auth, payments, or data deletion;
 - a data migration or a new dependency;
-- a very large diff;
-- a spec that you think misreads the issue.
+- a very large diff.
 
 List the shortcuts with
 `git diff <base>...HEAD | grep -E '^\+.*(#|//|/[*]) ?shortcut:'`.
+
+## Scope rule
+This rule is fixed. The round number and earlier decisions do not change it.
+A part of the issue is a behavior that `issue.md` asks for.
+Each part that no AC builds must stand under `## Out of scope` in `spec.md`
+with its follow-up issue as `#<n>`.
+A left-out part without `#<n>` gives `ESCALATE`. Give the part as the case.
+A left-out part with `#<n>` is no reason to escalate.
 
 ## Lean rules
 - Each reason for ESCALATE needs a concrete case: a file, a line, an AC, or a

@@ -40,7 +40,8 @@ The job's `spec.md` still defines the new behavior to build.
 Write only `<jobDir>/spec.md`. Do not change code. Do not write other files.
 Do not call factory tools. You have no GitHub access.
 
-The first line is `STATUS: READY`. The second line is `Title:` and a
+The first line is `STATUS: READY` or `STATUS: BLOCKED` (see `## Rules`).
+The second line is `Title:` and a
 Conventional Commits 1.0.0 title. The factory uses this title for the PR and the
 merge commit. Use one of these types: `feat`, `fix`, `docs`, `style`,
 `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. A scope is
@@ -108,8 +109,13 @@ AC-4 (regression) The orders page still lists each order as before. Test: `tests
   `## Not tested` names that AC with a reason.
 - Spec one change that a reviewer can check in one read: a few files. If the
   request has more parts that can work alone, spec the part that the other
-  parts need first. Put the other parts under `## Out of scope`, as "a later
-  issue".
+  parts need first. Put the other parts under `## Out of scope`.
+- Each part that `issue.md` asks for and the spec puts under `## Out of scope`
+  names its follow-up issue as `#<n>`. Take `<n>` only from `issue.md` or
+  `intake.md`. You cannot create an issue. If no such issue exists, the first
+  line is `STATUS: BLOCKED`. Then `## Summary` names each part. It asks the
+  human to open a follow-up issue and name it in a comment, or to remove the
+  part from the issue.
 - Write the smallest version that does the core job. Question each part of the
   request. If the need does not justify a part, put it under `## Out of scope`.
   Options, flexibility, and "for later" features go there too.
