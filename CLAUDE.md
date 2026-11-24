@@ -91,7 +91,7 @@ This loads the branch code in that process only.
   `## Route` in `job.md`.
 - Skills (`/factory:setup|add|plan|audit|run|status|approve|merge`) are thin entry points.
   Each passes `${CLAUDE_PLUGIN_ROOT}`.
-- Local working copy: `.factory/jobs/<n>/` (`job.md`, `issue.md`, `intake.md`,
+- Local working copy: `.factory/jobs/<n>/` (`job.md`, `issue.md`, `intake.md`, `running.md`,
   `spec.md`, `round-N/`, `decision.md`, `docs.md`) and `.factory/worktrees/<n>/`. Both are
   deleted when the job ends. `.factory/plans/<n>/` (`idea.md`, `product.md`)
   holds one plan of `/factory:plan`. It stays. `.factory/config.json` is versioned.

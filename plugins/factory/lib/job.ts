@@ -70,6 +70,21 @@ export const inert = (text: string): string =>
     .replace(/\b(c(?=lose[sd]?\b)|f(?=ix(?:e[sd])?\b)|r(?=esolve[sd]?\b))/gi, `$1${ZWSP}`)
     .replace(/@(?=[\w-])/g, `@${ZWSP}`)
 
+// The spec-writer reads the other jobs to skip a part that one of them already builds.
+// shortcut: a snapshot at the last job_create or job_sync, upgrade when specs of the same minute still overlap.
+async function writeRunning(ctx: Ctx, n: number): Promise<void> {
+  const root = `${ctx.root}/.factory/jobs`
+  const ids = (await ctx.fs.list(root).catch(() => [])).filter(s => /^[0-9]+$/.test(s)).map(Number).filter(m => m !== n).sort((a, b) => a - b)
+  const lines: string[] = []
+  for (const m of ids) {
+    const dir = jobDir(ctx.root, m)
+    if (!(await ctx.fs.exists(`${dir}/job.md`))) continue
+    const title = fieldOf(await ctx.fs.read(`${dir}/job.md`), 'Title') ?? ''
+    lines.push(`- #${m} ${title}: ${(await ctx.fs.exists(`${dir}/spec.md`)) ? `${dir}/spec.md` : 'no spec.md yet'}`)
+  }
+  await ctx.fs.write(`${jobDir(ctx.root, n)}/running.md`, `${lines.length === 0 ? '- none' : lines.join('\n')}\n`)
+}
+
 export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
   const operator = await t.login()
   const ticket = await t.get(n)
@@ -114,6 +129,7 @@ export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
   }
   await writeJob(ctx, job)
   await ctx.fs.write(`${dir}/issue.md`, renderIssue(ticket, operator))
+  await writeRunning(ctx, n)
   return job
 }
 
@@ -152,6 +168,7 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
   }
   const dir = jobDir(ctx.root, n)
   await ctx.fs.write(`${dir}/issue.md`, renderIssue(ticket, operator))
+  await writeRunning(ctx, n)
   const cfg = await loadConfig(ctx)
   const rebuilt: string[] = []
   let job: Job
