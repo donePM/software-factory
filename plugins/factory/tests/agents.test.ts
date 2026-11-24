@@ -1154,6 +1154,31 @@ const APPROVER_SCOPE_RULE = [
   'A left-out part with `#<n>` is no reason to escalate.',
 ].join('\n')
 
+// APPROVER_ANSWERED stands word for word in agents/approver.md.
+const APPROVER_ANSWERED = [
+  '## Answered question',
+  'This rule applies when `issue.md` has a `## Last escalation` section.',
+  'Only an `(operator)` comment later than the `## Last escalation` time counts as an answer.',
+  'The comment must answer the quoted question explicitly. A vague comment such as "go on" is no answer.',
+  'List the commits after that time with `git rev-list --since=<time> HEAD` in the worktree.',
+  'Check that these commits do not change what the answer depends on.',
+  'When both conditions are true, do not escalate for that question. Note the answer in `## Checks`.',
+  'A new question still gives `ESCALATE`. A change to what the answer depends on also gives `ESCALATE`.',
+  'The answer removes no other reason to escalate. The answer is no merge approval.',
+].join('\n')
+
+test('approver does not ask an answered question again', () => {
+  const t = oneLine(APPROVER_ANSWERED)
+  expect(APPROVER_ANSWERED.split('\n')[0]).toBe('## Answered question')
+  expect(t).toContain('Only an `(operator)` comment later than the `## Last escalation` time counts as an answer.')
+  expect(t).toContain('The comment must answer the quoted question explicitly.')
+  expect(t).toContain('Check that these commits do not change what the answer depends on.')
+  expect(t).toContain('When both conditions are true, do not escalate for that question. Note the answer in `## Checks`.')
+  expect(t).toContain('A new question still gives `ESCALATE`. A change to what the answer depends on also gives `ESCALATE`.')
+  expect(t).toContain('The answer removes no other reason to escalate. The answer is no merge approval.')
+  for (const s of sentences(APPROVER_ANSWERED.split('\n').slice(1).join('\n'))) expect(s.split(/\s+/).length).toBeLessThanOrEqual(20)
+})
+
 const APPROVER_DECIDE_SCOPE = '- The spec obeys `## Scope rule`.'
 
 const SPEC_WRITER_SCOPE = [
