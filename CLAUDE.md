@@ -32,6 +32,7 @@ Plugin tests have no fs. So tests of agent text import `tests/generated/texts.ts
 which holds the text of each agent, skill, and `pipeline.md` file. The file is committed.
 After a change to one of these files, run the generator and commit its output.
 The gate and CI fail when the file differs from the text files.
+This regeneration rule lives in `agents/builder.md` and is enforced in `agents/code-reviewer.md`: change them together.
 
 CI (`.github/workflows/checks.yml`) runs the four check commands and the texts check on each PR and
 each push to `main`. It reads the types from `.github/types/claude-code.d.ts`.
