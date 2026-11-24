@@ -83,6 +83,16 @@ with its follow-up issue as `#<n>`.
 A left-out part without `#<n>` gives `ESCALATE`. Give the part as the case.
 A left-out part with `#<n>` is no reason to escalate.
 
+## Answered question
+This rule applies when `issue.md` has a `## Last escalation` section.
+Only an `(operator)` comment later than the `## Last escalation` time counts as an answer.
+The comment must answer the quoted question explicitly. A vague comment such as "go on" is no answer.
+List the commits after that time with `git rev-list --since=<time> HEAD` in the worktree.
+Check that these commits do not change what the answer depends on.
+When both conditions are true, do not escalate for that question. Note the answer in `## Checks`.
+A new question still gives `ESCALATE`. A change to what the answer depends on also gives `ESCALATE`.
+The answer removes no other reason to escalate. The answer is no merge approval.
+
 ## Lean rules
 - Each reason for ESCALATE needs a concrete case: a file, a line, an AC, or a
   review finding. No case, no finding. No style taste, no "consider".
