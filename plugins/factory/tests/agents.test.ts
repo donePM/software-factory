@@ -793,3 +793,27 @@ test('approver accepts a finding that the operator accepted', () => {
   ]) expect(APPROVER_OPERATOR_ACCEPTANCE).toContain(s)
   for (const s of sentences(APPROVER_OPERATOR_ACCEPTANCE)) expect(s.split(/\s+/).length).toBeLessThanOrEqual(20)
 })
+
+const BUILDER_TEXTS = block(['agents/builder.md'], 'Texts module:', 'Stage `plugins/factory/tests/generated/texts.ts`')
+const REVIEW_TEXTS = block(['agents/code-reviewer.md'], '9. **Texts module:**', '   Run `node plugins/factory/scripts/texts.ts --check`')
+
+test('builder regenerates the texts module after a text change', () => {
+  for (const s of [
+    'only when the worktree has `plugins/factory/scripts/texts.ts`',
+    '`plugins/factory/agents/`', '`plugins/factory/skills/`', '`plugins/factory/pipeline.md`',
+    'run `node plugins/factory/scripts/texts.ts`',
+    'Stage `plugins/factory/tests/generated/texts.ts` in the same commit as the text change.',
+  ]) expect(BUILDER_TEXTS).toContain(s)
+  for (const s of sentences(BUILDER_TEXTS)) expect(s.split(/\s+/).length).toBeLessThanOrEqual(20)
+})
+
+test('code-reviewer flags a texts module that is not regenerated', () => {
+  for (const s of [
+    'only when the repo has `plugins/factory/scripts/texts.ts`',
+    'an agent, a skill, or `pipeline.md`',
+    '`plugins/factory/tests/generated/texts.ts` is out of date',
+    '`blocker`',
+    '`node plugins/factory/scripts/texts.ts --check`',
+  ]) expect(REVIEW_TEXTS).toContain(s)
+  for (const s of sentences(REVIEW_TEXTS.replace(/^9\. /, ''))) expect(s.trim().split(/\s+/).length).toBeLessThanOrEqual(20)
+})

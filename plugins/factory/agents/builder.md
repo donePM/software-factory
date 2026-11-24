@@ -75,6 +75,11 @@ Parts under `## Not tested` in the spec (pure docs, pure configuration) need no
 test. Name them in `build.md`. An AC that `## Not tested` names gets the row
 `| AC-<n> | none (Not tested in spec.md) | none | not tested |`.
 
+Texts module: this rule applies only when the worktree has `plugins/factory/scripts/texts.ts`.
+After a change to a file under `plugins/factory/agents/`, `plugins/factory/skills/`, or to `plugins/factory/pipeline.md`,
+run `node plugins/factory/scripts/texts.ts`. Do this before the full test suite in step 5.
+Stage `plugins/factory/tests/generated/texts.ts` in the same commit as the text change.
+
 ## build.md
 The first line is `STATUS: DONE` or `STATUS: BLOCKED`. Write `BLOCKED` only
 when you cannot finish, and say why under `## Summary`. Then write:

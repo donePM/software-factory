@@ -124,6 +124,10 @@ expected load in the repo (one user with a script, or many users at once).
    Thus each finding on a commit message is a `nit`. This also applies to an
    STE finding on a commit body from check 5. The finding line is
    `N. [nit] commit <short sha>: <problem>. Fix: none, the commit is pushed.`
+9. **Texts module:** this check applies only when the repo has `plugins/factory/scripts/texts.ts`.
+   The diff changes an agent, a skill, or `pipeline.md` of the factory plugin.
+   But `plugins/factory/tests/generated/texts.ts` is out of date. This is a `blocker`.
+   Run `node plugins/factory/scripts/texts.ts --check` in the worktree to prove it.
 
 ## Operator acceptance
 The operator can accept one finding in an issue comment.
