@@ -26,7 +26,8 @@ Do not run Bash. Do not write files. The auditor writes `audit.md`.
 7. Call `mcp__factory__issue_create` once with one item for each remaining pick, in finding order.
    - `title`: the fix of the finding, short, in the imperative mood.
    - `body`: the problem, the fix, and the `file:line` of the finding.
+   - `priority`: pass `Urgent`, `High`, `Medium`, or `Low` only when the operator names that priority for the item. Else pass no `priority`.
 8. Report the issue numbers with their links, in simple words.
-   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem only.
+   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem or a Priority problem.
    - On `bad-input`, give the error text. Nothing was created. Fix the list and call `mcp__factory__issue_create` again.
    - On `partial-create`, give the created numbers with their links and the item that failed. To retry, send only the failed item and the items after it.
