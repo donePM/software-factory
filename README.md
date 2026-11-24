@@ -183,7 +183,9 @@ The [setup guide](docs/setup.md#5-the-project-board-optional) shows the scope, t
   to `rtk git status`) can make factory agents lose Bash calls. The factory
   guard judges the command that the agent wrote. The hook then sends the new
   command to the permission check. A background factory agent cannot answer a
-  permission prompt, so the call fails. To prevent this, do one of these steps:
+  permission prompt, so the call fails. The reviewers then use the plain
+  `git -C` command and the `Read` and `Grep` tools. But only the two steps
+  below stop the failed calls. To prevent this, do one of these steps:
   - Make the hook skip input where `agent_type` starts with `factory:`.
   - Add an allow rule with a narrow prefix for the wrapper, for example
     `Bash(rtk git:*)`. Never allow `Bash(rtk:*)`: it also allows `rtk gh`.

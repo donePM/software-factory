@@ -420,6 +420,18 @@ const CODE_FIRST = [
   "The job's `spec.md` still defines the new behavior to build.",
 ].join('\n')
 
+// REVIEW_BASH stands word for word in agents/code-reviewer.md, security-reviewer.md, ux-reviewer.md, and ui-reviewer.md.
+const REVIEW_BASH = [
+  '## Bash',
+  'A user hook can rewrite a Bash command, for example to `rtk git diff`.',
+  'A background agent cannot answer the permission prompt of the new command.',
+  'When a Bash call fails with an error that names an `rtk` command, do not run the `rtk` command.',
+  'Never add `rtk` to a command yourself.',
+  'Run the plain command one more time as `git -C <worktree> ...`.',
+  'Use the `Grep` tool for a search and the `Read` tool to read a file.',
+  'If `git diff` still fails, the `## Diff` rule applies: do not write `VERDICT: PASS`.',
+].join('\n')
+
 const PRODUCT_READY = [
   'STATUS: READY',
   '',
@@ -479,6 +491,15 @@ test('code first section is the same in all nine agents', () => {
     'When they disagree with the code, the code wins.',
     "The job's `spec.md` still defines the new behavior to build.",
   ])
+})
+
+test('reviewers have a fallback for a rewritten Bash call', () => {
+  for (const s of ['`rtk', '`git -C <worktree> ...`', 'the `Grep` tool', 'the `Read` tool', 'the `## Diff` rule']) {
+    expect(REVIEW_BASH).toContain(s)
+  }
+  for (const line of REVIEW_BASH.split('\n').filter(l => l.includes('rtk'))) {
+    expect([line, /rewrite|do not|Never/.test(line)]).toEqual([line, true])
+  }
 })
 
 test('planner example product.md starts with STATUS READY and has the sections in order', () => {
