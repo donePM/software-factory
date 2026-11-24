@@ -404,3 +404,54 @@ test('an ignored .npmrc in a stack path fails', async () => {
   expect(r.verdict).toBe('FAIL')
   expect(r.report).toContain('app/.npmrc')
 })
+
+const WF = `${WT}/.github/workflows`
+const SHA = '3d3c42e5aac5ba805825da76410c181273ba90b1'
+
+test('gate fails on a workflow action pinned to a tag', async () => {
+  const ctx = make({ files: { [`${WF}/ci.yml`]: `jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@${SHA} # v7.0.1\n` } })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('FAIL')
+  const md = ctx.files['/repo/.factory/gate/setup/checks.md']!
+  expect(md.split('\n')[0]).toBe('VERDICT: FAIL')
+  expect(md).toContain('## Unpinned actions\n- .github/workflows/ci.yml: actions/checkout@v4\n')
+  expect(md).not.toContain('setup-node')
+})
+
+test('gate fails on a branch, short SHA, or missing ref in a .yaml workflow', async () => {
+  const ctx = make({ files: { [`${WF}/b.yaml`]: '    - uses: actions/cache@main\n    - uses: actions/setup-go@3d3c42e\n      uses: owner/repo\n' } })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('FAIL')
+  const md = ctx.files['/repo/.factory/gate/setup/checks.md']!
+  expect(md.split('\n')[0]).toBe('VERDICT: FAIL')
+  expect(md).toContain('- .github/workflows/b.yaml: actions/cache@main\n')
+  expect(md).toContain('- .github/workflows/b.yaml: actions/setup-go@3d3c42e\n')
+  expect(md).toContain('- .github/workflows/b.yaml: owner/repo\n')
+})
+
+test('gate passes on SHA-pinned, local, and docker workflow actions', async () => {
+  const body = [
+    `      - uses: actions/checkout@${SHA} # v7.0.1`,
+    `      - uses: "actions/setup-node@${SHA}" # v7.1.0`,
+    `      - uses: 'actions/cache@${SHA}'`,
+    '      - uses: ./.github/actions/local',
+    '      - uses: docker://alpine:3.20',
+  ].join('\n')
+  const ctx = make({ files: { [`${WF}/ci.yml`]: `${body}\n`, [`${WF}/README.md`]: 'uses: x@v1\n' } })
+  const r = await runGate(ctx, { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('PASS')
+  expect(ctx.files['/repo/.factory/gate/setup/checks.md']!).not.toContain('## Unpinned actions')
+  // With one bad line next to them, the section lists only the bad line.
+  const mixed = make({ files: { [`${WF}/ci.yml`]: `${body}\n      - uses: actions/cache@v4\n` } })
+  await runGate(mixed, { worktree: WT, round: 'setup' })
+  const md = mixed.files['/repo/.factory/gate/setup/checks.md']!
+  expect(md).toContain('## Unpinned actions\n- .github/workflows/ci.yml: actions/cache@v4\n')
+  expect(md.split('\n').filter(l => l.startsWith('- .github/workflows/'))).toHaveLength(1)
+})
+
+test('gate passes when the repo has no workflow folder', async () => {
+  const ctx = make()
+  const r = await runGate(ctx, { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('PASS')
+  expect(ctx.files['/repo/.factory/gate/setup/checks.md']!).not.toContain('## Unpinned actions')
+})
