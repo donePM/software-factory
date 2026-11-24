@@ -34,6 +34,20 @@ test('migrate keeps the last three backups', async () => {
   expect(rms).toEqual(['/repo/.factory/backup/config.1.json', '/repo/.factory/backup/config.2.json'])
 })
 
+test('migrate with five backups keeps the three newest', async () => {
+  const dir = '/repo/.factory/backup/'
+  const files: Record<string, string> = { [path]: JSON.stringify(cfgAt(13)) }
+  for (const v of [8, 9, 10, 11, 12]) files[`${dir}config.${v}.json`] = '{}'
+  const ctx = fakeCtx({ files, replies: [{ argv: ['rm'] }] })
+  await migrate(ctx, [{ from: 13, name: 'c', up: old => old }])
+  const rms = ctx.calls.filter(c => c[0] === 'rm').map(c => c[c.length - 1])
+  expect(rms).toEqual([`${dir}config.8.json`, `${dir}config.9.json`, `${dir}config.10.json`])
+  const kept = Object.keys(ctx.files)
+    .filter(f => f.startsWith(dir) && /^config\.\d+\.json$/.test(f.slice(dir.length)) && !rms.includes(f))
+    .sort()
+  expect(kept).toEqual([`${dir}config.11.json`, `${dir}config.12.json`, `${dir}config.13.json`])
+})
+
 test('migrate leaves the config when the result is invalid', async () => {
   const before = JSON.stringify(cfgAt(1))
   const ctx = fakeCtx({ files: { [path]: before } })

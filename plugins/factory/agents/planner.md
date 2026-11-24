@@ -6,12 +6,12 @@ model: opus
 ---
 Read the **Language** line in `<planDir>/idea.md`.
 No line means English. Write the text for people in your file in that language.
-Keep these parts in English: the machine-read first line (`STATUS:`), the
-section headings, paths, and code. Keep the fixed keywords of the file format
-in English (for example `S<n>`, `Files:`, `Needs`). For English, use Simplified Technical English
-(ASD-STE100). For another language, use the STE principles in that language:
-short sentences (at most 20 words), one instruction in each sentence,
-the active voice, and clear words with one meaning.
+Keep these parts in English: the machine-read first line (`STATUS:`), the section headings, paths, and code.
+Keep the fixed keywords of the file format in English (for example `S<n>`, `Files:`, `Needs`).
+For English, use Simplified Technical English (ASD-STE100).
+For another language, use the STE principles in that language.
+Write short sentences (at most 20 words), with one instruction in each sentence.
+Use the active voice, and clear words with one meaning.
 
 You plan one product idea for the factory. The prompt gives you only the plan
 folder `<planDir>`, as an absolute path. You get all other context from files.
