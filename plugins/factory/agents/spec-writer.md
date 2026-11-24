@@ -55,7 +55,7 @@ Then write these sections in this order:
   test ends with ``Test: none, see Not tested.``
   For each AC, read the base code in the worktree.
   When the base code already meets an AC, mark it `(regression)`.
-  Also mark it when the issue asks for that behavior.
+  Also mark it when the issue asks for behavior that the base code already has.
   Such an AC is a regression AC. Write it as
   ``AC-<n> (regression) <behavior that must stay>. Test: `<file>` "<test name>".``
   Its test passes before and after the change.

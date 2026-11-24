@@ -1118,7 +1118,7 @@ test('review example for an unreadable diff is CHANGES with a blocker', () => {
 const SPEC_REGRESSION_RULE = [
   '  For each AC, read the base code in the worktree.',
   '  When the base code already meets an AC, mark it `(regression)`.',
-  '  Also mark it when the issue asks for that behavior.',
+  '  Also mark it when the issue asks for behavior that the base code already has.',
   '  Such an AC is a regression AC. Write it as',
   '  ``AC-<n> (regression) <behavior that must stay>. Test: `<file>` "<test name>".``',
   '  Its test passes before and after the change.',
@@ -1130,7 +1130,7 @@ test('spec-writer marks an AC as regression when the base code already meets it'
   const t = oneLine(SPEC_REGRESSION_RULE)
   expect(t).toContain('For each AC, read the base code in the worktree.')
   expect(t).toContain('When the base code already meets an AC, mark it `(regression)`.')
-  expect(t).toContain('Also mark it when the issue asks for that behavior.')
+  expect(t).toContain('Also mark it when the issue asks for behavior that the base code already has.')
   expect(t).not.toContain('only for an AC that keeps old behavior')
 })
 
