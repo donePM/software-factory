@@ -1207,12 +1207,45 @@ const PIPELINE_SPEC_FINISHED = [
 const PIPELINE_RESUME = [
   '- `<n>` is `needs-human`, with or without a PR: the human fixed the cause or',
   '  answered in the issue. Call `job_sync`. When `job_sync` gives round 0, call',
-  '  `job_advance` with `to: spec` and start `factory:spec-writer`. Else call',
-  '  `job_advance` with `to: build`.',
-  '  Start `factory:builder` with the new `<roundDir>`. The builder reads',
+  '  `job_advance` with `to: spec` and start `factory:spec-writer`. Else when it',
+  '  gives `specChanged: true`, call `job_advance` with `to: build`. Else when it',
+  '  gives `specAsked: true`, call `job_advance` with `to: spec` and start',
+  '  `factory:spec-writer`. Else call `job_advance` with `to: build`.',
+  '  After a move to `build`, start `factory:builder` with the new `<roundDir>`. The builder reads',
   '  `decision.md` and `issue.md`. If the result state is `needs-human`, the round',
   '  limit is reached, or a review asks for a spec change. Start nothing. Call `status` and show its text.',
 ].join('\n')
+
+// SPEC_WRITER_UPDATE stands word for word in `## Rules` of agents/spec-writer.md.
+const SPEC_WRITER_UPDATE = [
+  '- When `job.md` has `Round` more than 0 and `spec.md` exists, update that `spec.md`.',
+  '  Take the change from the newest operator comment in `issue.md`.',
+  '  The operator is the author of the `Factory stopped:` comments.',
+  '  Keep the parts that the comment does not change.',
+  '  Do not write a new spec from zero.',
+].join('\n')
+
+test('pipeline sends a spec stop back to the spec-writer', () => {
+  const t = oneLine(PIPELINE_RESUME)
+  const at = (s: string): number => t.indexOf(s)
+  const round0 = at('When `job_sync` gives round 0, call `job_advance` with `to: spec` and start `factory:spec-writer`.')
+  const changed = at('Else when it gives `specChanged: true`, call `job_advance` with `to: build`.')
+  const asked = at('Else when it gives `specAsked: true`, call `job_advance` with `to: spec` and start `factory:spec-writer`.')
+  const build = at('Else call `job_advance` with `to: build`.')
+  expect(round0).toBeGreaterThan(-1)
+  expect(changed).toBeGreaterThan(round0)
+  expect(asked).toBeGreaterThan(changed)
+  expect(build).toBeGreaterThan(asked)
+})
+
+test('spec-writer updates the existing spec after a spec stop', () => {
+  const t = oneLine(SPEC_WRITER_UPDATE)
+  expect(t).toContain('When `job.md` has `Round` more than 0 and `spec.md` exists, update that `spec.md`.')
+  expect(t).toContain('Take the change from the newest operator comment in `issue.md`.')
+  expect(t).toContain('Keep the parts that the comment does not change.')
+  expect(t).toContain('Do not write a new spec from zero.')
+  for (const x of sentences(SPEC_WRITER_UPDATE.replace(/^- /, ''))) expect(x.trim().split(/\s+/).length).toBeLessThanOrEqual(20)
+})
 
 test('approver scope rule does not depend on the round', () => {
   const t = oneLine(APPROVER_SCOPE_RULE)

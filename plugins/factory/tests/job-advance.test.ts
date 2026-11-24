@@ -466,7 +466,7 @@ test('a review finding that needs a spec change goes to needs-human', async () =
   const post = t.posts[0]!
   expect(post.startsWith('Factory stopped: Round 3 needs a spec change.\n')).toBe(true)
   expect(post).toContain('- security: spec.md:5: AC-1 f\u200bixes #12 @\u200bsomeone. F\u200bix: move AC-1 to Not tested.\n')
-  expect(post).toContain('/factory:run 7')
+  expect(post.endsWith('\nComment the spec change you approve, or edit the spec comment. Then run /factory:run 7.')).toBe(true)
   expect(post).not.toContain('round limit')
   expect(t.states).toEqual(['needs-human'])
   expect(count(ctx, 'mkdir')).toBe(0)
@@ -781,6 +781,60 @@ test('spec from needs-human restarts the spec only before round 1', async () => 
   await rejects(jobAdvance(late.ctx, late.t, { issue: 7, to: 'spec' }), 'bad-state')
   expect(late.t.states).toEqual([])
   expect(late.ctx.calls.some(c => c[0] === 'rm')).toBe(false)
+})
+
+const stopComment = (body: string, id = 5): Comment =>
+  ({ id, author: 'op', body, createdAt: '2026-02-02T00:00:00Z', updatedAt: '2026-02-02T00:00:00Z' })
+
+test('spec from needs-human after a spec stop keeps the spec and the round', async () => {
+  const r = setup('needs-human', { round: 2, pr: 12 }, { [`${DIR}/spec.md`]: SPEC })
+  ;(await r.t.get(7)).comments.push(stopComment('Factory stopped: Round 2 needs a spec change.\n\n- code: x\n'))
+  const res = await jobAdvance(r.ctx, r.t, { issue: 7, to: 'spec' })
+  expect(res.state).toBe('spec')
+  expect(res.round).toBe(2)
+  expect(r.t.states).toEqual(['spec'])
+  expect(r.ctx.calls.some(c => c[0] === 'rm')).toBe(false)
+  expect(r.ctx.files[`${DIR}/spec.md`]).toBe(SPEC)
+  expect((await readJob(r.ctx, 7)).round).toBe(2)
+  expect(r.t.comments.find(c => c.name === 'intake')!.body).toContain('- Round: 2\n')
+  const limit = setup('needs-human', { round: 2 }, { [`${DIR}/spec.md`]: SPEC })
+  const comments = (await limit.t.get(7)).comments
+  comments.push(stopComment('Factory stopped: Round 2 needs a spec change.'), stopComment('Factory stopped: Round 2 reached the round limit of 3.', 6))
+  await expect(jobAdvance(limit.ctx, limit.t, { issue: 7, to: 'spec' })).rejects.toMatchObject({ code: 'bad-state', fix: 'Call job_advance with to: build.' })
+  expect(limit.t.states).toEqual([])
+  expect(limit.t.comments).toEqual([])
+})
+
+test('build after a spec update starts the next round, not round 1', async () => {
+  const { ctx, t } = setup('spec', { round: 2 }, { [`${DIR}/spec.md`]: SPEC })
+  const r = await jobAdvance(ctx, t, { issue: 7, to: 'build' })
+  expect(r.round).toBe(3)
+  expect(r.roundDir).toBe(`${DIR}/round-3`)
+  expect(ctx.calls).toContainEqual(['mkdir', '-p', `${DIR}/round-3`])
+  expect((await readJob(ctx, 7)).round).toBe(3)
+  expect((await readJob(ctx, 7)).specUpdated).toBe('2026-02-01T00:00:00Z')
+  expect(t.comments.map(c => c.name)).toEqual(['spec', 'intake'])
+  expect(t.comments.find(c => c.name === 'intake')!.body).toContain('- Round: 3\n')
+  const over = setup('spec', { round: 3 }, { [`${DIR}/spec.md`]: SPEC }, { maxRounds: 3 })
+  const o = await jobAdvance(over.ctx, over.t, { issue: 7, to: 'build' })
+  expect(o.state).toBe('needs-human')
+  expect(o.round).toBe(3)
+  expect(over.t.comments.map(c => c.name)).toEqual(['spec'])
+  expect(over.t.posts).toEqual(['Factory stopped: Round 3 reached the round limit of 3.'])
+  expect(over.t.states).toEqual(['needs-human'])
+  expect(count(over.ctx, 'mkdir')).toBe(0)
+  expect((await readJob(over.ctx, 7)).round).toBe(3)
+})
+
+test('needs-human without a spec stop still goes to build', async () => {
+  const late = setup('needs-human', { round: 1 }, { [`${DIR}/spec.md`]: SPEC })
+  ;(await late.t.get(7)).comments.push(stopComment('Factory stopped: Round 1 reached the round limit of 3.'))
+  const r = await jobAdvance(late.ctx, late.t, { issue: 7, to: 'build' })
+  expect(r.state).toBe('build')
+  expect(r.round).toBe(2)
+  const early = setup('needs-human', { round: 0 }, { [`${DIR}/spec.md`]: SPEC })
+  expect((await jobAdvance(early.ctx, early.t, { issue: 7, to: 'spec' })).state).toBe('spec')
+  expect(early.ctx.calls).toContainEqual(['rm', '-rf', `${DIR}/spec.md`])
 })
 
 test('build refuses a blocked spec', async () => {

@@ -311,6 +311,21 @@ test('jobSync keeps the local spec when the comment is older', async () => {
   expect(ctx.files[`${DIR}/spec.md`]).toBe('local\n')
 })
 
+test('specAsked is true only after a spec stop of the current round', async () => {
+  const stop = (id: number, round: number, author = 'op', at = '2026-01-03T00:00:00Z'): Comment =>
+    C(id, author, `Factory stopped: Round ${round} needs a spec change.\n\n- code: x\n`, at)
+  const limit = C(9, 'op', 'Factory stopped: Round 2 reached the round limit of 3.', '2026-01-04T00:00:00Z')
+  const asked = async (labels: string[], comments: Comment[]): Promise<boolean> =>
+    (await jobSync(fakeCtx({ files: withJob('s\n', '2026-01-05T00:00:00Z') }), tracker(T(labels, comments)), 7)).specAsked
+  expect(await asked(['factory:needs-human'], [stop(3, 2)])).toBe(true)
+  expect(await asked(['factory:needs-human'], [stop(3, 2), limit])).toBe(false)
+  expect(await asked(['factory:needs-human'], [stop(3, 1)])).toBe(false)
+  expect(await asked(['factory:needs-human'], [stop(3, 2, 'alice')])).toBe(false)
+  expect(await asked(['factory:needs-human'], [stop(3, 2), stop(4, 2, 'alice', '2026-01-04T00:00:00Z')])).toBe(true)
+  expect(await asked(['factory:build'], [stop(3, 2)])).toBe(false)
+  expect(await asked(['factory:needs-human'], [])).toBe(false)
+})
+
 const restoreFiles = (): Record<string, string> => ({
   ...CFG, [`${DIR}/job.md`]: renderJob(J), [`${DIR}/spec.md`]: 's',
 })

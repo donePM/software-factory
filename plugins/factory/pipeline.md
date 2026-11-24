@@ -127,9 +127,11 @@ Run only issue `<n>`. Skip step 4 for other issues.
   <!-- shortcut: only the merge session starts this round, upgrade when a run session must watch for new rounds -->
 - `<n>` is `needs-human`, with or without a PR: the human fixed the cause or
   answered in the issue. Call `job_sync`. When `job_sync` gives round 0, call
-  `job_advance` with `to: spec` and start `factory:spec-writer`. Else call
-  `job_advance` with `to: build`.
-  Start `factory:builder` with the new `<roundDir>`. The builder reads
+  `job_advance` with `to: spec` and start `factory:spec-writer`. Else when it
+  gives `specChanged: true`, call `job_advance` with `to: build`. Else when it
+  gives `specAsked: true`, call `job_advance` with `to: spec` and start
+  `factory:spec-writer`. Else call `job_advance` with `to: build`.
+  After a move to `build`, start `factory:builder` with the new `<roundDir>`. The builder reads
   `decision.md` and `issue.md`. If the result state is `needs-human`, the round
   limit is reached, or a review asks for a spec change. Start nothing. Call `status` and show its text.
 - Else: tell the human why `<n>` cannot start. Call `status` and show its text.
