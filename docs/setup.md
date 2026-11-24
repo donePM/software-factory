@@ -120,8 +120,10 @@ The project on GitHub stays. Delete it on GitHub if you do not need it.
 
 A project that is a Claude plugin with a `tsconfig.json` type-checks against the engine types of Claude Code.
 The gate copies these types from the current Claude Code version.
-After an update of Claude Code, these types are not there yet.
-Then the setup check `engine types` is red, and the type check step of the gate fails.
+The session can run a different Claude Code version than `claude --version`.
+Then the gate uses the types of the newest bundled version.
+In this case, `checks.md` names the used version and the version of `claude --version`.
+When no version has types, the setup check `engine types` is red, and the type check step of the gate fails.
 
 To fix it, open the `plugin-authoring` skill one time in the new Claude Code version.
 Then run `/factory:setup` again.

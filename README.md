@@ -98,10 +98,16 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 1. **Add work.** `/factory:add add a --json flag to the export command` creates
    an issue with the `factory` label. Or add the label to an existing issue.
    `Depends on #12` in the issue body holds it back until #12 is closed.
+   Name a priority, for example "make it urgent", and the new issue gets that `Priority` value.
 2. **Run.** `/factory:run` takes the ready issues bugs first, then by priority and age.
    The priority comes from the GitHub issue field `Priority`, not from labels:
    `Urgent`, `High`, `Medium`, and `Low` map to `critical`, `high`, `medium`, and `low`.
-   An issue without the field counts as `medium`. The
+   An issue without the field counts as `medium`.
+   The factory works from right to left on the board: it finishes the job nearest to `done` first.
+   A job in `approved` or `needs-human` holds new issues. `queue` names these jobs in `heldBy`,
+   and `/factory:status` shows their next human step. When you comment in a `needs-human` issue
+   after the stop, or change its spec, the job is unblocked. Then it gets the next free slot.
+   `/factory:run <n>` still starts issue `n`. The
    intake agent accepts the issue, asks the author questions (`needs-info`),
    or rejects it. The spec writer writes testable acceptance criteria. The
    builder works test-first in `.factory/worktrees/<n>` on branch `factory/<n>`.

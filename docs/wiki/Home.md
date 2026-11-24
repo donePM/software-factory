@@ -27,7 +27,7 @@ The README gives the steps for Claude Desktop and for updates.
 |---|---|
 | `/factory:setup` | Checks the tools, writes `.factory/config.json` and the labels, and runs a first gate check. |
 | `/factory:add <todos>` | Makes issues from free text, one issue for each piece of work. |
-| `/factory:run [n]` | Starts the ready issues, or only issue `n`. |
+| `/factory:run [n]` | Starts the ready issues, or only issue `n`. It works from right to left on the board. A job in `approved` or `needs-human` holds new issues (`heldBy`). |
 | `/factory:status` | Shows the free slots and the ready, running, and waiting jobs. |
 | `/factory:approve <n>` | Records your approval on the PR. It merges nothing. |
 | `/factory:merge <n>` | Syncs the branch, runs the gate, and merges the PR. |
