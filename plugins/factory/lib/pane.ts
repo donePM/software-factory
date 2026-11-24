@@ -19,12 +19,16 @@ const copyRow = (text: string, copy = text): PaneRow => ({ key: 'copy', text, co
 
 // shortcut: no open mark for routed reviewers that are not done, the snapshot has no route. Upgrade when it holds the route.
 // shortcut: setup checks only that config.json exists, not labels, board or stacks. Upgrade when the snapshot holds the doctor result.
+const SETUP: PaneRow = { key: 'setup', text: 'Setup is not complete. Run /factory:setup.' }
+const EMPTY: PaneRow = { key: 'empty', text: 'No snapshot yet. Run /factory:status to write it.' }
+const byNumber = (s: Snapshot) => [...(s.waiting ?? [])].sort((a, b) => a.number - b.number)
+
 export function paneRows(s: Snapshot | null, hasConfig: boolean): PaneRow[] {
-  if (!hasConfig) return [{ key: 'setup', text: 'Setup is not complete. Run /factory:setup.' }, copyRow('/factory:setup')]
-  if (s === null) return [{ key: 'empty', text: 'No snapshot yet. Run /factory:status to write it.' }]
+  if (!hasConfig) return [SETUP, copyRow('/factory:setup')]
+  if (s === null) return [EMPTY]
   const header: PaneRow = { key: 'header', text: `${paneTitle(s)}  ${s.slots.used}/${s.slots.total} slots`, bold: true }
   // An old status.json can lack waiting, or the command field of a row.
-  const [first, ...rest] = [...(s.waiting ?? [])].sort((a, b) => a.number - b.number)
+  const [first, ...rest] = byNumber(s)
   if (first !== undefined) {
     const command = first.command ?? null
     return [
@@ -47,5 +51,18 @@ export function paneRows(s: Snapshot | null, hasConfig: boolean): PaneRow[] {
     { key: 'running', text: 'Running', bold: true },
     ...(jobs.length === 0 ? [{ key: 'running-none', text: 'No running jobs' }] : jobs),
     ...next,
+  ]
+}
+
+// The widget has no buttons: a click possibly does not reach a widget.
+export function widgetRows(s: Snapshot | null, hasConfig: boolean): PaneRow[] {
+  if (!hasConfig) return [SETUP]
+  if (s === null) return [EMPTY]
+  const waiting = byNumber(s)
+  const first = waiting[0]
+  const next = first !== undefined ? `#${first.number} ${first.command ?? first.next}` : s.running.length > 0 ? null : s.ready > 0 ? '/factory:run' : '/factory:add <text>'
+  return [
+    { key: 'widget', text: `${s.slots.used}/${s.slots.total} slots · ${s.running.length} running · ${waiting.length} waiting` },
+    ...(next === null ? [] : [{ key: 'widget-next', text: `Next: ${next}` }]),
   ]
 }
