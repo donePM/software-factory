@@ -522,6 +522,22 @@ test('queue with issue refuses a closed issue, a PR, and a final state', async (
   }
 })
 
+test('queue with issue resumes a closed issue in docs', async () => {
+  const tr = tracker([], [T(5, ['factory:docs'], { state: 'closed' })])
+  const q = await queue(ctx, tr, cfg, 5)
+  expect(q.running).toEqual([{ number: 5, state: 'docs' }])
+  expect(tr.added).toEqual([])
+})
+
+test('queue with issue still refuses other closed issues', async () => {
+  for (const t of [T(5, [], { state: 'closed' }), T(6, ['factory:done'], { state: 'closed' }), T(7, ['factory:rejected'], { state: 'closed' })]) {
+    const tr = tracker([], [t])
+    const err = await queue(ctx, tr, cfg, t.number).catch(e => e)
+    expect(err).toMatchObject({ code: 'not-startable', message: `#${t.number} is closed` })
+    expect(tr.added).toEqual([])
+  }
+})
+
 test('queue with issue keeps a blocked issue out of next', async () => {
   const q = await queue(ctx, tracker([T(3)], [bare(9, { body: 'Depends on #3' })]), cfg, 9)
   expect(q.blocked.map(b => [b.number, b.blockedBy])).toEqual([[9, [3]]])

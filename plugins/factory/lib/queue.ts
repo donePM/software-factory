@@ -134,10 +134,11 @@ async function backlogCards(ctx: Ctx, tr: Tracker, cfg: Config, tickets: Ticket[
 }
 
 // Checks the issue that the operator named, and gives it the factory label when it has none.
+// A closed issue in docs can resume: the merge closes the issue before the documenter runs.
 async function startable(tr: Tracker, n: number): Promise<Ticket> {
   const t = await tr.get(n)
   const s = stateOf(t.labels)
-  const cause = t.kind === 'pr' ? 'a pull request' : t.state === 'closed' ? 'closed' : s === 'done' || s === 'rejected' ? s : null
+  const cause = t.kind === 'pr' ? 'a pull request' : t.state === 'closed' && s !== 'docs' ? 'closed' : s === 'done' || s === 'rejected' ? s : null
   if (cause !== null) throw new FactoryError('not-startable', `#${n} is ${cause}`, 'Name an open issue that is not done or rejected.')
   if (t.labels.includes('factory')) return t
   await tr.addLabel(n, 'factory')

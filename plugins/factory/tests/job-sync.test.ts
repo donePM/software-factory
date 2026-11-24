@@ -575,3 +575,28 @@ test('jobSync rebuilds docs.md from the docs comment', async () => {
     expect(res.rebuilt).not.toContain('docs.md')
   }
 })
+
+const other = (n: number, title: string): Job => ({ ...J, issue: n, title, jobDir: `/repo/.factory/jobs/${n}`, worktree: `/repo/.factory/worktrees/${n}`, branch: `factory/${n}` })
+const OTHERS = {
+  '/repo/.factory/jobs/5/job.md': renderJob(other(5, 'Fix five')),
+  '/repo/.factory/jobs/5/spec.md': 'STATUS: READY\n',
+  '/repo/.factory/jobs/9/job.md': renderJob(other(9, 'Add nine')),
+  '/repo/.factory/jobs/10/job.md': renderJob(other(10, 'Add ten')),
+  '/repo/.factory/jobs/tmp/x': '',
+}
+const RUNNING = '- #5 Fix five: /repo/.factory/jobs/5/spec.md\n- #9 Add nine: no spec.md yet\n- #10 Add ten: no spec.md yet\n'
+
+test('jobSync writes running.md with the other jobs', async () => {
+  const ctx = fakeCtx({ files: { ...CFG, ...OTHERS, [`${DIR}/job.md`]: renderJob(J), [WT]: '' } })
+  await jobSync(ctx, tracker(T(['factory:review'])), 7)
+  expect(ctx.files[`${DIR}/running.md`]).toBe(RUNNING)
+  const alone = fakeCtx({ files: { ...CFG, [`${DIR}/job.md`]: renderJob(J), [WT]: '' } })
+  await jobSync(alone, tracker(T(['factory:review'])), 7)
+  expect(alone.files[`${DIR}/running.md`]).toBe('- none\n')
+})
+
+test('jobCreate writes running.md', async () => {
+  const ctx = fakeCtx({ files: { ...CFG, ...OTHERS }, replies: createReplies })
+  await jobCreate(ctx, tracker(T([])), 7)
+  expect(ctx.files[`${DIR}/running.md`]).toBe(RUNNING)
+})
