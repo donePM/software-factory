@@ -834,3 +834,26 @@ test('pipeline sends a blocked build that needs a spec change to the spec-writer
   expect(t).toContain('Then the `needs-human` resume goes to `spec`.')
   for (const s of sentences(PIPELINE_BUILDER_FINISHED.split('\n').slice(1).join('\n'))) expect(s.trim().split(/\s+/).length).toBeLessThanOrEqual(20)
 })
+
+test('feedback and answer skills post the comment and then run the issue', () => {
+  for (const [name, state] of [['feedback', 'needs-human'], ['answer', 'needs-info']] as const) {
+    const file = `skills/${name}/SKILL.md` as TextFile
+    const text = TEXTS[file] ?? ''
+    const lines = text.split('\n')
+    const end = lines.indexOf('---', 1)
+    expect(lines[0]).toBe('---')
+    expect(end).toBeGreaterThan(0)
+    const keys = Object.fromEntries(lines.slice(1, end).map(l => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 2)]))
+    expect(keys.name).toBe(name)
+    expect(keys.description ?? '').toMatch(/^\S.+\.$/)
+    expect(keys['argument-hint']).toBe('<issue-number> <text>')
+    expect(keys['disable-model-invocation']).toBe('true')
+    const t = oneLine(text)
+    expect(t).toContain('Arguments: $ARGUMENTS')
+    expect(t).toContain('Take the issue number and the text only from the arguments above.')
+    expect(t).toContain(`Call the tool \`mcp__factory__issue_comment\` with \`issue\`, \`text\`, and \`state: ${state}\`.`)
+    expect(t).toContain('On success, read `${CLAUDE_PLUGIN_ROOT}/skills/run/SKILL.md`. Follow it exactly as `/factory:run <n>`, with the issue number from step 1.')
+    expect(t).toContain('On an error, give the error text and its `Fix` line. Start nothing.')
+    expect(t.indexOf('mcp__factory__issue_comment')).toBeLessThan(t.indexOf('skills/run/SKILL.md'))
+  }
+})
