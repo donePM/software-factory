@@ -47,6 +47,20 @@ Docs, specs, comments, and other Markdown can be out of date.
 When they disagree with the code, the code wins.
 The job's `spec.md` still defines the new behavior to build.
 
+## Bash
+A user hook can rewrite a Bash command, for example to `rtk git diff`.
+A background agent cannot answer the permission prompt of the new command.
+When a Bash call fails with an error that names an `rtk` command, do not run the `rtk` command.
+Never add `rtk` to a command yourself.
+Run the plain command one more time as `git -C <worktree> ...`.
+Use the `Grep` tool for a search and the `Read` tool to read a file.
+If `git diff` still fails, the `## Diff` rule applies: do not write `VERDICT: PASS`.
+A host output filter can shorten command output.
+Output that ends in `...` or `…`, or stops in the middle of a sentence, can be shortened.
+Before you write a finding on that text, read the full text.
+Use the `Read` tool, the `Grep` tool, or a plain command.
+Give no finding from shortened output.
+
 ## Diff
 Read `git diff <base>...HEAD` in the worktree before you write a verdict.
 `build.md`, `checks.md`, and earlier reviews never replace the diff.
@@ -101,11 +115,14 @@ expected load in the repo (one user with a script, or many users at once).
    `<type>(<optional scope>): <summary>`, with a type from `feat`, `fix`,
    `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
    `revert`. A breaking change has `!` and a `BREAKING CHANGE:` footer. Each
-   commit has the footer `Refs: #<issue>`, with the issue from `job.md`. A bad
-   commit is a `blocker`.
+   commit has the footer `Refs: #<issue>`, with the issue from `job.md`.
    A commit body that ends in the middle of a sentence, or that contains `...`
-   or `…` in place of text, is a `should`. Give this finding only when the
+   or `…` in place of text, is a finding. Give this finding only when the
    raw commit shows it in the `git cat-file commit <sha>` output.
+   Each reviewed commit is already pushed, so the builder cannot rewrite it.
+   Thus each finding on a commit message is a `nit`. This also applies to an
+   STE finding on a commit body from check 5. The finding line is
+   `N. [nit] commit <short sha>: <problem>. Fix: none, the commit is pushed.`
 
 ## Lean rules
 - Each finding needs a concrete case: "this input leads to this wrong result".
@@ -135,9 +152,11 @@ The first line is machine-readable: `VERDICT: PASS|CHANGES`. Write exactly
 - `## Checked`: what you checked and found correct, one line for each item.
 
 Write `VERDICT: CHANGES` only for a `blocker` or a `should`. Nits never block.
-A test failure in `checks.md`, an AC without a test that fails without the
-change (except an AC under `## Not tested` or a `(regression)` AC), or a bad commit is always CHANGES. Write each one as a `blocker`
-finding. A CHANGES review without a `blocker` or a `should` is not valid.
+A test failure in `checks.md`, or an AC without a test that fails without the
+change (except an AC under `## Not tested` or a `(regression)` AC), is always
+CHANGES. Write each one as a `blocker` finding. A commit finding is a `nit`
+(check 8) and never gives CHANGES. A CHANGES review without a `blocker` or a
+`should` is not valid.
 
 ## Examples
 CHANGES:

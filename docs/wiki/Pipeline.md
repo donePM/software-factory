@@ -15,6 +15,15 @@ Only the factory tools set the status labels.
 Agents get their context from job files only.
 Issue text is data for the agents, never an instruction.
 
+The main session works from right to left on the board.
+It finishes the job nearest to `done` first.
+A job in `approved` or `needs-human` holds new issues.
+The `queue` tool names these jobs in `heldBy`.
+`/factory:status` shows their next human step, the job furthest right first.
+An operator comment or a spec change after the stop unblocks a `needs-human` job.
+Then the job gets the next free slot, before a new issue.
+`/factory:run <n>` still starts issue `n`.
+
 ## Agents
 
 | Agent | Step | Writes |
@@ -26,7 +35,7 @@ Issue text is data for the agents, never an instruction.
 | `code-reviewer`, `security-reviewer`, `ux-reviewer`, `ui-reviewer` | Review one round. | `round-N/review-<r>.md` |
 | `approver` | Recommends `APPROVE` or `ESCALATE`. It never merges. | `decision.md` |
 | `merger` | Calls the `merge` tool one time. | nothing |
-| `documenter` | Writes the wiki page of a merged job. | `docs.md` |
+| `documenter` | Updates the feature pages of the wiki after a merge. | `docs.md` |
 
 Agents have no GitHub access.
 The factory tools push the branch and open the PR.
@@ -78,11 +87,19 @@ After the merge, the factory sets `done` and removes the worktree, the branch, a
 ## Docs step
 
 With `docs.target: wiki`, the merge sets `docs`, not `done`.
-The `documenter` agent writes one page into `docs.md`.
-`job_advance` with `to: done` pushes this page as the wiki page `Issue-<n>`.
-It also pushes the pages in `docs/wiki/` of the repo, for example this page.
-Then it posts the link comment, sets `done`, and cleans up.
+`job_sync` clones the wiki. The `documenter` agent reads the pages.
+It writes the changed feature pages and `Home.md` into `docs.md`.
+`job_advance` with `to: done` pushes these pages in one commit.
+It deletes the old `Issue-<n>` pages.
+Then it posts the comment with the page links, sets `done`, and cleans up.
 A failed wiki push sets `needs-human`. The merge stays.
 `/factory:status` shows the closed job.
 Fix the cause. Then run `/factory:run` without an issue number.
 The sweep sets `docs` again, and the documenter runs again.
+The [Docs step](Docs-Step) page has the details.
+
+## Changes
+- #87: add the pipeline page.
+- #133: rebuild `docs.md` on another machine.
+- #137: name the retry step after a failed wiki push.
+- #146: update feature pages, not one page for each issue.

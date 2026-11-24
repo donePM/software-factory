@@ -57,7 +57,12 @@ test('the table matches the bootstrap plan', () => {
   expect(TRANSITIONS.spec).toEqual(['build', 'needs-human'])
   expect(TRANSITIONS.build).toEqual(['review', 'needs-human'])
   expect(TRANSITIONS.review).toEqual(['build', 'approved', 'needs-human'])
-  expect(TRANSITIONS['needs-human']).toEqual(['build', 'done', 'needs-human'])
+  expect(TRANSITIONS['needs-human']).toEqual(['spec', 'build', 'done', 'needs-human'])
+})
+
+test('needs-human can go back to spec', () => {
+  expect(canTransition('needs-human', 'spec')).toBe(true)
+  expect(() => assertTransition('needs-human', 'spec')).not.toThrow()
 })
 
 test('needs-human may stay needs-human', () => {

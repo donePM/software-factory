@@ -7,8 +7,9 @@ import { doctor } from '../lib/doctor.ts'
 import { runGate } from '../lib/gate.ts'
 import { gateJob } from '../lib/gatejob.ts'
 import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
+import { withWaitNotify } from '../lib/notify.ts'
 import { STATUS, stateOf } from '../lib/labels.ts'
-import { githubTracker, repoFromUrl } from '../lib/github.ts'
+import { githubTracker, PRIORITIES, repoFromUrl } from '../lib/github.ts'
 import { approve, merge } from '../lib/merge.ts'
 import { planCreate, planFeedback } from '../lib/plan.ts'
 import { addToBacklog, withBoard } from '../lib/project.ts'
@@ -37,11 +38,13 @@ function issueOf(input: { issue?: unknown }): number {
 }
 
 // Runs a tool with a tracker that also updates the project board. Board problems come back as warnings.
-async function boarded(ctx: Ctx, run: (t: Tracker) => Promise<unknown>): Promise<unknown> {
+export async function boarded(ctx: Ctx, run: (t: Tracker) => Promise<unknown>): Promise<unknown> {
   const cfg = await loadConfig(ctx)
-  const { tracker, warnings, save } = withBoard(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+  const waits = withWaitNotify(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
+  const { tracker, warnings, save } = withBoard(ctx, waits.tracker, cfg)
   // The tool can write job.md after a label change: save the looked up board ids after it ends.
-  const out = await run(tracker).finally(save)
+  // A tool can set a waiting state and then throw: notify also then.
+  const out = await run(tracker).finally(save).finally(waits.flush)
   if (warnings.length === 0) return out
   // The tool can have its own warnings: keep them.
   const own = (out as { warnings?: unknown }).warnings
@@ -120,7 +123,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'queue',
     description:
-      'List the backlog: running, waiting, blocked and ready tickets, free slots and the next tickets to start. With issue, next holds only that issue, and an open issue without the factory label gets it. Only /factory:run <n> gives issue.',
+      'List the backlog: running, waiting, blocked and ready tickets, free slots and the next tickets to start. Running and waiting jobs come right to left on the board. Without issue, a job in approved or needs-human holds new issues: heldBy names these jobs, and next holds only needs-human jobs with unblocked: true. With issue, next holds only that issue, and an open issue without the factory label gets it. Only /factory:run <n> gives issue.',
     inputSchema: { type: 'object', properties: { issue: { type: 'integer', minimum: 1 } }, additionalProperties: false },
     handler: async (ctx, input) => {
       const n = input.issue === undefined ? undefined : issueOf(input)
@@ -150,7 +153,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'issue_create',
     description:
-      'Create GitHub issues in order, each with the label factory (none when park is true). dependsOnRefs names the ref of an earlier item and becomes a Depends on line. Returns ref, number and url for each issue. With the board on, it adds a Backlog card for each issue. Board problems come back as warnings next to created. Creates nothing when the input is bad.',
+      'Create GitHub issues in order, each with the label factory (none when park is true). dependsOnRefs names the ref of an earlier item and becomes a Depends on line. Returns ref, number and url for each issue. priority sets the issue field Priority by its option name. With the board on, it adds a Backlog card for each issue. Priority and board problems come back as warnings next to created. Creates nothing when the input is bad.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -165,6 +168,7 @@ export const TOOLS: ToolDef[] = [
               dependsOn: { type: 'array', items: { type: 'integer', minimum: 1 } },
               ref: { type: 'string', minLength: 1 },
               dependsOnRefs: { type: 'array', items: { type: 'string' } },
+              priority: { type: 'string', enum: PRIORITIES },
             },
             required: ['title', 'body'],
             additionalProperties: false,
@@ -267,7 +271,7 @@ async function gateTool(ctx: Ctx, input: { issue?: unknown; round?: string }): P
 const DEFAULT_TIMEOUT_MS = 120000
 const MAX_TIMEOUT_MS = 600000
 
-// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep, ui.status and fs.
+// any: serve passes its untyped $ on. makeCtx uses only session.root, process.run, clock.sleep, fs and ui.
 export async function makeCtx($: any): Promise<Ctx> {
   const root: string = await $.session.root()
   return {
@@ -275,6 +279,15 @@ export async function makeCtx($: any): Promise<Ctx> {
     now: () => new Date(),
     sleep: ms => $.clock.sleep(ms),
     status: text => void Promise.resolve($.ui.status(text)).catch(() => undefined),
+    // A failed toast does not stop the native notification.
+    notify: async text => {
+      try {
+        $.ui.toast(text)
+      } catch {}
+      try {
+        await $.ui.notify(text)
+      } catch {}
+    },
     run: (argv, opts) =>
       $.process.run(argv, {
         ...opts,

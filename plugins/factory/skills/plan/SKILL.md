@@ -26,8 +26,9 @@ Do not run Bash. Do not write files. The tools write `idea.md`, and the planner 
    - `ref`: `S<n>`, the number of the slice.
    - `dependsOnRefs`: the slices from its `Needs` list, for example `["S1"]`. Give no entry for `Needs none.`.
    - `dependsOn`: the number of the duplicate issue for each left-out slice in its `Needs` list. Give no `dependsOnRefs` entry for a left-out slice. Take the first hit when the slice has two or more hits.
+   - `priority`: pass `Urgent`, `High`, `Medium`, or `Low` only when the operator names that priority for the item. Else pass no `priority`.
    - If no slice is left, call no `issue_create`. Tell the operator that every slice has a possible duplicate.
 7. Report the issue numbers with their links, in simple words.
-   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem only.
+   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem or a Priority problem.
    - On `bad-input`, give the error text. Nothing was created. Fix the list and call `mcp__factory__issue_create` again.
    - On `partial-create`, give the created numbers with their links and the item that failed. To retry, send only the failed item and the items after it. Replace each `dependsOnRefs` entry that names a created item with `dependsOn` and its number.
