@@ -430,6 +430,11 @@ const REVIEW_BASH = [
   'Run the plain command one more time as `git -C <worktree> ...`.',
   'Use the `Grep` tool for a search and the `Read` tool to read a file.',
   'If `git diff` still fails, the `## Diff` rule applies: do not write `VERDICT: PASS`.',
+  'A host output filter can shorten command output.',
+  'Output that ends in `...` or `…`, or stops in the middle of a sentence, can be shortened.',
+  'Before you write a finding on that text, read the full text.',
+  'Use the `Read` tool, the `Grep` tool, or a plain command.',
+  'Give no finding from shortened output.',
 ].join('\n')
 
 const PRODUCT_READY = [
@@ -499,6 +504,17 @@ test('reviewers have a fallback for a rewritten Bash call', () => {
   }
   for (const line of REVIEW_BASH.split('\n').filter(l => l.includes('rtk'))) {
     expect([line, /rewrite|do not|Never/.test(line)]).toEqual([line, true])
+  }
+})
+
+test('reviewers read the full text before a finding on shortened output', () => {
+  const added = REVIEW_BASH.split('\n').slice(8)
+  const text = added.join('\n')
+  for (const s of ['`...`', '`…`', 'the full text', 'the `Read` tool', 'the `Grep` tool', 'Give no finding from shortened output.']) {
+    expect(text).toContain(s)
+  }
+  for (const line of added) {
+    expect([line, line.split(' ').length <= 20, line.includes('rtk')]).toEqual([line, true, false])
   }
 })
 
