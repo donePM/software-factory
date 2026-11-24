@@ -17,7 +17,7 @@ import { guardBash, guardMain } from '../lib/guard.ts'
 import { queue } from '../lib/queue.ts'
 import { setup } from '../lib/setup.ts'
 import { renderStatus, statusData } from '../lib/status.ts'
-import { PANE, paneRows, paneTitle, parseSnapshot } from '../lib/pane.ts'
+import { PANE, paneRows, paneTitle, parseSnapshot, widgetRows } from '../lib/pane.ts'
 import type { PaneRow } from '../lib/pane.ts'
 import { refreshSnapshot, statusPath, writeSnapshot } from '../lib/view.ts'
 import type { Snapshot } from '../lib/view.ts'
@@ -362,7 +362,7 @@ export const register: Register = on => {
     const snap = e.isInteractive ? await readSnapshot($) : null
     if (snap !== null) {
       // A pane that another plugin holds rejects the open. The session start must not fail on it.
-      const opened = await $.ui.open({ id: PANE, title: paneTitle(snap) }).catch(() => ({ isPlaced: true as const }))
+      const opened = await $.ui.open({ id: PANE, title: paneTitle(snap), placement: 'widget' }).catch(() => ({ isPlaced: true as const }))
       if (!opened.isPlaced) {
         $.ui.status('Factory pane: run /factory-pane to open it.')
         pinned = true
@@ -371,7 +371,7 @@ export const register: Register = on => {
     return next(e)
   })
   on('command.run', { command: 'factory-pane' }, async $ => {
-    const opened = await $.ui.open({ id: PANE, title: paneTitle(await readSnapshot($)) })
+    const opened = await $.ui.open({ id: PANE, title: paneTitle(await readSnapshot($)), placement: 'widget' })
     return opened.isPlaced ? {} : { text: opened.reason }
   })
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -387,7 +387,7 @@ export const register: Register = on => {
     }
     const hasConfig = await $.fs.exists(configPath(await $.session.root()))
     // A Text drops its key, so a keyed Box holds each row.
-    const rows = paneRows(await readSnapshot($), hasConfig).map(r => h(Box, { key: r.key }, cell(r)))
+    const rows = (e.props.placement === 'widget' ? widgetRows : paneRows)(await readSnapshot($), hasConfig).map(r => h(Box, { key: r.key }, cell(r)))
     return h(Box, { flexDirection: 'column' }, ...rows) as RenderElement
   })
   // Serve only at tool.run: it fires after the permission check, so tools like merge stay gated.
