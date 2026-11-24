@@ -14,6 +14,7 @@ import { renderIssue } from './issue-file.ts'
 import { stateOf } from './labels.ts'
 import { typesSource } from './stacks/claude-plugin.ts'
 import { findMarked, stripMarker } from './markers.ts'
+import { stopOf } from './queue.ts'
 import {
   branchName, fieldOf, jobDir, lastSection, parseBase, parsePr, parseReviewed, parseRoute, parseSpecUpdated, readJob, renderRoute, worktreeDir, writeJob,
   type Job,
@@ -116,7 +117,13 @@ export async function jobCreate(ctx: Ctx, t: Tracker, n: number): Promise<Job> {
   return job
 }
 
-export type SyncResult = { job: Job; state: State | null; rebuilt: string[]; specChanged: boolean; attempts: number }
+export type SyncResult = { job: Job; state: State | null; rebuilt: string[]; specChanged: boolean; specAsked: boolean; attempts: number }
+
+// The newest operator stop is the spec stop of this round: the operator approves the spec change in a comment.
+export function specAsked(ticket: Ticket, operator: string, round: number): boolean {
+  const stop = stopOf(ticket.comments, operator)
+  return stateOf(ticket.labels) === 'needs-human' && round > 0 && stop?.body.split(/\r\n|\r|\n/, 1)[0] === `Factory stopped: Round ${round} needs a spec change.`
+}
 
 // intake.md is the text before the first "## Job" or "## Route" heading.
 function beforeSections(text: string): string {
@@ -226,7 +233,7 @@ export async function jobSync(ctx: Ctx, t: Tracker, n: number): Promise<SyncResu
     specChanged = true
   }
   const attempts = countAttempts(await readIfExists(ctx, `${roundOf(job)}/checks.log`))
-  return { job, state, rebuilt, specChanged, attempts }
+  return { job, state, rebuilt, specChanged, specAsked: specAsked(ticket, operator, job.round), attempts }
 }
 
 export type AdvanceInput = { issue: number; to: State; reason?: string; from?: State }
@@ -360,14 +367,17 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
   if (from !== 'intake') await verifyJob(ctx, t, ticket, job)
 
   if (to === 'spec') {
-    if (from === 'needs-human' && job.round > 0) throw new FactoryError('bad-state', `round ${job.round} has started`, 'Call job_advance with to: build.')
+    // shortcut: a blocked spec update needs a manual edit of the spec comment, upgrade when it happens often.
+    if (from === 'needs-human' && job.round > 0 && !specAsked(ticket, await t.login(), job.round)) {
+      throw new FactoryError('bad-state', `round ${job.round} has started`, 'Call job_advance with to: build.')
+    }
     const text = await intakeText()
     const intake = parseIntake(text)
     if (intake.decision !== 'ACCEPT') throw new FactoryError('intake-not-accept', `intake.md says ${intake.decision}`, 'Only an ACCEPT intake goes to spec.')
     job = { ...job, route: route(intake, await loadConfig(ctx)) }
     await writeJob(ctx, job)
     await upsertIntake()(text)
-    if (from === 'needs-human') await rmrf(ctx, `${dir}/spec.md`) // the spec-writer writes a new spec
+    if (from === 'needs-human' && job.round === 0) await rmrf(ctx, `${dir}/spec.md`) // the spec-writer writes a new spec
     await moveJob(t, job, 'spec')
     return result('spec')
   }
@@ -433,8 +443,7 @@ async function advanceBuild(ctx: Ctx, t: Tracker, old: Job, from: State | null, 
     const spec = await readRequired(ctx, `${old.jobDir}/spec.md`, 'no-spec', 'Run the spec step first.')
     checkSpec(spec)
     const posted = await t.upsertComment(n, 'spec', spec)
-    const job: Job = { ...old, specUpdated: posted.updatedAt, round: 1 }
-    return startRound(ctx, t, job)
+    old = { ...old, specUpdated: posted.updatedAt }
   }
   const max = (await loadConfig(ctx)).maxRounds
   const over = (job: Job): boolean => job.round + 1 > max
@@ -448,11 +457,11 @@ async function advanceBuild(ctx: Ctx, t: Tracker, old: Job, from: State | null, 
     const asks = specChanged ? [] : Object.entries(parsed).flatMap(([r, p]) => p.findings.filter(f => f.spec).map(f => `- ${r}: ${inert(f.text)}`))
     if (asks.length > 0) {
       const note = `Round ${old.round} needs a spec change.`
-      await t.comment(n, [`Factory stopped: ${note}`, '', ...asks, '', `Edit the spec comment. Then run /factory:run ${n}.`].join('\n'))
+      await t.comment(n, [`Factory stopped: ${note}`, '', ...asks, '', `Comment the spec change you approve, or edit the spec comment. Then run /factory:run ${n}.`].join('\n'))
       await moveJob(t, old, 'needs-human')
       return done(old, 'needs-human', { note })
     }
-  } else {
+  } else if (from !== 'spec') {
     checkSpec(await readRequired(ctx, `${old.jobDir}/spec.md`, 'no-spec', 'Run the spec step first.'))
   }
   if (over(old)) {
