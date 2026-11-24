@@ -353,12 +353,14 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
   if (from !== 'intake') await verifyJob(ctx, t, ticket, job)
 
   if (to === 'spec') {
+    if (from === 'needs-human' && job.round > 0) throw new FactoryError('bad-state', `round ${job.round} has started`, 'Call job_advance with to: build.')
     const text = await intakeText()
     const intake = parseIntake(text)
     if (intake.decision !== 'ACCEPT') throw new FactoryError('intake-not-accept', `intake.md says ${intake.decision}`, 'Only an ACCEPT intake goes to spec.')
     job = { ...job, route: route(intake, await loadConfig(ctx)) }
     await writeJob(ctx, job)
     await upsertIntake()(text)
+    if (from === 'needs-human') await rmrf(ctx, `${dir}/spec.md`) // the spec-writer writes a new spec
     await moveJob(t, job, 'spec')
     return result('spec')
   }
