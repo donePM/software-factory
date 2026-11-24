@@ -412,6 +412,16 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
     return result('needs-info')
   }
 
+  if (to === 'rejected' && from !== 'intake') {
+    if (reason === undefined || reason.trim() === '') throw new FactoryError('reason-required', 'A rejection outside intake needs a reason.', 'Give a reason.')
+    await t.comment(n, `Rejected: ${reason}`)
+    if (job.pr !== null && (await t.prState(job.pr)).state === 'OPEN') await t.closePr(job.pr)
+    await t.deleteBranch(branchName(n))
+    await moveJob(t, job, 'rejected')
+    await t.close(n, 'rejected')
+    return result('rejected', { cleanup: await cleanupJob(ctx, t, n, 'rejected', job.pr ?? undefined) })
+  }
+
   if (to === 'rejected') {
     const text = await intakeText()
     if (parseIntake(text).decision !== 'REJECT') throw new FactoryError('intake-mismatch', 'intake.md must say DECISION: REJECT')

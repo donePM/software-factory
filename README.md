@@ -90,6 +90,7 @@ See [Developing the factory with the factory](#developing-the-factory-with-the-f
 | `/factory:status` | Shows free slots and the ready, running, and waiting jobs, with the next command for each |
 | `/factory:approve <n>` | Records your approval on the PR (or as a comment when it is your own PR). Merges nothing |
 | `/factory:merge <n>` | Syncs the branch with the base branch, runs the gate, and merges the PR. This call is your approval |
+| `/factory:reject <n> <reason>` | Ends a job in `needs-human`, `approved`, or `needs-info`. Posts the reason, closes the PR, deletes the remote branch, and closes the issue as not planned. A local branch with commits that are not in the PR stays |
 
 `<n>` is the issue number. `approve` and `merge` also take the PR number.
 

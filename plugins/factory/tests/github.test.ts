@@ -228,6 +228,23 @@ test('close maps the reason', async () => {
   ])
 })
 
+test('closePr closes the PR and deleteBranch deletes the remote branch', async () => {
+  const ctx = spyCtx(writes)
+  const t = githubTracker(ctx, 'a/b')
+  await t.closePr(12)
+  await t.deleteBranch('factory/7')
+  expect(ctx.stdins.map(s => [s.argv.join(' '), s.stdin === undefined ? undefined : JSON.parse(s.stdin)])).toEqual([
+    ['gh api -X PATCH repos/a/b/pulls/12 --input -', { state: 'closed' }],
+    ['gh api -X DELETE repos/a/b/git/refs/heads/factory/7', undefined],
+  ])
+  for (const stderr of ['gh: Not Found (HTTP 404)', 'gh: Reference does not exist (HTTP 422)']) {
+    const gone = githubTracker(spyCtx([{ argv: ['gh', 'api', '-X', 'DELETE'], result: { exitCode: 1, stderr } }]), 'a/b')
+    await gone.deleteBranch('factory/7')
+  }
+  const down = githubTracker(spyCtx([{ argv: ['gh', 'api', '-X', 'DELETE'], result: { exitCode: 1, stderr: 'gh: Server Error (HTTP 500)' } }]), 'a/b')
+  await expect(down.deleteBranch('factory/7')).rejects.toMatchObject({ code: 'command-failed' })
+})
+
 test('comment and prComment post one REST comment', async () => {
   const ctx = spyCtx(writes)
   const t = githubTracker(ctx, 'a/b')
