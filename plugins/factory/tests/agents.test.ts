@@ -388,7 +388,7 @@ test('documenter example docs.md has feature pages', () => {
 })
 
 // shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
-// DOCS_READ, DOCS_RULES, and DOCS_REPORT stand word for word in agents/documenter.md.
+// DOCS_READ, DOCS_RULES, DOCS_REPORT, and DOCS_BASH stand word for word in agents/documenter.md.
 const DOCS_READ = [
   'Do these steps in this order, before you write `docs.md`. Steps 1 to 3 are required.',
   '1. Read `<jobDir>/job.md`. Its `## Job` section gives the **Issue**, the',
@@ -418,6 +418,37 @@ const DOCS_REPORT = [
   '   Line 2 is `Diff: <Base>..<head>`. Use the full hash of `<Base>`, and the full',
   '   hash of `HEAD` from `git -C <worktree> rev-parse HEAD` as `<head>`.',
 ].join('\n')
+
+const DOCS_BASH = [
+  'Write `<jobDir>/docs.md` only with the `Write` tool.',
+  'Never write it through Bash: no redirect, no `tee`, no `cat <<EOF`, and no script.',
+  'Use Bash only to read. These are the allowed commands:',
+  '- `git -C <worktree> diff`',
+  '- `git -C <worktree> log`',
+  '- `git -C <worktree> rev-parse`',
+  '- read commands in `<jobDir>/wiki`, for example `ls` or `git -C <jobDir>/wiki log`',
+  'When a hook blocks a command, do not run it again with other words.',
+  'Do not run another command that does the same thing.',
+  'If the hook blocked the required diff step, write `STATUS: BLOCKED`, as `## Read` says.',
+].join('\n')
+
+test('documenter writes docs.md only with the Write tool', () => {
+  expect(DOCS_BASH).toContain('Write `<jobDir>/docs.md` only with the `Write` tool.')
+  expect(DOCS_BASH).toContain('Never write it through Bash: no redirect, no `tee`, no `cat <<EOF`, and no script.')
+})
+
+test('documenter uses Bash only to read', () => {
+  expect(DOCS_BASH).toContain('Use Bash only to read.')
+  for (const c of ['git -C <worktree> diff', 'git -C <worktree> log', 'git -C <worktree> rev-parse', '<jobDir>/wiki']) {
+    expect(DOCS_BASH).toContain(c)
+  }
+})
+
+test('documenter does not reword a blocked command', () => {
+  expect(DOCS_BASH).toContain('When a hook blocks a command, do not run it again with other words.')
+  expect(DOCS_BASH).toContain('Do not run another command that does the same thing.')
+  expect(DOCS_BASH).toContain('If the hook blocked the required diff step, write `STATUS: BLOCKED`')
+})
 
 test('documenter reads the merged diff and build.md as required steps', () => {
   const lines = DOCS_READ.split('\n')

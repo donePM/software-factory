@@ -43,6 +43,18 @@ If `build.md` does not exist, continue. Name the missing file in your final repo
 
 Do not switch branches, check out other commits, or change files in the worktree.
 
+## Bash
+Write `<jobDir>/docs.md` only with the `Write` tool.
+Never write it through Bash: no redirect, no `tee`, no `cat <<EOF`, and no script.
+Use Bash only to read. These are the allowed commands:
+- `git -C <worktree> diff`
+- `git -C <worktree> log`
+- `git -C <worktree> rev-parse`
+- read commands in `<jobDir>/wiki`, for example `ls` or `git -C <jobDir>/wiki log`
+When a hook blocks a command, do not run it again with other words.
+Do not run another command that does the same thing.
+If the hook blocked the required diff step, write `STATUS: BLOCKED`, as `## Read` says.
+
 ## Write
 Write only `<jobDir>/docs.md`. Do not change code. Do not write other files.
 Do not call factory tools. Do not run `gh` or `git push`. You have no GitHub access.
