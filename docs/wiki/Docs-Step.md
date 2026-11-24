@@ -24,7 +24,8 @@ Each feature page ends with a `## Changes` list with the issue numbers.
 3. It writes `docs.md`. The file has one `## Page <Name>.md` section for each changed page.
    It updates the feature pages that the change touches.
    It creates a page only when no page fits.
-4. `job_advance` with `to: done` writes the pages to the clone.
+4. `job_advance` with `to: done` makes a new clone of the wiki.
+   It writes the pages to that clone, not to the clone of the documenter.
    It deletes the old `Issue-<n>.md` pages.
    It pushes all changes in one commit `docs(wiki): document #<n>`.
 5. The factory posts a `<!-- factory:docs -->` comment on the issue.

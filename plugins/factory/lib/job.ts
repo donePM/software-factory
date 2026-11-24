@@ -549,6 +549,7 @@ const wikiGit = (ctx: Ctx, args: string[]) => ctx.run([...WIKI_GIT, ...args], { 
 const wikiClone = (repo: string, wiki: string): string[] => ['clone', '--depth', '1', `https://github.com/${repo}.wiki.git`, wiki]
 
 // The page names passed the name rule of parseDocs. Only the fixed Issue-<digits>.md pattern deletes a page.
+// The documenter can change its clone in <jobDir>/wiki, so the push uses a separate fresh clone.
 // shortcut: no retry when two docs jobs push at the same time, upgrade when parallel docs jobs often collide.
 async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, pages: Page[]): Promise<void> {
   const fixes: Record<string, string> = {
@@ -562,7 +563,8 @@ async function publishWiki(ctx: Ctx, repo: string, n: number, wiki: string, page
     const fix = fixes[step]
     throw new Error(`the wiki ${step} failed: ${(r.stderr || r.stdout).trim() || `git exited with ${r.exitCode}`}${fix === undefined ? '' : `\nFix: ${fix}`}`)
   }
-  if (!(await ctx.fs.exists(wiki))) await git(wikiClone(repo, wiki))
+  await rmrf(ctx, wiki)
+  await git(wikiClone(repo, wiki))
   const old = (await ctx.fs.list(wiki)).filter(f => ISSUE_PAGE.test(f)).sort()
   if (old.length > 0) await git(['-C', wiki, 'rm', '--quiet', '--', ...old])
   for (const p of pages) await ctx.fs.write(`${wiki}/${p.name}`, `${p.text}\n`)
@@ -581,7 +583,7 @@ async function advanceDocs(ctx: Ctx, t: Tracker, job: Job, ticket: Ticket): Prom
     throw new FactoryError('docs-not-done', 'docs.md must start with "STATUS: DONE" and have at least one "## Page <Name>.md" with text', 'The documenter must finish first.')
   }
   try {
-    await publishWiki(ctx, t.repo, n, `${job.jobDir}/wiki`, docs.pages)
+    await publishWiki(ctx, t.repo, n, `${job.jobDir}/wiki-push`, docs.pages)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     await t.comment(n, `Factory stopped: ${msg}${msg.includes('\nFix: ') ? '' : `\n\nFix the cause. ${RETRY}`}`)

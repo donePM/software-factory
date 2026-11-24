@@ -832,7 +832,8 @@ test('escalate has no autoMerge when merge.auto is on', async () => {
   expect('autoMerge' in r).toBe(false)
 })
 
-const WIKI = `${DIR}/wiki`
+const WIKI = `${DIR}/wiki-push`
+const DOC_WIKI = `${DIR}/wiki`
 const DOCS = 'STATUS: DONE\n\n## Summary\nTwo pages.\n\n## Page Orders.md\n# Orders\n\n## Use\nRun it.\n\n## Changes\n- #7: add the thing.\n\n## Page Home.md\n# Home\n- [Orders](Orders)\n'
 const GH_GIT = ['git', '-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
 const CLONE = [...GH_GIT, 'clone', '--depth', '1', 'https://github.com/a/b.wiki.git', WIKI]
@@ -849,12 +850,14 @@ const times = (ctx: Run['ctx'], argv: string[]): number => ctx.calls.filter(c =>
 
 test('a docs job publishes the feature pages and deletes the issue pages', async () => {
   const { ctx, t } = inDocs()
-  ctx.files[WIKI] = ''
+  // The fake clone keeps the files that the test puts in the push folder.
   for (const f of ['Issue-87.md', 'Issue-133.md', 'Pipeline.md', 'Issue-Tracker.md']) ctx.files[`${WIKI}/${f}`] = '# Old\n'
   ctx.files[`${WT}/docs/wiki/Repo.md`] = '# Repo\n'
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'done' })
   expect(r.state).toBe('done')
-  expect(at(ctx, CLONE)).toBe(-1)
+  expect(at(ctx, ['rm', '-rf', WIKI])).toBeGreaterThan(-1)
+  expect(at(ctx, ['rm', '-rf', WIKI])).toBeLessThan(at(ctx, CLONE))
+  expect(at(ctx, CLONE)).toBeLessThan(at(ctx, COMMIT))
   expect(ctx.calls).toContainEqual([...RM, 'Issue-133.md', 'Issue-87.md'])
   expect(ctx.files[`${WIKI}/Orders.md`]).toBe('# Orders\n\n## Use\nRun it.\n\n## Changes\n- #7: add the thing.\n')
   expect(ctx.files[`${WIKI}/Home.md`]).toBe('# Home\n- [Orders](Orders)\n')
@@ -869,16 +872,25 @@ test('a docs job publishes the feature pages and deletes the issue pages', async
   expect(ctx.calls).toContainEqual(['rm', '-rf', DIR])
   expect(r.cleanup?.removed).toContain(DIR)
 
-  const fresh = inDocs()
-  expect((await jobAdvance(fresh.ctx, fresh.t, { issue: 7, to: 'done' })).state).toBe('done')
-  expect(at(fresh.ctx, CLONE)).toBeGreaterThan(-1)
-  expect(at(fresh.ctx, CLONE)).toBeLessThan(at(fresh.ctx, COMMIT))
-  expect(fresh.ctx.calls.some(c => c.includes('rm') && c.includes(WIKI))).toBe(false)
-
   const same = inDocs(DOCS, [])
   expect((await jobAdvance(same.ctx, same.t, { issue: 7, to: 'done' })).state).toBe('done')
   expect(at(same.ctx, COMMIT)).toBe(-1)
   expect(at(same.ctx, PUSH)).toBe(-1)
+})
+
+test('a docs job pushes from a fresh clone, not from the documenter clone', async () => {
+  const { ctx, t } = inDocs()
+  ctx.files[DOC_WIKI] = ''
+  ctx.files[`${DOC_WIKI}/_Sidebar.md`] = '# Added by the documenter\n'
+  ctx.files[`${DOC_WIKI}/.git/hooks/pre-push`] = '#!/bin/sh\nexit 0\n'
+  ctx.files[`${DOC_WIKI}/.git/config`] = '[core]\n\tfsmonitor = /bin/evil\n'
+  ctx.files[WIKI] = ''
+  expect((await jobAdvance(ctx, t, { issue: 7, to: 'done' })).state).toBe('done')
+  expect(at(ctx, ['rm', '-rf', WIKI])).toBeLessThan(at(ctx, CLONE))
+  expect(times(ctx, CLONE)).toBe(1)
+  expect(times(ctx, PUSH)).toBe(1)
+  expect(ctx.calls.some(c => c[0] === 'git' && c.includes(DOC_WIKI))).toBe(false)
+  expect(ctx.calls.some(c => c.join(' ').includes(`${DOC_WIKI}/`))).toBe(false)
 })
 
 test('a docs job links each changed page in the docs comment', async () => {
@@ -900,7 +912,7 @@ test('a docs job rejects docs.md with no page or a bad page name', async () => {
     const b = inDocs(bad)
     await rejects(jobAdvance(b.ctx, b.t, { issue: 7, to: 'done' }), code)
     expect(b.t.states).toEqual([])
-    expect(b.ctx.calls.some(c => c.includes(WIKI))).toBe(false)
+    expect(b.ctx.calls.some(c => c.includes(WIKI) || c.includes(DOC_WIKI))).toBe(false)
   }
 })
 
