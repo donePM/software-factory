@@ -1113,6 +1113,33 @@ test('review example for an unreadable diff is CHANGES with a blocker', () => {
   expect(r.findings[0]?.text ?? '').toMatch(FINDING)
 })
 
+// shortcut: plugin tests have no fs, so this is a copy. Upgrade to a file read when tests get fs.
+// SPEC_REGRESSION_RULE stands word for word in agents/spec-writer.md (## Acceptance criteria item).
+const SPEC_REGRESSION_RULE = [
+  '  For each AC, read the base code in the worktree.',
+  '  When the base code already meets an AC, mark it `(regression)`.',
+  '  Also mark it when the issue asks for behavior that the base code already has.',
+  '  Such an AC is a regression AC. Write it as',
+  '  ``AC-<n> (regression) <behavior that must stay>. Test: `<file>` "<test name>".``',
+  '  Its test passes before and after the change.',
+  '  Never use the mark for behavior that the base code does not meet yet.',
+  '  A regression AC has a test, so it never goes under `## Not tested`.',
+].join('\n')
+
+test('spec-writer marks an AC as regression when the base code already meets it', () => {
+  const t = oneLine(SPEC_REGRESSION_RULE)
+  expect(t).toContain('For each AC, read the base code in the worktree.')
+  expect(t).toContain('When the base code already meets an AC, mark it `(regression)`.')
+  expect(t).toContain('Also mark it when the issue asks for behavior that the base code already has.')
+  expect(t).not.toContain('only for an AC that keeps old behavior')
+})
+
+test('spec-writer regression rule has no sentence over 20 words', () => {
+  const s = sentences(SPEC_REGRESSION_RULE.trim())
+  expect(s.some(x => x.includes('base code already meets'))).toBe(true)
+  for (const x of s) expect(x.split(/\s+/).length).toBeLessThanOrEqual(20)
+})
+
 // shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
 // APPROVER_SCOPE_RULE stands word for word in agents/approver.md. SPEC_WRITER_SCOPE stands word for word in `## Rules`
 // of agents/spec-writer.md, and SPEC_WRITER_FIRST_LINE in its `## Write`. PIPELINE_SPEC_FINISHED and PIPELINE_RESUME stand
