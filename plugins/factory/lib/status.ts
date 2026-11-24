@@ -45,6 +45,13 @@ export function hintOf(repo: string, n: number, state: string, cause: Cause | un
   return `${state}: see the issue https://github.com/${repo}/issues/${n}`
 }
 
+// The command that the person copies next, or null when the next step is not a command.
+export function commandOf(n: number, state: string, autoMerge: boolean, closed: number[]): string | null {
+  if (state === 'approved') return autoMerge ? null : `/factory:merge ${n}`
+  if (state === 'needs-human') return closed.includes(n) ? '/factory:run' : `/factory:run ${n}`
+  return state === 'conflict' ? `/factory:run ${n}` : null
+}
+
 // prs maps an issue number to its PR number; titles maps an issue number to its title.
 export function statusText(repo: string, q: Queue, prs: Record<number, number>, concurrency: number, titles: Record<number, string> = {}, causes: Record<number, Cause> = {}, drift: string[] = [], autoMerge = false, closed: number[] = []): string {
   const lines = [`Factory · ${repo}  ${q.running.length}/${concurrency} slots`]

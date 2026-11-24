@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { invoke, makeCtx, SNAPSHOT_TOOLS, TOOLS, type ToolDef } from '../hooks/tools.ts'
 import type { Queue } from '../lib/queue.ts'
+import { commandOf } from '../lib/status.ts'
 import { buildSnapshot, statusLine, type Snapshot } from '../lib/view.ts'
 import { backlogReplies, files, OPEN, raw } from './support/backlog.ts'
 import { fakeCtx, fakeHost, type Reply } from './support/host.ts'
@@ -35,12 +36,21 @@ test('buildSnapshot holds repo, slots, running, waiting, ready and time', () => 
       { number: 4, title: 'Add logout', state: 'spec', round: null, reviewsDone: [] },
     ],
     waiting: [
-      { number: 42, title: 'Add CSV', state: 'approved', next: 'approved: /factory:merge 42', link: 'https://github.com/o/r/pull/50' },
-      { number: 43, title: 'Add PDF', state: 'needs-human', next: 'needs you: gate failed · fix the cause. Then run /factory:run 43', link: 'https://github.com/o/r/issues/43' },
-      { number: 44, title: 'Add XML', state: 'needs-info', next: 'needs info: author answers in the issue', link: 'https://github.com/o/r/issues/44' },
-      { number: 5, title: 'Fix it', state: 'conflict', next: 'conflict: remove all status labels but one. Then run /factory:run 5', link: 'https://github.com/o/r/issues/5' },
+      { number: 42, title: 'Add CSV', state: 'approved', next: 'approved: /factory:merge 42', link: 'https://github.com/o/r/pull/50', command: '/factory:merge 42' },
+      { number: 43, title: 'Add PDF', state: 'needs-human', next: 'needs you: gate failed · fix the cause. Then run /factory:run 43', link: 'https://github.com/o/r/issues/43', command: '/factory:run 43' },
+      { number: 44, title: 'Add XML', state: 'needs-info', next: 'needs info: author answers in the issue', link: 'https://github.com/o/r/issues/44', command: null },
+      { number: 5, title: 'Fix it', state: 'conflict', next: 'conflict: remove all status labels but one. Then run /factory:run 5', link: 'https://github.com/o/r/issues/5', command: '/factory:run 5' },
     ],
   })
+})
+
+test('commandOf gives the command of each waiting state', () => {
+  expect(commandOf(42, 'approved', false, [])).toBe('/factory:merge 42')
+  expect(commandOf(42, 'approved', true, [])).toBeNull()
+  expect(commandOf(43, 'needs-human', false, [])).toBe('/factory:run 43')
+  expect(commandOf(43, 'needs-human', false, [43])).toBe('/factory:run')
+  expect(commandOf(5, 'conflict', false, [])).toBe('/factory:run 5')
+  for (const state of ['needs-info', 'needs-design', 'build']) expect(commandOf(44, state, false, [])).toBeNull()
 })
 
 const stub = (name: string): ToolDef => ({ name, description: 'd', inputSchema: {}, handler: async () => ({ ok: true }) })
@@ -50,7 +60,7 @@ const EXPECTED_SNAPSHOT = {
   slots: { used: 1, total: 2 },
   ready: 1,
   running: [{ number: 3, title: 't3', state: 'build', round: 2, reviewsDone: ['code'] }],
-  waiting: [{ number: 42, title: 't42', state: 'approved', next: 'approved: /factory:merge 42', link: 'https://github.com/o/r/pull/50' }],
+  waiting: [{ number: 42, title: 't42', state: 'approved', next: 'approved: /factory:merge 42', link: 'https://github.com/o/r/pull/50', command: '/factory:merge 42' }],
 }
 
 test('each listed tool writes status.json', async () => {
@@ -100,7 +110,7 @@ test('a failed snapshot leaves the tool result unchanged', async () => {
 
 const snap = (o: Partial<Snapshot>): Snapshot => ({ repo: 'o/r', time: 't', slots: { used: 0, total: 3 }, ready: 0, running: [], waiting: [], ...o })
 const run = (number: number, state: string, round: number | null) => ({ number, title: `t${number}`, state, round, reviewsDone: [] })
-const wait = (number: number, state: string) => ({ number, title: `t${number}`, state, next: 'n', link: 'l' })
+const wait = (number: number, state: string) => ({ number, title: `t${number}`, state, next: 'n', link: 'l', command: null })
 
 test('statusLine shows the slots, the running jobs and the waiting count', () => {
   const running = [run(42, 'review', 2), run(45, 'build', 1)]

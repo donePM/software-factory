@@ -2,7 +2,7 @@ import { loadConfig } from './config.ts'
 import type { Config } from './config.ts'
 import { githubTracker, repoFromUrl } from './github.ts'
 import { fieldOf, jobDir, parseRoute } from './jobfile.ts'
-import { hintOf, statusData } from './status.ts'
+import { commandOf, hintOf, statusData } from './status.ts'
 import type { StatusData } from './status.ts'
 import type { Ctx, Reviewer } from './types.ts'
 
@@ -13,7 +13,7 @@ export type Snapshot = {
   slots: { used: number; total: number }
   ready: number
   running: ({ number: number; title: string; state: string } & JobRound)[]
-  waiting: { number: number; title: string; state: string; next: string; link: string }[]
+  waiting: { number: number; title: string; state: string; next: string; link: string; command: string | null }[]
 }
 
 export function statusLine(s: Snapshot): string | undefined {
@@ -38,6 +38,7 @@ export function buildSnapshot(repo: string, cfg: { concurrency: number; merge: {
       state,
       next: hintOf(repo, number, state, d.causes[number], auto, d.closed),
       link: pr === undefined ? `https://github.com/${repo}/issues/${number}` : `https://github.com/${repo}/pull/${pr}`,
+      command: commandOf(number, state, auto, d.closed),
     }
   }
   return {
