@@ -10,7 +10,7 @@ export const TRANSITIONS: Record<State | 'backlog', State[]> = {
   'needs-design': [],
   build: ['review', 'needs-human'],
   review: ['build', 'approved', 'needs-human'],
-  'needs-human': ['build', 'done', 'needs-human'],
+  'needs-human': ['spec', 'build', 'done', 'needs-human'],
   approved: ['build', 'done', 'needs-human'],
   docs: ['done', 'needs-human'],
   done: [],

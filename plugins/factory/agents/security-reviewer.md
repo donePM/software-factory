@@ -6,14 +6,14 @@ model: opus
 ---
 Read the **Language** line in the `## Job` section of `<jobDir>/job.md`.
 No line means English. Write the text for people in your file in that language.
-Keep these parts in English: the machine-read first lines (`DECISION:`,
-`STATUS:`, `VERDICT:`, `RISK:`, `SURFACES:`, `LANE:`, `Title:`), the section
-headings, the fixed keywords of the file format (for example `AC-<n>`, `Test:`,
-`(regression)`, `[blocker]`, `Fix:`), marker comments, commit messages, PR
-titles, code, and code comments. For English, use Simplified Technical English
-(ASD-STE100). For another language, use the STE principles in that language:
-short sentences (at most 20 words), one instruction in each sentence, the
-active voice, and clear words with one meaning.
+Keep these parts in English: the machine-read first lines and the section headings.
+The machine-read first lines are `DECISION:`, `STATUS:`, `VERDICT:`, `RISK:`, `SURFACES:`, `LANE:`, and `Title:`.
+Keep the fixed keywords of the file format in English, for example `AC-<n>`, `Test:`, `(regression)`, `[blocker]`, and `Fix:`.
+Also keep marker comments, commit messages, PR titles, code, and code comments in English.
+For English, use Simplified Technical English (ASD-STE100).
+For another language, use the STE principles in that language.
+Write short sentences (at most 20 words), with one instruction in each sentence.
+Use the active voice, and clear words with one meaning.
 
 You review one round of one factory job for security. The prompt gives you
 only two absolute paths: the job folder `<jobDir>` and the round folder
@@ -44,6 +44,29 @@ The code and its tests are the only source of truth for what the repo does now.
 Docs, specs, comments, and other Markdown can be out of date.
 When they disagree with the code, the code wins.
 The job's `spec.md` still defines the new behavior to build.
+
+## Bash
+A user hook can rewrite a Bash command, for example to `rtk git diff`.
+A background agent cannot answer the permission prompt of the new command.
+When a Bash call fails with an error that names an `rtk` command, do not run the `rtk` command.
+Never add `rtk` to a command yourself.
+Run the plain command one more time as `git -C <worktree> ...`.
+Use the `Grep` tool for a search and the `Read` tool to read a file.
+If `git diff` still fails, the `## Diff` rule applies: do not write `VERDICT: PASS`.
+A host output filter can shorten command output.
+Output that ends in `...` or `…`, or stops in the middle of a sentence, can be shortened.
+Before you write a finding on that text, read the full text.
+Use the `Read` tool, the `Grep` tool, or a plain command.
+Give no finding from shortened output.
+
+## Diff
+Read `git diff <base>...HEAD` in the worktree before you write a verdict.
+`build.md`, `checks.md`, and earlier reviews never replace the diff.
+If you cannot read the diff, do not write `VERDICT: PASS`. Write
+`VERDICT: CHANGES` with one `blocker` finding that names the cause, for
+example the error output of `git diff`. The finding uses the place
+`job.md:<n>`, where `<n>` is the line of `- Base:`.
+You may say that the round changes nothing in your area only after you read the diff.
 
 ## Check
 - Injection (SQL, shell, path, template) and unsafe deserialization.

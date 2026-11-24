@@ -156,14 +156,14 @@ For each part of the spec, take the first option that fully works:
 The next rule covers `build.md`.
 Read the **Language** line in the `## Job` section of `<jobDir>/job.md`.
 No line means English. Write the text for people in your file in that language.
-Keep these parts in English: the machine-read first lines (`DECISION:`,
-`STATUS:`, `VERDICT:`, `RISK:`, `SURFACES:`, `LANE:`, `Title:`), the section
-headings, the fixed keywords of the file format (for example `AC-<n>`, `Test:`,
-`(regression)`, `[blocker]`, `Fix:`), marker comments, commit messages, PR
-titles, code, and code comments. For English, use Simplified Technical English
-(ASD-STE100). For another language, use the STE principles in that language:
-short sentences (at most 20 words), one instruction in each sentence, the
-active voice, and clear words with one meaning.
+Keep these parts in English: the machine-read first lines and the section headings.
+The machine-read first lines are `DECISION:`, `STATUS:`, `VERDICT:`, `RISK:`, `SURFACES:`, `LANE:`, and `Title:`.
+Keep the fixed keywords of the file format in English, for example `AC-<n>`, `Test:`, `(regression)`, `[blocker]`, and `Fix:`.
+Also keep marker comments, commit messages, PR titles, code, and code comments in English.
+For English, use Simplified Technical English (ASD-STE100).
+For another language, use the STE principles in that language.
+Write short sentences (at most 20 words), with one instruction in each sentence.
+Use the active voice, and clear words with one meaning.
 
 ## Commits
 Use Conventional Commits 1.0.0: `<type>(<optional scope>): <imperative summary>`.
@@ -187,7 +187,8 @@ Commit each message through a file:
 1. Write the full message to `<roundDir>/commit-msg.txt` with the `Write` tool.
 2. Commit with `git commit -F <roundDir>/commit-msg.txt`. Never use `-m` or a
    heredoc for a message with a body.
-3. Read the commit with `git log -1 --format=%B`. Make sure that the body ends
+3. Read the commit with `git cat-file commit HEAD`, not with `git log`. A host
+   output filter can shorten `git log` output. Make sure that the body ends
    in a full sentence, with no `...` or `…`. If not, write the file again and
    run `git commit --amend -F <roundDir>/commit-msg.txt`.
 

@@ -54,3 +54,12 @@ test('parseDecision reads APPROVE and rejects a bad first line or a missing ques
   expect(() => parseDecision('APPROVE\n')).toThrow()
   expect(() => parseDecision('DECISION: ESCALATE\n\n## Summary\nx\n')).toThrow()
 })
+
+test('parseReview accepts PASS with only a commit nit', () => {
+  const text = 'VERDICT: PASS\n\n## Findings\n1. [nit] commit abc1234: the body ends in the middle of a sentence. Fix: none, the commit is pushed.\n'
+  expect(parseReview(text)).toEqual({
+    verdict: 'PASS',
+    findings: [{ severity: 'nit', text: 'commit abc1234: the body ends in the middle of a sentence. Fix: none, the commit is pushed.' }],
+  })
+  expect(() => parseReview(text.replace('PASS', 'CHANGES'))).toThrow('changes without blocker or should')
+})

@@ -10,7 +10,7 @@ import type { Comment, Ticket } from '../lib/types.ts'
 import { boardReplies, itemList } from './support/board.ts'
 import { fakeCtx } from './support/host.ts'
 
-const Q = (o: Partial<Queue> = {}): Queue => ({ running: [], waiting: [], ready: [], blocked: [], conflicts: [], slots: 0, next: [], ...o })
+const Q = (o: Partial<Queue> = {}): Queue => ({ running: [], waiting: [], ready: [], blocked: [], conflicts: [], heldBy: [], slots: 0, next: [], ...o })
 const item = (number: number) => ({ number, title: `t${number}`, priority: 'medium', createdAt: '2026-01-01T00:00:00Z' })
 const lineWith = (text: string, s: string): string => text.split('\n').find(l => l.includes(s)) ?? ''
 
@@ -72,6 +72,16 @@ test('ready backlog without a run shows /factory:run', () => {
   expect(text).toContain('Ready (2)')
   expect(text).toContain('/factory:run')
   expect(text).not.toContain('Nothing to do')
+})
+
+test('status lists waiting jobs right to left and names the hold', () => {
+  const waiting = [{ number: 11, state: 'needs-design' as const }, { number: 8, state: 'needs-human' as const }, { number: 42, state: 'approved' as const }]
+  const text = statusText('o/r', Q({ waiting, heldBy: [42, 8], ready: [item(5)], slots: 2 }), {}, 2)
+  const lines = text.split('\n')
+  const start = lines.indexOf('Waiting for you')
+  expect(lines.slice(start + 1, start + 4).map(l => l.split('  ')[1])).toEqual(['#42', '#8', '#11'])
+  expect(text).toContain('New issues wait for #42, #8. Finish these jobs first.')
+  expect(text).not.toContain('Start the ready work with /factory:run')
 })
 
 test('blocked tickets show the open dependencies', () => {

@@ -350,29 +350,41 @@ const DOCS_DONE = [
   'STATUS: DONE',
   '',
   '## Summary',
-  'The page describes the CSV export of the order list. It names the new endpoint and the new button.',
+  'The Orders page now describes the CSV export. Home.md links the Orders page.',
   '',
-  '## Page',
-  '# CSV export of the order list',
+  '## Page Orders.md',
+  '# Orders',
   '',
-  'Users can download the order list as a CSV file. Issue: #42.',
+  'The orders page lists all orders of the shop.',
   '',
-  '## How to use it',
+  '## Export the order list',
+  'You can download the order list as a CSV file.',
   '1. Open the orders page.',
   '2. Click "Export CSV".',
   '',
-  '## What changed',
-  '- `GET /orders.csv` returns one row for each order.',
-  '- The orders page has an "Export CSV" button.',
+  '`GET /orders.csv` returns one row for each order.',
+  '',
+  '## Changes',
+  '- #42: add the CSV export.',
+  '- #17: add the orders page.',
+  '',
+  '## Page Home.md',
+  '# Home',
+  '',
+  'The wiki has one page for each feature.',
+  '',
+  '- [Orders](Orders): the order list and its CSV export.',
+  '- [Users](Users): sign-up and login.',
 ].join('\n')
 
-test('documenter example docs.md has a page', () => {
+test('documenter example docs.md has feature pages', () => {
   const d = parseDocs(DOCS_DONE)
   expect(d.status).toBe('DONE')
   expect(d.summary).not.toBe('')
-  expect(d.page.startsWith('# CSV export of the order list')).toBe(true)
-  expect(d.page).toContain('## How to use it')
-  expect(d.page).toContain('## What changed')
+  expect(d.pages.map(p => p.name)).toEqual(['Orders.md', 'Home.md'])
+  expect(d.pages[0]!.text.startsWith('# Orders')).toBe(true)
+  expect(d.pages[0]!.text).toContain('## Changes\n- #42: add the CSV export.')
+  expect(d.pages[1]!.text).toContain('[Orders](Orders)')
 })
 
 // START_STEP_1 stands word for word in pipeline.md, step 1 of `## Start`.
@@ -404,12 +416,12 @@ const PLANNER_FRONTMATTER = [
 const PLANNER_LANGUAGE = [
   'Read the **Language** line in `<planDir>/idea.md`.',
   'No line means English. Write the text for people in your file in that language.',
-  'Keep these parts in English: the machine-read first line (`STATUS:`), the',
-  'section headings, paths, and code. Keep the fixed keywords of the file format',
-  'in English (for example `S<n>`, `Files:`, `Needs`). For English, use Simplified Technical English',
-  '(ASD-STE100). For another language, use the STE principles in that language:',
-  'short sentences (at most 20 words), one instruction in each sentence,',
-  'the active voice, and clear words with one meaning.',
+  'Keep these parts in English: the machine-read first line (`STATUS:`), the section headings, paths, and code.',
+  'Keep the fixed keywords of the file format in English (for example `S<n>`, `Files:`, `Needs`).',
+  'For English, use Simplified Technical English (ASD-STE100).',
+  'For another language, use the STE principles in that language.',
+  'Write short sentences (at most 20 words), with one instruction in each sentence.',
+  'Use the active voice, and clear words with one meaning.',
 ].join('\n')
 
 const CODE_FIRST = [
@@ -418,6 +430,23 @@ const CODE_FIRST = [
   'Docs, specs, comments, and other Markdown can be out of date.',
   'When they disagree with the code, the code wins.',
   "The job's `spec.md` still defines the new behavior to build.",
+].join('\n')
+
+// REVIEW_BASH stands word for word in agents/code-reviewer.md, security-reviewer.md, ux-reviewer.md, and ui-reviewer.md.
+const REVIEW_BASH = [
+  '## Bash',
+  'A user hook can rewrite a Bash command, for example to `rtk git diff`.',
+  'A background agent cannot answer the permission prompt of the new command.',
+  'When a Bash call fails with an error that names an `rtk` command, do not run the `rtk` command.',
+  'Never add `rtk` to a command yourself.',
+  'Run the plain command one more time as `git -C <worktree> ...`.',
+  'Use the `Grep` tool for a search and the `Read` tool to read a file.',
+  'If `git diff` still fails, the `## Diff` rule applies: do not write `VERDICT: PASS`.',
+  'A host output filter can shorten command output.',
+  'Output that ends in `...` or `…`, or stops in the middle of a sentence, can be shortened.',
+  'Before you write a finding on that text, read the full text.',
+  'Use the `Read` tool, the `Grep` tool, or a plain command.',
+  'Give no finding from shortened output.',
 ].join('\n')
 
 const PRODUCT_READY = [
@@ -481,6 +510,26 @@ test('code first section is the same in all nine agents', () => {
   ])
 })
 
+test('reviewers have a fallback for a rewritten Bash call', () => {
+  for (const s of ['`rtk', '`git -C <worktree> ...`', 'the `Grep` tool', 'the `Read` tool', 'the `## Diff` rule']) {
+    expect(REVIEW_BASH).toContain(s)
+  }
+  for (const line of REVIEW_BASH.split('\n').filter(l => l.includes('rtk'))) {
+    expect([line, /rewrite|do not|Never/.test(line)]).toEqual([line, true])
+  }
+})
+
+test('reviewers read the full text before a finding on shortened output', () => {
+  const added = REVIEW_BASH.split('\n').slice(8)
+  const text = added.join('\n')
+  for (const s of ['`...`', '`…`', 'the full text', 'the `Read` tool', 'the `Grep` tool', 'Give no finding from shortened output.']) {
+    expect(text).toContain(s)
+  }
+  for (const line of added) {
+    expect([line, line.split(' ').length <= 20, line.includes('rtk')]).toEqual([line, true, false])
+  }
+})
+
 test('planner example product.md starts with STATUS READY and has the sections in order', () => {
   expect(PRODUCT_READY.split('\n')[0]).toBe('STATUS: READY')
   const headings = (PRODUCT_READY.match(/^## .+$/gm) ?? []).map(h => h.slice(3))
@@ -519,12 +568,12 @@ const AUDITOR_FRONTMATTER = [
 const AUDITOR_LANGUAGE = [
   'Find `<root>` first (see below). Then read the `"language"` key in `<root>/.factory/config.json`.',
   'No line means English. Write the text for people in your file in that language.',
-  'Keep these parts in English: the machine-read first line (`STATUS:`), the',
-  'section headings, paths, and code. Keep the fixed keywords of the file format',
-  'in English (for example `Fix:`, `Upgrade:`, `- none.`). For English, use Simplified Technical English',
-  '(ASD-STE100). For another language, use the STE principles in that language:',
-  'short sentences (at most 20 words), one instruction in each sentence,',
-  'the active voice, and clear words with one meaning.',
+  'Keep these parts in English: the machine-read first line (`STATUS:`), the section headings, paths, and code.',
+  'Keep the fixed keywords of the file format in English (for example `Fix:`, `Upgrade:`, `- none.`).',
+  'For English, use Simplified Technical English (ASD-STE100).',
+  'For another language, use the STE principles in that language.',
+  'Write short sentences (at most 20 words), with one instruction in each sentence.',
+  'Use the active voice, and clear words with one meaning.',
 ].join('\n')
 
 const AUDITOR_TOPICS = [
@@ -637,19 +686,27 @@ test('auditor example audit.md starts with STATUS DONE and ranks the findings', 
 })
 
 // shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
-// PLAN_SKILL_STEPS stands word for word in skills/plan/SKILL.md. PLANNER_FEEDBACK stands word for word in agents/planner.md.
+// PLAN_SKILL_HINT and PLAN_SKILL_STEPS stand word for word in skills/plan/SKILL.md. PLANNER_FEEDBACK stands word for word in agents/planner.md.
+const PLAN_SKILL_HINT = 'argument-hint: <idea> [--park]'
+
 const PLAN_SKILL_STEPS = [
-  '1. Call `mcp__factory__plan_create` with the idea above as `idea`. Remember the `planDir` of the result.',
+  '1. If the idea holds the flag `--park`, remove the flag and remember it. Parked issues get no `factory` label. Call `mcp__factory__plan_create` with the rest of the idea as `idea`. Remember the `planDir` of the result.',
   '2. Start `factory:planner` with `run_in_background: true`. The prompt holds only the absolute `<planDir>`. Add no other text.',
   '3. When the planner reports, read `<planDir>/product.md`.',
   '   - If its first line is not `STATUS: READY`, stop. Tell the operator in one short sentence that the plan is not ready, and name `<planDir>/product.md`.',
-  '4. Show the operator the Goal, the Scope, the Stack, the slices, and the open questions in plain words. Then ask "start or change?". Create no issue in this step.',
+  '4. Call `mcp__factory__issue_search` once for each slice with a few key words of the slice. Show the operator the Goal, the Scope, the Stack, and the slices. Show the possible duplicates and the open questions in plain words. Say if the issues are parked. Then ask "start or change?". Create no issue in this step.',
+  '   - A hit can be open or closed. Show it as a possible duplicate with its number and title. The skill does not create that slice.',
   '5. On "change", call `mcp__factory__plan_feedback` with `planDir` and the words of the operator as `feedback`. Then go to step 2.',
-  '6. On "start", call `mcp__factory__issue_create` once with one item for each slice, in slice order.',
+  '6. On "start", call `mcp__factory__issue_create` once with one item for each slice, in slice order. Leave out each slice with a possible duplicate. Pass `park` when the flag was set.',
   '   - `title`: the behavior of the slice, short, in the imperative mood.',
   '   - `body`: the slice line from `## Slices` and the Goal of the plan.',
   '   - `ref`: `S<n>`, the number of the slice.',
   '   - `dependsOnRefs`: the slices from its `Needs` list, for example `["S1"]`. Give no entry for `Needs none.`.',
+  '   - `dependsOn`: the number of the duplicate issue for each left-out slice in its `Needs` list. Give no `dependsOnRefs` entry for a left-out slice. Take the first hit when the slice has two or more hits.',
+  '   - `priority`: pass `Urgent`, `High`, `Medium`, or `Low` only when the operator names that priority for the item. Else pass no `priority`.',
+  '   - If no slice is left, call no `issue_create`. Tell the operator that every slice has a possible duplicate.',
+  '7. Report the issue numbers with their links, in simple words.',
+  '   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem or a Priority problem.',
 ].join('\n')
 
 const PLANNER_FEEDBACK = [
@@ -671,6 +728,46 @@ test('plan skill creates issues only after start', () => {
   expect(PLAN_SKILL_STEPS).toContain('ask "start or change?"')
   expect(PLAN_SKILL_STEPS).toContain('`mcp__factory__plan_feedback`')
   expect(PLAN_SKILL_STEPS).toContain('`ref`: `S<n>`')
+})
+
+const planSteps = () => PLAN_SKILL_STEPS.split(/\n(?=\d+\. )/)
+
+test('plan skill reads the park flag', () => {
+  expect(PLAN_SKILL_HINT).toBe('argument-hint: <idea> [--park]')
+  const first = planSteps()[0] ?? ''
+  expect(first).toContain('`--park`')
+  expect(first).toContain('remove the flag and remember it')
+  expect(first).toContain('`mcp__factory__plan_create` with the rest of the idea')
+})
+
+test('plan skill searches for duplicates before start', () => {
+  const steps = planSteps()
+  const start = steps.findIndex(s => s.includes('On "start"'))
+  const search = steps.findIndex(s => s.includes('`mcp__factory__issue_search`'))
+  const show = steps.findIndex(s => s.includes('Show the operator'))
+  expect(search).toBeGreaterThan(-1)
+  expect(search).toBeLessThan(start)
+  expect(search).toBeLessThanOrEqual(show)
+  const before = steps.slice(0, start).join('\n')
+  expect(before).toContain('once for each slice')
+  expect(before).toContain('open or closed')
+  expect(before).toContain('possible duplicate with its number and title')
+  expect(before).toContain('Say if the issues are parked.')
+  expect(before).not.toContain('issue_create')
+})
+
+test('plan skill leaves out duplicates and passes park', () => {
+  const start = planSteps().find(s => s.includes('On "start"')) ?? ''
+  expect(start).toContain('Leave out each slice with a possible duplicate.')
+  expect(start).toContain('Pass `park` when the flag was set.')
+  expect(start).toContain('`dependsOn`: the number of the duplicate issue for each left-out slice in its `Needs` list.')
+  expect(start).toContain('Give no `dependsOnRefs` entry for a left-out slice.')
+  expect(start).toContain('Take the first hit when the slice has two or more hits.')
+})
+
+test('plan skill creates no issue when every slice has a duplicate', () => {
+  const start = planSteps().find(s => s.includes('On "start"')) ?? ''
+  expect(start).toContain('If no slice is left, call no `issue_create`. Tell the operator that every slice has a possible duplicate.')
 })
 
 test('planner reads the feedback sections as data', () => {
@@ -705,8 +802,9 @@ const AUDIT_SKILL_STEPS = [
   '7. Call `mcp__factory__issue_create` once with one item for each remaining pick, in finding order.',
   '   - `title`: the fix of the finding, short, in the imperative mood.',
   '   - `body`: the problem, the fix, and the `file:line` of the finding.',
+  '   - `priority`: pass `Urgent`, `High`, `Medium`, or `Low` only when the operator names that priority for the item. Else pass no `priority`.',
   '8. Report the issue numbers with their links, in simple words.',
-  '   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem only.',
+  '   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem or a Priority problem.',
   '   - On `bad-input`, give the error text. Nothing was created. Fix the list and call `mcp__factory__issue_create` again.',
   '   - On `partial-create`, give the created numbers with their links and the item that failed. To retry, send only the failed item and the items after it.',
 ].join('\n')
@@ -758,4 +856,278 @@ test('audit skill body holds the problem, the fix, and file:line', () => {
   expect(AUDIT_SKILL_STEPS).toContain('one item for each remaining pick, in finding order')
   expect(AUDIT_SKILL_STEPS).toContain('`body`: the problem, the fix, and the `file:line` of the finding.')
   for (const s of ['`warnings`', '`bad-input`', '`partial-create`']) expect(AUDIT_SKILL_STEPS).toContain(s)
+})
+
+// shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
+// ADD_SKILL_STEPS stands word for word in skills/add/SKILL.md.
+const ADD_SKILL_STEPS = [
+  '6. After the user confirms, call `mcp__factory__issue_create` once with all items in order, and `park` when the flag was set. Leave out the pieces the user dropped as duplicates.',
+  '   - `priority`: pass `Urgent`, `High`, `Medium`, or `Low` only when the operator names that priority for the item. Else pass no `priority`.',
+  '7. Report the issue numbers with their links, in simple words.',
+  '   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem or a Priority problem.',
+].join('\n')
+
+const PRIORITY_LINE = '   - `priority`: pass `Urgent`, `High`, `Medium`, or `Low` only when the operator names that priority for the item. Else pass no `priority`.'
+const WARNING_LINE = '   - When the result has `warnings`, the issues exist in `created`. Show each warning. A warning is a board problem or a Priority problem.'
+
+test('skills pass the priority that the operator names', () => {
+  for (const steps of [ADD_SKILL_STEPS, PLAN_SKILL_STEPS, AUDIT_SKILL_STEPS]) {
+    const parts = steps.split(/\n(?=\d+\. )/)
+    const create = parts.find(s => s.includes('call `mcp__factory__issue_create` once') || s.includes('Call `mcp__factory__issue_create` once')) ?? ''
+    expect(create.split('\n')).toContain(PRIORITY_LINE)
+    expect(steps.split('\n')).toContain(WARNING_LINE)
+    expect(steps).not.toContain('A warning is a board problem only.')
+  }
+})
+
+// shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
+// JOB_LANGUAGE stands word for word in approver, builder, code-reviewer, documenter, intake, security-reviewer, spec-writer, ui-reviewer, and ux-reviewer.
+const JOB_LANGUAGE = [
+  'Read the **Language** line in the `## Job` section of `<jobDir>/job.md`.',
+  'No line means English. Write the text for people in your file in that language.',
+  'Keep these parts in English: the machine-read first lines and the section headings.',
+  'The machine-read first lines are `DECISION:`, `STATUS:`, `VERDICT:`, `RISK:`, `SURFACES:`, `LANE:`, and `Title:`.',
+  'Keep the fixed keywords of the file format in English, for example `AC-<n>`, `Test:`, `(regression)`, `[blocker]`, and `Fix:`.',
+  'Also keep marker comments, commit messages, PR titles, code, and code comments in English.',
+  'For English, use Simplified Technical English (ASD-STE100).',
+  'For another language, use the STE principles in that language.',
+  'Write short sentences (at most 20 words), with one instruction in each sentence.',
+  'Use the active voice, and clear words with one meaning.',
+].join('\n')
+
+const sentences = (block: string) => block.split('\n').join(' ').split(/(?<=[.?!])\s+/)
+
+test('job language block keeps each part in English', () => {
+  expect(JOB_LANGUAGE.split('\n')[0]).toContain('`<jobDir>/job.md`')
+  for (const s of [
+    '`DECISION:`', '`STATUS:`', '`VERDICT:`', '`RISK:`', '`SURFACES:`', '`LANE:`', '`Title:`',
+    'section headings', '`AC-<n>`', '`Test:`', '`(regression)`', '`[blocker]`', '`Fix:`',
+    'marker comments', 'commit messages', 'PR titles', 'code comments',
+    'ASD-STE100', 'at most 20 words', 'the active voice',
+  ]) {
+    expect(JOB_LANGUAGE).toContain(s)
+  }
+})
+
+test('agent language blocks have no sentence over 20 words', () => {
+  for (const block of [JOB_LANGUAGE, PLANNER_LANGUAGE, AUDITOR_LANGUAGE]) {
+    for (const s of sentences(block)) expect(s.split(/\s+/).length).toBeLessThanOrEqual(20)
+  }
+})
+
+// REVIEW_COMMITS is check 8 in agents/code-reviewer.md word for word.
+const REVIEW_COMMITS = [
+  '8. **Commits:** list the commits with `git rev-list <base>..HEAD` in the',
+  '   worktree. Read each message with `git cat-file commit <sha>`. Do not use',
+  '   `git log`. A host output filter can shorten `git log` output.',
+  '   Each commit follows Conventional Commits 1.0.0:',
+  '   `<type>(<optional scope>): <summary>`, with a type from `feat`, `fix`,',
+  '   `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,',
+  '   `revert`. A breaking change has `!` and a `BREAKING CHANGE:` footer. Each',
+  '   commit has the footer `Refs: #<issue>`, with the issue from `job.md`.',
+  '   A commit body that ends in the middle of a sentence, or that contains `...`',
+  '   or `…` in place of text, is a finding. Give this finding only when the',
+  '   raw commit shows it in the `git cat-file commit <sha>` output.',
+  '   Each reviewed commit is already pushed, so the builder cannot rewrite it.',
+  '   Thus each finding on a commit message is a `nit`. This also applies to an',
+  '   STE finding on a commit body from check 5. The finding line is',
+  '   `N. [nit] commit <short sha>: <problem>. Fix: none, the commit is pushed.`',
+].join('\n')
+
+// REVIEW_VERDICT_RULE is the verdict paragraph of `## Write` in agents/code-reviewer.md word for word.
+const REVIEW_VERDICT_RULE = [
+  'Write `VERDICT: CHANGES` only for a `blocker` or a `should`. Nits never block.',
+  'A test failure in `checks.md`, or an AC without a test that fails without the',
+  'change (except an AC under `## Not tested` or a `(regression)` AC), is always',
+  'CHANGES. Write each one as a `blocker` finding. A commit finding is a `nit`',
+  '(check 8) and never gives CHANGES. A CHANGES review without a `blocker` or a',
+  '`should` is not valid.',
+].join('\n')
+
+// APPROVER_COMMIT_NOTES stands in `## Write` of agents/approver.md word for word.
+const APPROVER_COMMIT_NOTES = [
+  'Copy each `[nit] commit` finding of `<roundDir>/review-code.md` into',
+  '`## Checks`. Write one `- Commit note: <the finding>` line for each finding.',
+  'A commit note is no reason to escalate.',
+].join('\n')
+
+// BUILDER_COMMIT_CHECK is steps 1 to 3 of `## Commits` in agents/builder.md word for word.
+const BUILDER_COMMIT_CHECK = [
+  '1. Write the full message to `<roundDir>/commit-msg.txt` with the `Write` tool.',
+  '2. Commit with `git commit -F <roundDir>/commit-msg.txt`. Never use `-m` or a',
+  '   heredoc for a message with a body.',
+  '3. Read the commit with `git cat-file commit HEAD`, not with `git log`. A host',
+  '   output filter can shorten `git log` output. Make sure that the body ends',
+  '   in a full sentence, with no `...` or `…`. If not, write the file again and',
+  '   run `git commit --amend -F <roundDir>/commit-msg.txt`.',
+].join('\n')
+
+const oneLine = (s: string): string => s.replace(/\s+/g, ' ')
+
+test('code-reviewer reads each commit message raw with git cat-file', () => {
+  const t = oneLine(REVIEW_COMMITS)
+  expect(t).toContain('`git rev-list <base>..HEAD`')
+  expect(t).toContain('`git cat-file commit <sha>`')
+  expect(t).toContain('A host output filter can shorten `git log` output.')
+})
+
+test('code-reviewer gives a dots finding only when the raw commit shows it', () => {
+  expect(oneLine(REVIEW_COMMITS)).toContain('Give this finding only when the raw commit shows it in the `git cat-file commit <sha>` output.')
+})
+
+test('builder checks its commit body raw with git cat-file', () => {
+  expect(oneLine(BUILDER_COMMIT_CHECK)).toContain('`git cat-file commit HEAD`')
+  expect(oneLine(BUILDER_COMMIT_CHECK)).not.toContain('git log -1 --format=%B')
+})
+
+test('code-reviewer gives each commit finding as a nit', () => {
+  const t = oneLine(REVIEW_COMMITS)
+  expect(t).toContain('`Refs: #<issue>`')
+  expect(t).toContain('Each reviewed commit is already pushed, so the builder cannot rewrite it.')
+  expect(t).toContain('each finding on a commit message is a `nit`')
+  expect(t).toContain('STE finding on a commit body from check 5')
+  expect(t).toContain('`N. [nit] commit <short sha>: <problem>. Fix: none, the commit is pushed.`')
+  expect(t).not.toContain('A bad commit is a `blocker`.')
+  expect(t).not.toContain('is a `should`')
+})
+
+test('code-reviewer verdict rule does not block on a commit', () => {
+  const t = oneLine(REVIEW_VERDICT_RULE)
+  expect(t).not.toContain('a bad commit')
+  expect(t).toContain('A commit finding is a `nit` (check 8) and never gives CHANGES.')
+  expect(t).toContain('A CHANGES review without a `blocker` or a `should` is not valid.')
+})
+
+test('approver copies the commit notes into Checks', () => {
+  const t = oneLine(APPROVER_COMMIT_NOTES)
+  expect(t).toContain('Copy each `[nit] commit` finding of `<roundDir>/review-code.md` into `## Checks`.')
+  expect(t).toContain('`- Commit note: <the finding>`')
+  expect(t).toContain('A commit note is no reason to escalate.')
+})
+
+// shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
+// REVIEW_DIFF stands word for word in agents/code-reviewer.md, security-reviewer.md, ux-reviewer.md, and ui-reviewer.md.
+const REVIEW_DIFF = [
+  '## Diff',
+  'Read `git diff <base>...HEAD` in the worktree before you write a verdict.',
+  '`build.md`, `checks.md`, and earlier reviews never replace the diff.',
+  'If you cannot read the diff, do not write `VERDICT: PASS`. Write',
+  '`VERDICT: CHANGES` with one `blocker` finding that names the cause, for',
+  'example the error output of `git diff`. The finding uses the place',
+  '`job.md:<n>`, where `<n>` is the line of `- Base:`.',
+  'You may say that the round changes nothing in your area only after you read the diff.',
+].join('\n')
+
+const REVIEW_NO_DIFF = [
+  'VERDICT: CHANGES',
+  '',
+  '## Summary',
+  'The review cannot read the diff of the round, so it cannot check the changes.',
+  '',
+  '## Findings',
+  "1. [blocker] job.md:8: `git diff` fails with `fatal: bad revision 'ea7bfa2'`, so the review sees no change. Fix: set `- Base:` to a commit that exists in the worktree.",
+  '',
+  '## Checked',
+  '- Gate round-1: PASS.',
+].join('\n')
+
+test('review diff rule is the same in all four reviewers', () => {
+  expect(REVIEW_DIFF.split('\n')[0]).toBe('## Diff')
+  const t = oneLine(REVIEW_DIFF)
+  for (const s of [
+    '`git diff <base>...HEAD`',
+    'do not write `VERDICT: PASS`',
+    '`VERDICT: CHANGES`',
+    '`blocker`',
+    '`job.md:<n>`',
+    'only after you read the diff',
+  ]) expect(t).toContain(s)
+})
+
+test('review example for an unreadable diff is CHANGES with a blocker', () => {
+  const r = parseReview(REVIEW_NO_DIFF)
+  expect(r.verdict).toBe('CHANGES')
+  expect(r.findings.length).toBe(1)
+  expect(r.findings[0]?.severity).toBe('blocker')
+  expect(r.findings[0]?.text ?? '').toMatch(FINDING)
+})
+
+// shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
+// APPROVER_SCOPE_RULE stands word for word in agents/approver.md. SPEC_WRITER_SCOPE stands word for word in `## Rules`
+// of agents/spec-writer.md, and SPEC_WRITER_FIRST_LINE in its `## Write`. PIPELINE_SPEC_FINISHED and PIPELINE_RESUME stand
+// word for word in pipeline.md.
+const APPROVER_SCOPE_RULE = [
+  '## Scope rule',
+  'This rule is fixed. The round number and earlier decisions do not change it.',
+  'A part of the issue is a behavior that `issue.md` asks for.',
+  'Each part that no AC builds must stand under `## Out of scope` in `spec.md`',
+  'with its follow-up issue as `#<n>`.',
+  'A left-out part without `#<n>` gives `ESCALATE`. Give the part as the case.',
+  'A left-out part with `#<n>` is no reason to escalate.',
+].join('\n')
+
+const APPROVER_DECIDE_SCOPE = '- The spec obeys `## Scope rule`.'
+
+const SPEC_WRITER_SCOPE = [
+  '- Spec one change that a reviewer can check in one read: a few files. If the',
+  '  request has more parts that can work alone, spec the part that the other',
+  '  parts need first. Put the other parts under `## Out of scope`.',
+  '- Each part that `issue.md` asks for and the spec puts under `## Out of scope`',
+  '  names its follow-up issue as `#<n>`. Take `<n>` only from `issue.md` or',
+  '  `intake.md`. You cannot create an issue. If no such issue exists, the first',
+  '  line is `STATUS: BLOCKED`. Then `## Summary` names each part. It asks the',
+  '  human to open a follow-up issue and name it in a comment, or to remove the',
+  '  part from the issue.',
+].join('\n')
+
+const SPEC_WRITER_FIRST_LINE = 'The first line is `STATUS: READY` or `STATUS: BLOCKED` (see `## Rules`).'
+
+const PIPELINE_SPEC_FINISHED = [
+  '### spec-writer finished',
+  'Read the first line of `spec.md`.',
+  '- `STATUS: READY`: call `job_advance` with `to: build`. Start',
+  '  `factory:builder` with the `<roundDir>` of the result.',
+  '- `STATUS: BLOCKED`: call `job_advance` with `to: needs-human` and the reason',
+  '  from its `## Summary`.',
+].join('\n')
+
+const PIPELINE_RESUME = [
+  '- `<n>` is `needs-human`, with or without a PR: the human fixed the cause or',
+  '  answered in the issue. Call `job_sync`. When `job_sync` gives round 0, call',
+  '  `job_advance` with `to: spec` and start `factory:spec-writer`. Else call',
+  '  `job_advance` with `to: build`.',
+  '  Start `factory:builder` with the new `<roundDir>`. The builder reads',
+  '  `decision.md` and `issue.md`. If the result state is `needs-human`, the round',
+  '  limit is reached, or a review asks for a spec change. Start nothing. Call `status` and show its text.',
+].join('\n')
+
+test('approver scope rule does not depend on the round', () => {
+  const t = oneLine(APPROVER_SCOPE_RULE)
+  expect(APPROVER_SCOPE_RULE.split('\n')[0]).toBe('## Scope rule')
+  expect(t).toContain('The round number and earlier decisions do not change it.')
+  expect(t).toContain('A part of the issue is a behavior that `issue.md` asks for.')
+  expect(t).toContain('Each part that no AC builds must stand under `## Out of scope` in `spec.md` with its follow-up issue as `#<n>`.')
+  expect(t).toContain('A left-out part without `#<n>` gives `ESCALATE`. Give the part as the case.')
+  expect(t).toContain('A left-out part with `#<n>` is no reason to escalate.')
+  expect(APPROVER_DECIDE_SCOPE).toContain('`## Scope rule`')
+  expect(t).not.toContain('misreads the issue')
+})
+
+test('spec-writer names the follow-up issue or blocks', () => {
+  const t = oneLine(SPEC_WRITER_SCOPE)
+  expect(t).not.toContain('a later issue')
+  expect(t).toContain('names its follow-up issue as `#<n>`. Take `<n>` only from `issue.md` or `intake.md`.')
+  expect(t).toContain('If no such issue exists, the first line is `STATUS: BLOCKED`.')
+  expect(t).toContain('It asks the human to open a follow-up issue and name it in a comment, or to remove the part from the issue.')
+  expect(SPEC_WRITER_FIRST_LINE).toContain('`STATUS: READY` or `STATUS: BLOCKED`')
+})
+
+test('pipeline stops a blocked spec and restarts the spec-writer', () => {
+  const done = oneLine(PIPELINE_SPEC_FINISHED)
+  expect(done).toContain('Read the first line of `spec.md`.')
+  expect(done).toContain('- `STATUS: READY`: call `job_advance` with `to: build`.')
+  expect(done).toContain('- `STATUS: BLOCKED`: call `job_advance` with `to: needs-human` and the reason from its `## Summary`.')
+  const resume = oneLine(PIPELINE_RESUME)
+  expect(resume).toContain('When `job_sync` gives round 0, call `job_advance` with `to: spec` and start `factory:spec-writer`.')
+  expect(resume).toContain('Else call `job_advance` with `to: build`.')
 })
