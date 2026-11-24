@@ -8,7 +8,7 @@ import { runGate } from '../lib/gate.ts'
 import { gateJob } from '../lib/gatejob.ts'
 import { jobAdvance, jobCreate, jobSync } from '../lib/job.ts'
 import { STATUS, stateOf } from '../lib/labels.ts'
-import { githubTracker, repoFromUrl } from '../lib/github.ts'
+import { githubTracker, PRIORITIES, repoFromUrl } from '../lib/github.ts'
 import { approve, merge } from '../lib/merge.ts'
 import { planCreate, planFeedback } from '../lib/plan.ts'
 import { addToBacklog, withBoard } from '../lib/project.ts'
@@ -150,7 +150,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'issue_create',
     description:
-      'Create GitHub issues in order, each with the label factory (none when park is true). dependsOnRefs names the ref of an earlier item and becomes a Depends on line. Returns ref, number and url for each issue. With the board on, it adds a Backlog card for each issue. Board problems come back as warnings next to created. Creates nothing when the input is bad.',
+      'Create GitHub issues in order, each with the label factory (none when park is true). dependsOnRefs names the ref of an earlier item and becomes a Depends on line. Returns ref, number and url for each issue. priority sets the issue field Priority by its option name. With the board on, it adds a Backlog card for each issue. Priority and board problems come back as warnings next to created. Creates nothing when the input is bad.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -165,6 +165,7 @@ export const TOOLS: ToolDef[] = [
               dependsOn: { type: 'array', items: { type: 'integer', minimum: 1 } },
               ref: { type: 'string', minLength: 1 },
               dependsOnRefs: { type: 'array', items: { type: 'string' } },
+              priority: { type: 'string', enum: PRIORITIES },
             },
             required: ['title', 'body'],
             additionalProperties: false,
