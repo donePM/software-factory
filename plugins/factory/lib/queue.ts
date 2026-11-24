@@ -39,7 +39,7 @@ export function dependsOn(body: string): number[] {
   return found
 }
 
-const WAITING: State[] = ['needs-info', 'needs-human', 'approved', 'needs-design']
+export const WAITING: State[] = ['needs-info', 'needs-human', 'approved', 'needs-design']
 const ORDER = ['critical', 'high', 'medium', 'low'] as const
 const BUG_LABELS = ['type:fix', 'bug']
 
