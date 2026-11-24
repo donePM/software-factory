@@ -376,7 +376,10 @@ export async function jobAdvance(ctx: Ctx, t: Tracker, input: AdvanceInput): Pro
   }
 
   if (to === 'needs-human' && reason !== undefined) {
-    await t.comment(n, `Factory stopped: ${reason}`)
+    const build = from === 'build' ? await readIfExists(ctx, `${roundOf(job)}/build.md`) : null
+    const asks = build !== null && firstLine(build).trimEnd() === 'STATUS: BLOCKED'
+      && (lastSection(build, 'Summary') ?? '').split(/\r\n|\r|\n/).find(l => l.trim() !== '')?.trim() === 'Needs a spec change.'
+    await t.comment(n, asks ? `Factory stopped: Round ${job.round} needs a spec change.\n\n${reason}` : `Factory stopped: ${reason}`)
     await moveJob(t, job, 'needs-human')
     return result('needs-human')
   }

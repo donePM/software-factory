@@ -181,6 +181,8 @@ Read the first line of `spec.md`.
   `<roundDir>`.
 - `build.md` starts with `STATUS: BLOCKED`: call `job_advance` with
   `to: needs-human` and the reason from its `## Summary`.
+  When the `## Summary` of `build.md` starts with `Needs a spec change.`, `job_advance` marks
+  the stop as a spec stop. Then the `needs-human` resume goes to `spec`.
 
 ### gate-runner finished
 Take `attempts` from the `job_sync` of this event. It did not grow over the

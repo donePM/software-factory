@@ -326,6 +326,15 @@ test('specAsked is true only after a spec stop of the current round', async () =
   expect(await asked(['factory:needs-human'], [])).toBe(false)
 })
 
+test('specAsked is true after a blocked build asks for a spec change', async () => {
+  const stop = C(3, 'op', 'Factory stopped: Round 2 needs a spec change.\n\nNeeds a spec change. The spec puts the picked way out of scope.')
+  const ctx = fakeCtx({ files: withJob('s\n', '2026-01-05T00:00:00Z') })
+  const r = await jobSync(ctx, tracker(T(['factory:needs-human'], [stop])), 7)
+  expect(r.job.round).toBe(2)
+  expect(ctx.files[`${DIR}/round-2/build.md`]).toBeUndefined()
+  expect(r.specAsked).toBe(true)
+})
+
 const restoreFiles = (): Record<string, string> => ({
   ...CFG, [`${DIR}/job.md`]: renderJob(J), [`${DIR}/spec.md`]: 's',
 })
