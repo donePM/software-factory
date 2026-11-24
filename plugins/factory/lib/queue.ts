@@ -81,12 +81,13 @@ function priorityOf(t: Ticket): (typeof ORDER)[number] {
   return t.priority !== undefined && Object.hasOwn(FIELD, t.priority) ? FIELD[t.priority]! : 'medium'
 }
 
-// A needs-info ticket resumes when the author answered after the operator's intake question.
+// A needs-info ticket resumes when the author or the operator answered after the operator's intake question.
 async function answered(tr: Tracker, t: Ticket, operator: string): Promise<boolean> {
   const full = await tr.get(t.number)
   const asked = findMarked(full.comments, 'intake', operator)
   if (!asked) return false
-  return full.comments.some(c => c.author === full.author && !isMarkerComment(c) && time(c.createdAt) > time(asked.updatedAt))
+  return full.comments.some(c => (c.author === full.author || (c.author === operator && !c.body.startsWith(STOP))) &&
+    !isMarkerComment(c) && time(c.createdAt) > time(asked.updatedAt))
 }
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
