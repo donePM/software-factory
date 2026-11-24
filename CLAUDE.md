@@ -96,7 +96,7 @@ This loads the branch code in that process only.
   links and the `docs.md` text, and sets `done`.
   Models and tools are set in their frontmatter; reviewer models come from
   `## Route` in `job.md`.
-- Skills (`/factory:setup|add|plan|audit|run|feedback|answer|status|approve|merge`) are thin entry points.
+- Skills (`/factory:setup|add|plan|audit|run|feedback|answer|status|approve|merge|reject`) are thin entry points.
   Each passes `${CLAUDE_PLUGIN_ROOT}`.
 - Local working copy: `.factory/jobs/<n>/` (`job.md`, `issue.md`, `intake.md`, `running.md`,
   `spec.md`, `round-N/`, `decision.md`, `docs.md`) and `.factory/worktrees/<n>/`. Both are
@@ -138,7 +138,7 @@ This loads the branch code in that process only.
   Merge only through the `merge`
   tool (REST `PUT /repos/{owner}/{repo}/pulls/{n}/merge`, `merge_method: merge`).
   The factory opens every PR as a normal PR, never as a draft. `git branch -d` only after the merge; never
-  `branch -D`. `worktree remove --force` only when nothing but untracked files
+  `branch -D`. Exception: a rejected branch goes with `git update-ref -d` only when it has the SHA of its PR head. `worktree remove --force` only when nothing but untracked files
   is left.
 - Conventional Commits 1.0.0 for every commit, builder commit, PR title, and
   merge commit. Code-style, commit, and STE rules live in `agents/builder.md`

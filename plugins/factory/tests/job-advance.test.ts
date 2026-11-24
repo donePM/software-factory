@@ -170,6 +170,60 @@ test('rejected closes the issue as not planned and cleans up worktree, branch an
   expect(ctx.calls.filter(c => c[0] === 'rm')).toHaveLength(1)
 })
 
+const LOCAL = 'c'.repeat(40)
+const rejectReplies: Reply[] = [
+  { argv: ['git', 'rev-parse', '--verify', '--quiet', 'refs/heads/factory/7'], result: { stdout: `${LOCAL}\n` } },
+  { argv: ['git', 'rev-parse', '--verify', '--quiet', 'FETCH_HEAD'], result: { stdout: `${LOCAL}\n` } },
+]
+// One log of the tracker calls of a rejection, in call order.
+function rejectRun(state: State, pr: number | null, prOpen = true): Run & { order: string[] } {
+  const run = setup(state, { round: state === 'needs-info' ? 0 : 1, pr }, {}, { replies: rejectReplies })
+  const order: string[] = []
+  const t = run.t as unknown as Record<string, unknown>
+  t.comment = async (_n: number, body: string) => { order.push(`comment ${body}`) }
+  t.prState = async (p: number) => { order.push(`prState ${p}`); return { number: p, state: prOpen ? 'OPEN' : 'CLOSED', headRefName: 'factory/7' } }
+  t.closePr = async (p: number) => { order.push(`closePr ${p}`) }
+  t.deleteBranch = async (b: string) => { order.push(`deleteBranch ${b}`) }
+  t.setState = async (_n: number, to: State) => { order.push(`setState ${to}`) }
+  t.close = async (_n: number, reason: string) => { order.push(`close ${reason}`) }
+  return { ...run, order }
+}
+
+test('a rejection outside intake needs a reason', async () => {
+  for (const state of ['needs-human', 'approved', 'needs-info'] as State[]) {
+    for (const reason of [undefined, '  \n ']) {
+      const { ctx, t, order } = rejectRun(state, 12)
+      await rejects(jobAdvance(ctx, t, { issue: 7, to: 'rejected', ...(reason === undefined ? {} : { reason }) }), 'reason-required')
+      expect(order).toEqual([])
+      expect(t.comments).toEqual([])
+      expect(ctx.calls.some(c => c[0] === 'rm' || c.includes('worktree'))).toBe(false)
+    }
+  }
+})
+
+test('a rejection closes the PR, deletes the remote branch, and closes the issue', async () => {
+  for (const state of ['needs-human', 'approved', 'needs-info'] as State[]) {
+    const { ctx, t, order } = rejectRun(state, 12)
+    const r = await jobAdvance(ctx, t, { issue: 7, to: 'rejected', reason: 'duplicate of #40' })
+    expect(order).toEqual(['comment Rejected: duplicate of #40', 'prState 12', 'closePr 12', 'deleteBranch factory/7', 'setState rejected', 'close rejected'])
+    expect(r.state).toBe('rejected')
+    expect(r.cleanup!.removed).toEqual([WT, 'factory/7', DIR])
+    expect(ctx.calls).toContainEqual(['git', 'fetch', 'origin', 'refs/pull/12/head'])
+    expect(ctx.calls).toContainEqual(['git', 'update-ref', '-d', 'refs/heads/factory/7', LOCAL])
+    expect(ctx.calls.some(c => c.includes('-D'))).toBe(false)
+  }
+  // intake.md is not read: a REJECT decision is not needed.
+  const none = rejectRun('needs-human', null)
+  delete none.ctx.files[`${DIR}/intake.md`]
+  await jobAdvance(none.ctx, none.t, { issue: 7, to: 'rejected', reason: 'not needed' })
+  expect(none.order).toEqual(['comment Rejected: not needed', 'deleteBranch factory/7', 'setState rejected', 'close rejected'])
+  expect(none.ctx.calls.some(c => c[1] === 'fetch' && c[3] !== undefined && c[3].startsWith('refs/pull/'))).toBe(false)
+  const closed = rejectRun('approved', 12, false)
+  await jobAdvance(closed.ctx, closed.t, { issue: 7, to: 'rejected', reason: 'stale' })
+  expect(closed.order).not.toContain('closePr 12')
+  expect(closed.order).toContain('deleteBranch factory/7')
+})
+
 test('build starts round 1 in the existing worktree', async () => {
   const { ctx, t } = setup('spec', {}, { [`${DIR}/spec.md`]: SPEC })
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'build' })

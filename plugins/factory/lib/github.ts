@@ -198,6 +198,16 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
     async prComment(pr, body) {
       await api('POST', `issues/${pr}/comments`, { body })
     },
+    async closePr(pr) {
+      await api('PATCH', `pulls/${pr}`, { state: 'closed' })
+    },
+    async deleteBranch(branch) {
+      try {
+        await gh(['api', '-X', 'DELETE', `repos/${repo}/git/refs/heads/${branch}`])
+      } catch (e) {
+        if (!(e instanceof FactoryError && /\(HTTP (404|422)\)/.test(e.message))) throw e
+      }
+    },
     async approvePr(pr, body) {
       await api('POST', `pulls/${pr}/reviews`, { event: 'APPROVE', body })
     },

@@ -30,6 +30,9 @@ export interface Tracker {
   // True when a review approves the commit sha.
   prApproved(pr: number, sha: string): Promise<boolean>
   prComment(pr: number, body: string): Promise<void>
+  closePr(pr: number): Promise<void>
+  // A branch that does not exist on GitHub is not an error.
+  deleteBranch(branch: string): Promise<void>
   approvePr(pr: number, body: string): Promise<void>
   // sha: GitHub refuses the merge when the PR head is not this commit.
   merge(pr: number, subject: string, sha: string): Promise<void>

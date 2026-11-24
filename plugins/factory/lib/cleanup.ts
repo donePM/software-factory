@@ -57,12 +57,35 @@ async function removeBranch(ctx: Ctx, branch: string, base: string, report: Clea
   report.removed.push(branch)
 }
 
-// `end` does not change the rule: a rejected job has no PR and no commits, so the same merge check holds.
-export async function cleanupJob(ctx: Ctx, _t: Tracker, n: number, _end: 'done' | 'rejected'): Promise<CleanupReport> {
+// A rejected PR is never merged. So the branch goes only when GitHub has its exact commit. Never uses -D.
+async function removeRejectedBranch(ctx: Ctx, branch: string, pr: number, report: CleanupReport): Promise<void> {
+  const local = await ctx.run(['git', 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
+  if (local.exitCode !== 0) return
+  const sha = local.stdout.trim()
+  const keep = (reason: string, command: string): void => {
+    report.kept.push({ path: branch, reason, command })
+  }
+  const fetch = await ctx.run(['git', 'fetch', 'origin', `refs/pull/${pr}/head`])
+  if (fetch.exitCode !== 0) return keep(`fetch failed: ${fail(fetch)}`, `git fetch origin refs/pull/${pr}/head`)
+  const head = await ctx.run(['git', 'rev-parse', '--verify', '--quiet', 'FETCH_HEAD'])
+  if (head.exitCode !== 0) return keep(`PR head not read: ${fail(head)}`, `git fetch origin refs/pull/${pr}/head`)
+  const prHead = head.stdout.trim()
+  if (prHead !== sha) return keep(`branch has commits that are not in PR #${pr}`, `git log ${prHead}..${branch}`)
+  // With the old sha, git deletes the ref only when it did not move since the check.
+  const del = await ctx.run(['git', 'update-ref', '-d', `refs/heads/${branch}`, sha])
+  if (del.exitCode !== 0) return keep(fail(del), `git update-ref -d refs/heads/${branch} ${sha}`)
+  report.removed.push(branch)
+}
+
+// pr: the PR of a rejected job. With no PR, the merge check holds: the branch has no commits of its own.
+export async function cleanupJob(ctx: Ctx, _t: Tracker, n: number, end: 'done' | 'rejected', pr?: number): Promise<CleanupReport> {
   const base = (await loadConfig(ctx)).baseBranch
   const branch = branchName(n)
   const report: CleanupReport = { removed: [], kept: [] }
-  if (await removeWorktree(ctx, worktreeDir(ctx.root, n), report)) await removeBranch(ctx, branch, base, report)
+  if (await removeWorktree(ctx, worktreeDir(ctx.root, n), report)) {
+    if (end === 'rejected' && pr !== undefined) await removeRejectedBranch(ctx, branch, pr, report)
+    else await removeBranch(ctx, branch, base, report)
+  }
   else report.kept.push({ path: branch, reason: 'worktree kept', command: `git branch -d ${branch}` })
   // job_sync rebuilds the folder from the ticket, so it always goes.
   const dir = jobDir(ctx.root, n)
@@ -131,6 +154,7 @@ export async function sweep(ctx: Ctx, t: Tracker): Promise<SweepReport> {
           continue
         }
       }
+      // shortcut: sweep has no PR number for a rejected job, upgrade when kept rejected branches pile up.
       if (ticket.state === 'closed') add(await cleanupJob(ctx, t, n, state === 'rejected' ? 'rejected' : 'done'))
     } catch (e) {
       failed(n, e)

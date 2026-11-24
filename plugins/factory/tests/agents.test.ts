@@ -835,6 +835,25 @@ test('pipeline sends a blocked build that needs a spec change to the spec-writer
   for (const s of sentences(PIPELINE_BUILDER_FINISHED.split('\n').slice(1).join('\n'))) expect(s.trim().split(/\s+/).length).toBeLessThanOrEqual(20)
 })
 
+test('reject skill syncs, then rejects with the reason and reports kept paths', () => {
+  const text = TEXTS['skills/reject/SKILL.md']
+  const [, front = '', body = ''] = text.split(/^---$/m)
+  const keys = Object.fromEntries(front.trim().split('\n').map(l => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 2)]))
+  expect(Object.keys(keys)).toEqual(['name', 'description', 'argument-hint', 'disable-model-invocation'])
+  expect(keys.name).toBe('reject')
+  expect(keys.description ?? '').toMatch(/^\S.+\.$/)
+  expect(keys['argument-hint']).toBe('<issue> <reason>')
+  expect(keys['disable-model-invocation']).toBe('true')
+  const steps = body.split(/\n(?=\d+\. )/).slice(1)
+  const sync = steps.findIndex(s => s.includes('`mcp__factory__job_sync`'))
+  const reject = steps.findIndex(s => s.includes('`mcp__factory__job_advance`') && s.includes('`to: rejected`') && s.includes('`reason`'))
+  const kept = steps.findIndex(s => s.includes('`kept`') && s.includes('command'))
+  expect(sync).toBeGreaterThanOrEqual(0)
+  expect(reject).toBeGreaterThan(sync)
+  expect(kept).toBeGreaterThan(reject)
+  for (const s of sentences(body)) expect(s.trim().split(/\s+/).length).toBeLessThanOrEqual(20)
+})
+
 test('feedback and answer skills post the comment and then run the issue', () => {
   for (const [name, state] of [['feedback', 'needs-human'], ['answer', 'needs-info']] as const) {
     const file = `skills/${name}/SKILL.md` as TextFile

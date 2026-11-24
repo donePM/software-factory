@@ -27,7 +27,12 @@ test('approved can go back to build', () => {
   expect(canTransition('approved', 'review')).toBe(false)
   expect(canTransition('approved', 'needs-human')).toBe(true)
   expect(canTransition('approved', 'done')).toBe(true)
-  expect(TRANSITIONS.approved).toEqual(['build', 'done', 'needs-human'])
+  expect(TRANSITIONS.approved).toEqual(['build', 'done', 'needs-human', 'rejected'])
+})
+
+test('needs-human, approved and needs-info may go to rejected', () => {
+  for (const s of ['needs-human', 'approved', 'needs-info', 'intake'] as const) expect(canTransition(s, 'rejected')).toBe(true)
+  for (const s of ['spec', 'build', 'review', 'docs', 'fastlane'] as const) expect(canTransition(s, 'rejected')).toBe(false)
 })
 
 test('transitions without a forward path are rejected', () => {
@@ -53,11 +58,11 @@ test('docs leads to done or needs-human', () => {
 test('the table matches the bootstrap plan', () => {
   expect(TRANSITIONS.backlog).toEqual(['intake'])
   expect(TRANSITIONS.intake).toEqual(['spec', 'needs-info', 'rejected', 'needs-human'])
-  expect(TRANSITIONS['needs-info']).toEqual(['intake'])
+  expect(TRANSITIONS['needs-info']).toEqual(['intake', 'rejected'])
   expect(TRANSITIONS.spec).toEqual(['build', 'needs-human'])
   expect(TRANSITIONS.build).toEqual(['review', 'needs-human'])
   expect(TRANSITIONS.review).toEqual(['build', 'approved', 'needs-human'])
-  expect(TRANSITIONS['needs-human']).toEqual(['spec', 'build', 'done', 'needs-human'])
+  expect(TRANSITIONS['needs-human']).toEqual(['spec', 'build', 'done', 'needs-human', 'rejected'])
 })
 
 test('needs-human can go back to spec', () => {

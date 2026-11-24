@@ -122,6 +122,40 @@ test('rejected removes worktree, empty branch and job folder', async () => {
   expect(t.log).toEqual([])
 })
 
+const LOCAL = 'c'.repeat(40)
+const PR_HEAD = 'e'.repeat(40)
+const rejectedCtx = (prHead: string, fetchFails = false) => ctxOf([
+  { argv: ['git', 'rev-parse', '--verify', '--quiet', 'refs/heads/factory/7'], result: { stdout: `${LOCAL}\n` } },
+  { argv: ['git', 'fetch', 'origin', 'refs/pull/12/head'], result: fetchFails ? { exitCode: 128, stderr: 'offline' } : {} },
+  { argv: ['git', 'rev-parse', '--verify', '--quiet', 'FETCH_HEAD'], result: { stdout: `${prHead}\n` } },
+])
+
+test('rejected deletes the branch only when it matches the PR head', async () => {
+  const ctx = rejectedCtx(LOCAL)
+  const t = tracker()
+  const r = await cleanupJob(ctx, t, 7, 'rejected', 12)
+  expect(ctx.calls).toContainEqual(['git', 'fetch', 'origin', 'refs/pull/12/head'])
+  expect(ctx.calls).toContainEqual(['git', 'update-ref', '-d', 'refs/heads/factory/7', LOCAL])
+  expect(has(ctx.calls, 'git', 'merge-base')).toBe(false)
+  expect(ctx.calls.some(c => c.includes('-D'))).toBe(false)
+  expect(r.removed).toEqual([WT, 'factory/7', DIR])
+  expect(r.kept).toEqual([])
+  expect(t.log).toEqual([])
+})
+
+test('rejected keeps an unpushed branch and reports it', async () => {
+  for (const [ctx, reason] of [[rejectedCtx(PR_HEAD), 'not in PR #12'], [rejectedCtx(LOCAL, true), 'offline']] as const) {
+    const r = await cleanupJob(ctx, tracker(), 7, 'rejected', 12)
+    expect(has(ctx.calls, 'git', 'update-ref')).toBe(false)
+    expect(ctx.calls.some(c => c.includes('-D'))).toBe(false)
+    expect(r.removed).toEqual([WT, DIR])
+    expect(r.kept).toHaveLength(1)
+    expect(r.kept[0]!.path).toBe('factory/7')
+    expect(r.kept[0]!.reason).toContain(reason)
+    expect(r.kept[0]!.command).toMatch(/^git /)
+  }
+})
+
 test('sweep cleans jobs of closed issues', async () => {
   const ctx = ctxOf([], { [`${DIR}/job.md`]: 'x', '/repo/.factory/worktrees/8/a.txt': 'x' })
   const t = tracker({ closed: [7, 8], labels: { 8: ['factory', 'factory:rejected'] } })
