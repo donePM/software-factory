@@ -38,7 +38,7 @@ function issueOf(input: { issue?: unknown }): number {
 }
 
 // Runs a tool with a tracker that also updates the project board. Board problems come back as warnings.
-async function boarded(ctx: Ctx, run: (t: Tracker) => Promise<unknown>): Promise<unknown> {
+export async function boarded(ctx: Ctx, run: (t: Tracker) => Promise<unknown>): Promise<unknown> {
   const cfg = await loadConfig(ctx)
   const waits = withWaitNotify(ctx, githubTracker(ctx, repoFromUrl(cfg.tracker.url)), cfg)
   const { tracker, warnings, save } = withBoard(ctx, waits.tracker, cfg)

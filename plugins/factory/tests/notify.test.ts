@@ -1,4 +1,7 @@
 import { expect, test } from 'claude-code/testing'
+import { boarded } from '../hooks/tools.ts'
+import { defaultConfig } from '../lib/config.ts'
+import { FactoryError } from '../lib/exec.ts'
 import { withWaitNotify } from '../lib/notify.ts'
 import { hintOf } from '../lib/status.ts'
 import type { Tracker } from '../lib/tracker.ts'
@@ -65,12 +68,21 @@ test('a failed notification never fails the tool', async () => {
 })
 
 test('flush reports a move made before an error', async () => {
-  const ctx = notifyCtx()
-  const { tracker, flush } = withWaitNotify(ctx, fakeTracker('review'), {})
-  const run = async (): Promise<void> => {
-    await tracker.setState(7, 'needs-human')
-    throw new Error('sync-conflict-limit')
+  const issue = { number: 7, title: 'T', body: '', labels: [{ name: 'factory' }, { name: 'factory:review' }], user: { login: 'a' }, created_at: 'c', html_url: 'u', state: 'open', assignees: [] }
+  const texts: string[] = []
+  const ctx: Ctx = {
+    ...fakeCtx({
+      files: { '/repo/.factory/config.json': JSON.stringify(defaultConfig(`https://github.com/${REPO}`, 'main', [])) },
+      replies: [{ argv: ['gh', 'api', `repos/${REPO}/issues/7`], result: { stdout: JSON.stringify(issue) } }, { argv: ['gh', 'api', '-X'] }],
+    }),
+    notify: async text => {
+      texts.push(text)
+    },
   }
-  await expect(run().finally(flush)).rejects.toMatchObject({ message: 'sync-conflict-limit' })
-  expect(ctx.texts).toEqual([`#7 ${hintOf(REPO, 7, 'needs-human', undefined, false, [])}`])
+  const run = async (t: Tracker): Promise<void> => {
+    await t.setState(7, 'needs-human')
+    throw new FactoryError('sync-conflict-limit', 'too many sync rounds')
+  }
+  await expect(boarded(ctx, run)).rejects.toMatchObject({ code: 'sync-conflict-limit' })
+  expect(texts).toEqual([`#7 ${hintOf(REPO, 7, 'needs-human', undefined, false, [])}`])
 })
