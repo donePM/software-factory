@@ -150,10 +150,20 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
 
   const steps: StepResult[] = []
   const outputs: string[] = []
+  const engine: string[] = []
+  const host: string[] = []
   for (const s of planned) {
     const t0 = ctx.now().getTime()
     const r = await ctx.run(s.argv, { cwd: s.cwd, timeoutMs: STEP_TIMEOUT_MS })
     steps.push({ ...s, exitCode: r.exitCode, ms: ctx.now().getTime() - t0 })
+    if (s.stack === 'claude-plugin' && s.name === 'typecheck') {
+      const m = /engine types: used (\S+), wanted (\S+)/.exec(r.stdout)
+      if (m) engine.push(m[1] === m[2] ? `Engine types: ${m[1]}.` : `Engine types: ${m[1]}. Note: \`claude --version\` is ${m[2]}, so the gate used the types of ${m[1]}.`)
+      if (r.exitCode === TYPES_MISSING_EXIT) {
+        const wanted = /engine types not found for ([^,\s]+),/.exec(r.stderr)?.[1] ?? 'unknown'
+        host.push(`${s.name} (${s.stack}): engine types not found for ${wanted}. Found: none. ${TYPES_FIX}`)
+      }
+    }
     outputs.push(`### ${s.name} (${s.stack}): ${s.argv.join(' ')}\nexit ${r.exitCode}\n${r.stdout}${r.stderr}`)
   }
 
@@ -178,9 +188,6 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   const changedScripts = [...new Set([...(await scriptsChanged(ctx, wt, ds, read)), ...runnerFiles])]
 
   const red = steps.filter(s => s.exitCode !== 0)
-  const host = red
-    .filter(s => s.stack === 'claude-plugin' && s.name === 'typecheck' && s.exitCode === TYPES_MISSING_EXIT)
-    .map(s => `${s.name} (${s.stack}): engine types not found. ${TYPES_FIX}`)
   // A job gate needs the configured stacks: with none, a branch could drop a stack and its checks.
   const noStacks = input.jobDir !== undefined && refs.length === 0
   const verdict = red.length + commits.length + prot.length + dirty.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null || noStacks ? 'FAIL' : 'PASS'
@@ -189,6 +196,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   lines.push(`${steps.length - red.length} of ${steps.length} steps passed. Round: ${input.round}.`, '')
   lines.push('| Step | Stack | Command | Exit | Duration |', '| --- | --- | --- | --- | --- |')
   for (const s of steps) lines.push(`| ${s.name} | ${s.stack} | \`${cell(s.argv.join(' '))}\` | ${s.exitCode} | ${s.ms} ms |`)
+  if (engine.length > 0) lines.push('', ...engine)
   for (const s of red.filter(x => x.exitCode === 127)) lines.push('', `Missing tool for ${s.name}: ${fixFor(s, ds, wt)}`)
   if (host.length > 0) lines.push('', '## Host problem', ...host.map(h => `- ${h}`))
   if (commits.length > 0) {

@@ -19,6 +19,8 @@ export interface Tracker {
   comment(n: number, body: string): Promise<void>
   close(n: number, reason: 'done' | 'rejected'): Promise<void>
   createIssue(title: string, body: string, labels: string[]): Promise<number>
+  // Sets the issue field "Priority" to the option name.
+  setPriority(n: number, name: string): Promise<void>
   searchIssues(query: string): Promise<{ number: number; title: string; labels: string[] }[]>
   findPr(branch: string): Promise<PrState | null>
   openPr(branch: string, base: string, title: string, body: string, labels: string[]): Promise<Pr>

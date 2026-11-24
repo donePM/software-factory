@@ -62,11 +62,22 @@ test('typecheck copies the engine types before tsc', async () => {
   expect(t!.argv[2]!.endsWith(`&& tsc -p ${P}`)).toBe(true)
 })
 
+test('typesSource falls back to the newest bundled version', () => {
+  const s = typesSource(P)
+  expect(s).toContain(`w=$(claude --version | cut -d' ' -f1)`)
+  expect(s).toContain('/private/tmp/claude-*/bundled-skills/"$w"/*/plugin-authoring/types/claude-code.d.ts')
+  expect(s).toContain('/private/tmp/claude-*/bundled-skills/*/*/plugin-authoring/types/claude-code.d.ts')
+  expect(s).toContain('/private/tmp/claude-*/bundled-skills/"$u"/*/plugin-authoring/types/claude-code.d.ts')
+  expect(s).toContain('sort -t. -k1,1n -k2,2n -k3,3n | tail -1')
+  expect(s).not.toContain('sort -V')
+  expect(s).toContain('echo "engine types: used $u, wanted $w"; mkdir -p')
+  expect(s).toContain(`cp "$f" ${P}/.claude-plugin/types/claude-code/index.d.ts`)
+})
+
 test('typesSource exits 69 with the fix when the engine types are missing', () => {
   const s = typesSource(P)
   expect(TYPES_MISSING_EXIT).toBe(69)
-  expect(s).toContain('engine types not found: Restart Claude Code so that the session runs the installed CLI version. Then open the plugin-authoring skill once.')
-  expect(s).toContain('exit 69;')
+  expect(s).toContain('echo "engine types not found for $w, found: none: Restart Claude Code so that the session runs the installed CLI version. Then open the plugin-authoring skill once." >&2; exit 69;')
   expect(s).not.toContain('exit 1')
   expect(s).toContain(`mkdir -p ${P}/.claude-plugin/types/claude-code`)
 })
@@ -112,7 +123,7 @@ test('requires asks for tsc only with a tsconfig', () => {
 test('requires checks the bundled engine types for a plugin with tsconfig', () => {
   const r = claudePlugin.requires(det(P, 'plugin', ['claude', 'tsc'])).find(x => x.cmd === 'sh')!
   expect(r.versionArgs[0]).toBe('-c')
-  expect(r.versionArgs[1]).toContain('bundled-skills/$(claude --version')
+  expect(r.versionArgs[1]).toBe('ls /private/tmp/claude-*/bundled-skills/*/*/plugin-authoring/types/claude-code.d.ts >/dev/null 2>&1')
   expect(r.versionArgs[1]).toContain('plugin-authoring/types/claude-code.d.ts')
   expect(r.fix).toBe('Restart Claude Code so that the session runs the installed CLI version. Then open the plugin-authoring skill once.')
 })
