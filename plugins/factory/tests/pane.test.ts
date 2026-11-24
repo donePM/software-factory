@@ -1,5 +1,6 @@
 import type { On, UiOpenResult } from 'claude-code'
-import { expect, test } from 'claude-code/testing'
+import { expect, test, type FoundElement } from 'claude-code/testing'
+import { configPath } from '../lib/config.ts'
 import { backlogReplies, files } from './support/backlog.ts'
 import { fakeHost } from './support/host.ts'
 
@@ -15,6 +16,7 @@ const SNAP = {
   ],
   waiting: [],
 }
+const CONFIG = { [configPath('/repo')]: '{}' }
 const SURFACES = ['terminal', 'desktop'] as const
 const PROPS = { title: 'Factory', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as const
 const mount = ($: any, surface: (typeof SURFACES)[number]) => $.ui.mount({ plugin: 'factory', surface, component: 'Pane', requestId: 'factory', props: PROPS })
@@ -43,7 +45,7 @@ function uiHost(on: On, placed: UiOpenResult = { isPlaced: true }) {
 const start = ($: any) => $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
 
 test('the pane draws the snapshot on terminal and desktop', async ($, on) => {
-  const host = fakeHost(on, { files: { [STATUS]: JSON.stringify(SNAP) } })
+  const host = fakeHost(on, { files: { ...CONFIG, [STATUS]: JSON.stringify(SNAP) } })
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
     expect(await textOf(ui, 'header')).toBe('Factory · o/r  2/3 slots')
@@ -52,6 +54,7 @@ test('the pane draws the snapshot on terminal and desktop', async ($, on) => {
     expect(await textOf(ui, 'job-3')).toBe('#3 Add login  build R2  code ✓')
     expect(await textOf(ui, 'job-4')).toBe('#4 Add logout  spec')
     expect(await ui.find({ key: 'running-none' })).toBeUndefined()
+    expect(await ui.find({ type: 'Button' })).toBeUndefined()
     await ui.unmount()
   }
   host.files[STATUS] = JSON.stringify({ ...SNAP, slots: { used: 0, total: 3 }, running: [] })
@@ -64,16 +67,151 @@ test('the pane draws the snapshot on terminal and desktop', async ($, on) => {
 })
 
 test('the pane says how to write a snapshot when status.json is missing', async ($, on) => {
-  const host = fakeHost(on)
+  const host = fakeHost(on, { files: CONFIG })
   for (const text of [undefined, '{not json']) {
     if (text !== undefined) host.files[STATUS] = text
     for (const surface of SURFACES) {
       const ui = await mount($, surface)
       expect(await textOf(ui, 'empty')).toBe('No snapshot yet. Run /factory:status to write it.')
       expect(await ui.find({ key: 'header' })).toBeUndefined()
+      expect(await ui.find({ type: 'Button' })).toBeUndefined()
       await ui.unmount()
     }
   }
+})
+
+const waiting = (number: number, state: string, next: string, command: string | null) => ({ number, title: `t${number}`, state, next, link: `https://github.com/o/r/issues/${number}`, command })
+const IDLE = { ...SNAP, slots: { used: 0, total: 3 }, ready: 0, running: [] }
+
+test('a waiting job fills the pane with its next step', async ($, on) => {
+  const host = fakeHost(on, { files: CONFIG })
+  const cases = [
+    waiting(42, 'approved', 'approved: /factory:merge 42', '/factory:merge 42'),
+    waiting(43, 'needs-human', 'needs you: answer in the issue. Then run /factory:run 43', '/factory:run 43'),
+    waiting(5, 'conflict', 'conflict: remove all status labels but one. Then run /factory:run 5', '/factory:run 5'),
+    waiting(44, 'needs-info', 'needs info: author answers in the issue', null),
+  ]
+  for (const w of cases) {
+    host.files[STATUS] = JSON.stringify({ ...SNAP, waiting: [w] })
+    for (const surface of SURFACES) {
+      const ui = await mount($, surface)
+      expect(await textOf(ui, 'header')).toBe('Factory · o/r  2/3 slots')
+      expect((await ui.find({ type: 'Text', text: `#${w.number} t${w.number} · waits for you` }))?.props.bold).toBe(true)
+      expect(await textOf(ui, 'wait-head')).toBe(`#${w.number} t${w.number} · waits for you`)
+      expect(await textOf(ui, 'wait-next')).toBe(w.next)
+      expect((await ui.find({ type: 'Link' }))?.props.href).toBe(w.link)
+      expect(await ui.find({ key: 'ready' })).toBeUndefined()
+      expect(await ui.find({ key: 'running' })).toBeUndefined()
+      expect((await ui.find({ type: 'Button' }))?.props.label).toBe(w.command ?? undefined)
+      await ui.unmount()
+    }
+  }
+  // An old status.json has no command field.
+  const { command: _c, ...old } = cases[0]!
+  host.files[STATUS] = JSON.stringify({ ...SNAP, waiting: [old] })
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    expect(await textOf(ui, 'wait-next')).toBe('approved: /factory:merge 42')
+    expect(await ui.find({ type: 'Button' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('the lowest waiting number fills the pane, the others get one line', async ($, on) => {
+  const rows = [
+    waiting(43, 'needs-human', 'needs you: answer in the issue. Then run /factory:run 43', '/factory:run 43'),
+    waiting(44, 'needs-info', 'needs info: author answers in the issue', null),
+    waiting(42, 'approved', 'approved: /factory:merge 42', '/factory:merge 42'),
+    waiting(5, 'conflict', 'conflict: remove all status labels but one. Then run /factory:run 5', '/factory:run 5'),
+  ]
+  fakeHost(on, { files: { ...CONFIG, [STATUS]: JSON.stringify({ ...SNAP, waiting: rows }) } })
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    expect(await textOf(ui, 'wait-head')).toBe('#5 t5 · waits for you')
+    expect((await ui.find({ type: 'Button' }))?.props.label).toBe('/factory:run 5')
+    const more = (await ui.findAll({ type: 'Box' })).filter((b: FoundElement) => b.key?.startsWith('wait-more-'))
+    expect(more.map((b: FoundElement) => [b.key, b.text])).toEqual([
+      ['wait-more-42', '#42 /factory:merge 42'],
+      ['wait-more-43', '#43 /factory:run 43'],
+      ['wait-more-44', '#44 needs info: author answers in the issue'],
+    ])
+    await ui.unmount()
+  }
+})
+
+test('a press on the button copies the command', async ($, on) => {
+  const copies: unknown[] = []
+  on('ui.copy', async (_$, e) => {
+    copies.push({ text: e.text, surface: e.surface })
+    return { value: { isCopied: true } } as never
+  })
+  fakeHost(on, { files: { ...CONFIG, [STATUS]: JSON.stringify({ ...SNAP, waiting: [waiting(42, 'approved', 'approved: /factory:merge 42', '/factory:merge 42')] }) } })
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    await ui.press({ key: 'copy' })
+    await ui.unmount()
+  }
+  expect(copies).toEqual([
+    { text: '/factory:merge 42', surface: 'terminal' },
+    { text: '/factory:merge 42', surface: 'desktop' },
+  ])
+})
+
+test('the pane offers /factory:run for a ready backlog and /factory:add when idle', async ($, on) => {
+  const copies: string[] = []
+  on('ui.copy', async (_$, e) => {
+    copies.push(e.text)
+    return { value: { isCopied: true } } as never
+  })
+  const host = fakeHost(on, { files: { ...CONFIG, [STATUS]: JSON.stringify({ ...IDLE, ready: 2 }) } })
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    expect(await textOf(ui, 'ready')).toBe('Ready: 2')
+    expect(await textOf(ui, 'running-none')).toBe('No running jobs')
+    expect(await ui.find({ key: 'idle' })).toBeUndefined()
+    expect((await ui.find({ type: 'Button' }))?.props.label).toBe('/factory:run')
+    await ui.press({ key: 'copy' })
+    await ui.unmount()
+  }
+  host.files[STATUS] = JSON.stringify(IDLE)
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    expect(await textOf(ui, 'running-none')).toBe('No running jobs')
+    expect(await textOf(ui, 'idle')).toBe('Nothing to do.')
+    expect((await ui.find({ type: 'Button' }))?.props.label).toBe('/factory:add <text>')
+    await ui.press({ key: 'copy' })
+    await ui.unmount()
+  }
+  expect(copies).toEqual(['/factory:run', '/factory:run', '/factory:add ', '/factory:add '])
+  host.files[STATUS] = JSON.stringify({ ...SNAP, ready: 0 })
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    expect(await ui.find({ type: 'Button' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('the pane offers /factory:setup when config.json is missing', async ($, on) => {
+  const copies: string[] = []
+  on('ui.copy', async (_$, e) => {
+    copies.push(e.text)
+    return { value: { isCopied: true } } as never
+  })
+  const host = fakeHost(on)
+  for (const text of [undefined, JSON.stringify({ ...SNAP, waiting: [waiting(42, 'approved', 'approved: /factory:merge 42', '/factory:merge 42')] })]) {
+    if (text !== undefined) host.files[STATUS] = text
+    for (const surface of SURFACES) {
+      const ui = await mount($, surface)
+      expect(await textOf(ui, 'setup')).toBe('Setup is not complete. Run /factory:setup.')
+      expect(await ui.find({ key: 'empty' })).toBeUndefined()
+      expect(await ui.find({ key: 'header' })).toBeUndefined()
+      expect(await ui.find({ key: 'wait-head' })).toBeUndefined()
+      expect((await ui.findAll({ type: 'Button' })).map((b: FoundElement) => b.props.label)).toEqual(['/factory:setup'])
+      await ui.press({ key: 'copy' })
+      await ui.unmount()
+    }
+  }
+  expect(copies).toEqual(['/factory:setup', '/factory:setup', '/factory:setup', '/factory:setup'])
 })
 
 test('the pane draws again after a new snapshot', async ($, on) => {
@@ -82,7 +220,7 @@ test('the pane draws again after a new snapshot', async ($, on) => {
   expect(await textOf(ui, 'empty')).toBe('No snapshot yet. Run /factory:status to write it.')
   await $.tool.run({ tool: 'mcp__factory__status' } as never)
   expect(await textOf(ui, 'header')).toBe('Factory · o/r  1/2 slots')
-  expect(await textOf(ui, 'job-3')).toBe('#3 t3  build R2  code ✓')
+  expect(await textOf(ui, 'wait-head')).toBe('#42 t42 · waits for you')
   await ui.unmount()
 })
 
