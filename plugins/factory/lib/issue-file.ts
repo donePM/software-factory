@@ -1,4 +1,5 @@
 import { firstLine, isMarkerComment, ROUND_MARKER } from './markers.ts'
+import { STOP } from './queue.ts'
 import type { Comment, Ticket } from './types.ts'
 
 const kept = (t: Ticket, operator: string, c: Comment): boolean =>
@@ -21,7 +22,7 @@ export const renderIssue = (t: Ticket, operator: string): string => {
     const round = c.author === operator ? ROUND_MARKER.exec(firstLine(c.body)) : null
     if (round) parts.push(`## Round ${round[1]} summary at ${oneLine(c.createdAt)}`)
     else if (kept(t, operator, c)) {
-      const mark = c.author === operator ? ' (operator)' : ''
+      const mark = c.author === operator && !c.body.startsWith(STOP) ? ' (operator)' : ''
       parts.push(`## Comment by ${oneLine(c.author)}${mark} at ${oneLine(c.createdAt)}`, quote(c.body))
     }
   }
