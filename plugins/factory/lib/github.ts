@@ -26,7 +26,7 @@ type RawPr = {
 type RawReview = { state: string; commit_id: string }
 type RawLabel = { name: string; color: string; description: string | null }
 
-const PRIORITIES: readonly string[] = ['Urgent', 'High', 'Medium', 'Low']
+export const PRIORITIES: readonly string[] = ['Urgent', 'High', 'Medium', 'Low']
 // shortcut: no field id check, upgrade when another single select field uses the same option names.
 const priorityOf = (f: RawFields): string | undefined =>
   (f.issue_field_values ?? [])
@@ -154,6 +154,15 @@ export function githubTracker(ctx: Ctx, repo: string): Tracker {
     },
     async createIssue(title, body, labels) {
       return Number(await gh(['api', '-X', 'POST', `repos/${repo}/issues`, '--input', '-', '--jq', '.number'], JSON.stringify({ title, body, labels })))
+    },
+    // The org field takes the option name. The option id gives a 422.
+    // shortcut: one field lookup for each setPriority call, upgrade when a long issue list makes the extra calls slow.
+    async setPriority(n, name) {
+      const owner = repo.split('/')[0]!
+      const fields = parseLines<{ id: number; name: string }>(await gh(['api', `orgs/${owner}/issue-fields`, '--paginate', '--jq', '.[]']))
+      const field = fields.find(f => f.name === 'Priority')
+      if (field === undefined) throw new FactoryError('no-priority-field', `the org ${owner} has no issue field "Priority"`)
+      await api('POST', `issues/${n}/issue-field-values`, { issue_field_values: [{ field_id: field.id, value: name }] })
     },
     // shortcut: one search page of 50 hits, upgrade when the search limit hurts.
     async searchIssues(query) {

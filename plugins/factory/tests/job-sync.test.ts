@@ -32,7 +32,8 @@ function tracker(t: Ticket): Tracker & { states: State[]; assigns: string[] } {
   return {
     states,
     assigns,
-    login: async () => 'op',
+    repo: 'a/b',
+    login:async () => 'op',
     assign: async (n: number, on: boolean) => { assigns.push(`${on ? '+' : '-'}${n}`) },
     get: async () => t,
     setState: async (_n: number, to: State) => {
@@ -51,7 +52,11 @@ const J: Job = {
 }
 const gitCalls = (calls: string[][]): string[][] => calls.filter(c => c[0] === 'git')
 const okGit: Reply[] = [{ argv: ['git', 'ls-remote'], result: { exitCode: 2 } }, { argv: ['git', 'fetch'] }, { argv: ['git', 'worktree', 'add'] }]
-const createReplies: Reply[] = [{ argv: ['git', 'rev-parse', 'origin/main'], result: { stdout: `${SHA}\n` } }, ...okGit]
+const GH_GIT = ['git', '-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
+const WIKI = `${DIR}/wiki`
+const WIKI_CLONE = [...GH_GIT, 'clone', '--depth', '1', 'https://github.com/a/b.wiki.git', WIKI]
+const WIKI_OK: Reply[] = [{ argv: ['rm', '-rf', WIKI] }, { argv: WIKI_CLONE }]
+const createReplies: Reply[] =[{ argv: ['git', 'rev-parse', 'origin/main'], result: { stdout: `${SHA}\n` } }, ...okGit]
 
 const parseFails = (text: string, key: string): void => {
   let err: unknown
@@ -337,12 +342,42 @@ test('jobSync creates the branch from Base when nothing else exists', async () =
 })
 
 test('jobSync creates the worktree of a docs job from the base branch', async () => {
-  const ctx = fakeCtx({ files: restoreFiles(), replies: [{ argv: ['git', 'rev-parse', '--verify'], result: { exitCode: 1 } }, ...okGit] })
+  const ctx = fakeCtx({ files: restoreFiles(), replies: [{ argv: ['git', 'rev-parse', '--verify'], result: { exitCode: 1 } }, ...WIKI_OK, ...okGit] })
   await jobSync(ctx, tracker(T(['factory:docs'])), 7)
   const fetch = ctx.calls.findIndex(c => c.join(' ') === 'git fetch origin main')
   const add = ctx.calls.findIndex(c => c.join(' ') === `git worktree add -b factory/7 ${WT} origin/main`)
   expect(fetch).toBeGreaterThan(-1)
   expect(add).toBeGreaterThan(fetch)
+})
+
+test('jobSync clones the wiki for a docs job', async () => {
+  const ctx = fakeCtx({ files: restoreFiles(), replies: [{ argv: ['git', 'rev-parse', '--verify'], result: { exitCode: 1 } }, ...WIKI_OK, ...okGit] })
+  const runs: { argv: string[]; env?: Record<string, string> }[] = []
+  const inner = ctx.run
+  ctx.run = async (argv, opts) => {
+    runs.push({ argv: [...argv], env: opts?.env })
+    return inner(argv, opts)
+  }
+  await jobSync(ctx, tracker(T(['factory:docs'])), 7)
+  const add = ctx.calls.findIndex(c => c.join(' ') === `git worktree add -b factory/7 ${WT} origin/main`)
+  const rm = ctx.calls.findIndex(c => c.join(' ') === `rm -rf ${WIKI}`)
+  const clone = ctx.calls.findIndex(c => c.join(' ') === WIKI_CLONE.join(' '))
+  expect(add).toBeGreaterThan(-1)
+  expect(rm).toBeGreaterThan(add)
+  expect(clone).toBeGreaterThan(rm)
+  expect(runs[clone]?.env).toEqual({ GIT_TERMINAL_PROMPT: '0' })
+
+  const failed = fakeCtx({ files: { ...restoreFiles(), [WT]: '' }, replies: [{ argv: WIKI_CLONE, result: { exitCode: 128, stderr: 'fatal: repository not found\n' } }, ...WIKI_OK] })
+  let err: unknown
+  try { await jobSync(failed, tracker(T(['factory:docs'])), 7) } catch (e) { err = e }
+  expect(err).toMatchObject({ code: 'wiki-clone' })
+  expect((err as { fix?: string }).fix).toContain('https://github.com/a/b/wiki')
+
+  for (const state of ['build', 'review']) {
+    const other = fakeCtx({ files: { ...restoreFiles(), [WT]: '' } })
+    await jobSync(other, tracker(T([`factory:${state}`])), 7)
+    expect(other.calls.some(c => c.includes('clone') || c.includes(WIKI))).toBe(false)
+  }
 })
 
 test('jobSync does nothing to git when the worktree exists', async () => {
@@ -511,15 +546,15 @@ test('a failed types copy does not stop the job', async () => {
 })
 
 test('jobSync rebuilds docs.md from the docs comment', async () => {
-  const page = 'STATUS: DONE\n\n## Summary\nOne page.\n\n## Page\n# Add thing\n'
-  const link = 'Docs: https://github.com/a/b/wiki/Issue-7'
-  const ctx = fakeCtx({ files: { ...CFG, [WT]: '' } })
+  const page = 'STATUS: DONE\n\n## Summary\nTwo pages.\n\n## Page Orders.md\n# Orders\n\n## Page Home.md\n# Home\n'
+  const link = 'Docs: https://github.com/a/b/wiki/Orders, https://github.com/a/b/wiki/Home'
+  const ctx = fakeCtx({ files: { ...CFG, [WT]: '' }, replies: WIKI_OK })
   const r = await jobSync(ctx, tracker(T(['factory:docs'], [C(1, 'op', withMarker('docs', `${link}\n\n${page}`))])), 7)
   expect(ctx.files[`${DIR}/docs.md`]).toBe(page)
   expect(r.rebuilt).toContain('docs.md')
 
   for (const c of [C(1, 'op', withMarker('docs', link)), C(1, 'mallory', withMarker('docs', `${link}\n\n${page}`))]) {
-    const other = fakeCtx({ files: { ...CFG, [WT]: '' } })
+    const other = fakeCtx({ files: { ...CFG, [WT]: '' }, replies: WIKI_OK })
     const res = await jobSync(other, tracker(T(['factory:docs'], [c])), 7)
     expect(other.files[`${DIR}/docs.md`]).toBeUndefined()
     expect(res.rebuilt).not.toContain('docs.md')

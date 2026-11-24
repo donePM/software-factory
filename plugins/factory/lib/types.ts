@@ -16,7 +16,7 @@ export type Fs = {
   exists(p: string): Promise<boolean>
   list(p: string): Promise<string[]>
 }
-export type Ctx = { run: Run; fs: Fs; root: string; now: () => Date; sleep: (ms: number) => Promise<void>; status?: (text: string | undefined) => void }
+export type Ctx = { run: Run; fs: Fs; root: string; now: () => Date; sleep: (ms: number) => Promise<void>; status?: (text: string | undefined) => void; notify?: (text: string) => Promise<void> }
 
 export type Comment = { id: number; author: string; body: string; createdAt: string; updatedAt: string }
 export type Ticket = {

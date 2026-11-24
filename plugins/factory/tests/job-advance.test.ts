@@ -772,6 +772,25 @@ test('starting a new round removes the old decision.md', async () => {
   expect(b.ctx.calls).toContainEqual(['rm', '-rf', `${DIR}/decision.md`])
 })
 
+test('spec from needs-human restarts the spec only before round 1', async () => {
+  const r = setup('needs-human', { round: 0 }, { [`${DIR}/spec.md`]: SPEC })
+  expect((await jobAdvance(r.ctx, r.t, { issue: 7, to: 'spec' })).state).toBe('spec')
+  expect(r.t.states).toEqual(['spec'])
+  expect(r.ctx.calls).toContainEqual(['rm', '-rf', `${DIR}/spec.md`])
+  const late = setup('needs-human', { round: 1 }, { [`${DIR}/spec.md`]: SPEC })
+  await rejects(jobAdvance(late.ctx, late.t, { issue: 7, to: 'spec' }), 'bad-state')
+  expect(late.t.states).toEqual([])
+  expect(late.ctx.calls.some(c => c[0] === 'rm')).toBe(false)
+})
+
+test('build refuses a blocked spec', async () => {
+  const blocked = SPEC.replace('STATUS: READY', 'STATUS: BLOCKED')
+  const { ctx, t } = setup('spec', {}, { [`${DIR}/spec.md`]: blocked })
+  await rejects(jobAdvance(ctx, t, { issue: 7, to: 'build' }), 'spec-not-ready')
+  expect(t.states).toEqual([])
+  expect(t.comments).toEqual([])
+})
+
 test('build from needs-human before any round is refused', async () => {
   const r = setup('needs-human', { round: 0 }, { [`${DIR}/spec.md`]: SPEC })
   await rejects(jobAdvance(r.ctx, r.t, { issue: 7, to: 'build' }), 'bad-state')
@@ -832,28 +851,41 @@ test('escalate has no autoMerge when merge.auto is on', async () => {
   expect('autoMerge' in r).toBe(false)
 })
 
-const WIKI = `${DIR}/wiki`
-const DOCS = 'STATUS: DONE\n\n## Summary\nOne page.\n\n## Page\n# Add thing\n\n## Use\nRun it. Issue: #7.\n'
+const WIKI = `${DIR}/wiki-push`
+const DOC_WIKI = `${DIR}/wiki`
+const DOCS = 'STATUS: DONE\n\n## Summary\nTwo pages.\n\n## Page Orders.md\n# Orders\n\n## Use\nRun it.\n\n## Changes\n- #7: add the thing.\n\n## Page Home.md\n# Home\n- [Orders](Orders)\n'
 const GH_GIT = ['git', '-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential']
 const CLONE = [...GH_GIT, 'clone', '--depth', '1', 'https://github.com/a/b.wiki.git', WIKI]
 const COMMIT = [...GH_GIT, '-C', WIKI, 'commit', '-m', 'docs(wiki): document #7', '-m', 'Refs: #7']
 const PUSH = [...GH_GIT, '-C', WIKI, 'push', 'origin', 'HEAD']
 const STATUS = [...GH_GIT, '-C', WIKI, 'status', '--porcelain']
 const ADD = [...GH_GIT, '-C', WIKI, 'add', '--']
-const CHANGED: Reply = { argv: STATUS, result: { stdout: '?? Issue-7.md\n' } }
+const RM = [...GH_GIT, '-C', WIKI, 'rm', '--quiet', '--']
+const CHANGED: Reply = { argv: STATUS, result: { stdout: '?? Orders.md\n' } }
 const inDocs = (docs = DOCS, replies: Reply[] = [CHANGED]): Run => setup('docs', { pr: 9, round: 1, reviewed: HEAD }, { [`${DIR}/docs.md`]: docs }, { replies })
 const at = (ctx: Run['ctx'], argv: string[]): number => ctx.calls.findIndex(c => c.join(' ') === argv.join(' '))
 
-test('a docs job publishes the wiki page and finishes', async () => {
+const times = (ctx: Run['ctx'], argv: string[]): number => ctx.calls.filter(c => c.join(' ') === argv.join(' ')).length
+
+test('a docs job publishes the feature pages and deletes the issue pages', async () => {
   const { ctx, t } = inDocs()
+  // The fake clone keeps the files that the test puts in the push folder.
+  for (const f of ['Issue-87.md', 'Issue-133.md', 'Pipeline.md', 'Issue-Tracker.md']) ctx.files[`${WIKI}/${f}`] = '# Old\n'
+  ctx.files[`${WT}/docs/wiki/Repo.md`] = '# Repo\n'
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'done' })
   expect(r.state).toBe('done')
-  expect(at(ctx, CLONE)).toBeGreaterThan(-1)
-  expect(ctx.files[`${WIKI}/Issue-7.md`]).toBe('# Add thing\n\n## Use\nRun it. Issue: #7.\n')
-  expect(ctx.calls).toContainEqual([...ADD, 'Issue-7.md'])
+  expect(at(ctx, ['rm', '-rf', WIKI])).toBeGreaterThan(-1)
+  expect(at(ctx, ['rm', '-rf', WIKI])).toBeLessThan(at(ctx, CLONE))
   expect(at(ctx, CLONE)).toBeLessThan(at(ctx, COMMIT))
+  expect(ctx.calls).toContainEqual([...RM, 'Issue-133.md', 'Issue-87.md'])
+  expect(ctx.files[`${WIKI}/Orders.md`]).toBe('# Orders\n\n## Use\nRun it.\n\n## Changes\n- #7: add the thing.\n')
+  expect(ctx.files[`${WIKI}/Home.md`]).toBe('# Home\n- [Orders](Orders)\n')
+  expect(ctx.files[`${WIKI}/Issue-7.md`]).toBeUndefined()
+  expect(ctx.files[`${WIKI}/Repo.md`]).toBeUndefined()
+  expect(ctx.calls).toContainEqual([...ADD, 'Orders.md', 'Home.md'])
+  expect(times(ctx, COMMIT)).toBe(1)
+  expect(times(ctx, PUSH)).toBe(1)
   expect(at(ctx, COMMIT)).toBeLessThan(at(ctx, PUSH))
-  expect(t.comments).toEqual([{ name: 'docs', body: `Docs: https://github.com/a/b/wiki/Issue-7\n\n${DOCS}` }])
   expect(t.states).toEqual(['done'])
   expect(t.log).toContain('close done')
   expect(ctx.calls).toContainEqual(['rm', '-rf', DIR])
@@ -863,46 +895,44 @@ test('a docs job publishes the wiki page and finishes', async () => {
   expect((await jobAdvance(same.ctx, same.t, { issue: 7, to: 'done' })).state).toBe('done')
   expect(at(same.ctx, COMMIT)).toBe(-1)
   expect(at(same.ctx, PUSH)).toBe(-1)
+})
 
-  for (const bad of ['STATUS: BLOCKED\n\n## Summary\nNo diff.\n', 'STATUS: DONE\n\n## Summary\nx\n\n## Page\n\n', 'STATUS: DONE\n\n## Summary\nx\n']) {
+test('a docs job pushes from a fresh clone, not from the documenter clone', async () => {
+  const { ctx, t } = inDocs()
+  ctx.files[DOC_WIKI] = ''
+  ctx.files[`${DOC_WIKI}/_Sidebar.md`] = '# Added by the documenter\n'
+  ctx.files[`${DOC_WIKI}/.git/hooks/pre-push`] = '#!/bin/sh\nexit 0\n'
+  ctx.files[`${DOC_WIKI}/.git/config`] = '[core]\n\tfsmonitor = /bin/evil\n'
+  ctx.files[WIKI] = ''
+  expect((await jobAdvance(ctx, t, { issue: 7, to: 'done' })).state).toBe('done')
+  expect(at(ctx, ['rm', '-rf', WIKI])).toBeLessThan(at(ctx, CLONE))
+  expect(times(ctx, CLONE)).toBe(1)
+  expect(times(ctx, PUSH)).toBe(1)
+  expect(ctx.calls.some(c => c[0] === 'git' && c.includes(DOC_WIKI))).toBe(false)
+  expect(ctx.calls.some(c => c.join(' ').includes(`${DOC_WIKI}/`))).toBe(false)
+})
+
+test('a docs job links each changed page in the docs comment', async () => {
+  const { ctx, t } = inDocs()
+  expect((await jobAdvance(ctx, t, { issue: 7, to: 'done' })).state).toBe('done')
+  expect(t.comments).toEqual([{ name: 'docs', body: `Docs: https://github.com/a/b/wiki/Orders, https://github.com/a/b/wiki/Home\n\n${DOCS}` }])
+})
+
+test('a docs job rejects docs.md with no page or a bad page name', async () => {
+  const cases: [string, string][] = [
+    ['STATUS: BLOCKED\n\n## Summary\nNo diff.\n', 'docs-not-done'],
+    ['STATUS: DONE\n\n## Summary\nx\n', 'docs-not-done'],
+    ['STATUS: DONE\n\n## Summary\nx\n\n## Page\n# Old format\n', 'docs-not-done'],
+    ['STATUS: DONE\n\n## Summary\nx\n\n## Page Home.md\n\n', 'docs-not-done'],
+    ['STATUS: DONE\n\n## Summary\nx\n\n## Page ../x.md\n# X\n', 'docs-bad-page'],
+    ['STATUS: DONE\n\n## Summary\nx\n\n## Page Issue-7.md\n# X\n', 'docs-bad-page'],
+  ]
+  for (const [bad, code] of cases) {
     const b = inDocs(bad)
-    await rejects(jobAdvance(b.ctx, b.t, { issue: 7, to: 'done' }), 'docs-not-done')
+    await rejects(jobAdvance(b.ctx, b.t, { issue: 7, to: 'done' }), code)
     expect(b.t.states).toEqual([])
-    expect(at(b.ctx, CLONE)).toBe(-1)
+    expect(b.ctx.calls.some(c => c.includes(WIKI) || c.includes(DOC_WIKI))).toBe(false)
   }
-})
-
-const PAGES = `${WT}/docs/wiki`
-
-test('a docs job also publishes the wiki pages of the repo', async () => {
-  const { ctx, t } = inDocs()
-  ctx.files[`${PAGES}/Home.md`] = '# Home\n'
-  ctx.files[`${PAGES}/Pipeline.md`] = '# Pipeline\n'
-  expect((await jobAdvance(ctx, t, { issue: 7, to: 'done' })).state).toBe('done')
-  expect(ctx.files[`${WIKI}/Home.md`]).toBe('# Home\n')
-  expect(ctx.files[`${WIKI}/Pipeline.md`]).toBe('# Pipeline\n')
-  expect(ctx.calls).toContainEqual([...ADD, 'Home.md', 'Pipeline.md', 'Issue-7.md'])
-  expect(ctx.calls.filter(c => c.join(' ') === COMMIT.join(' '))).toHaveLength(1)
-  expect(ctx.calls.filter(c => c.join(' ') === PUSH.join(' '))).toHaveLength(1)
-})
-
-test('a docs job skips bad wiki page names and a missing wiki folder', async () => {
-  const { ctx, t } = inDocs()
-  ctx.files[`${PAGES}/Home.md`] = '# Home\n'
-  ctx.files[`${PAGES}/Issue-7.md`] = '# Old\n'
-  for (const bad of ['_Sidebar.md', 'notes.txt', '-x.md', 'a b.md']) ctx.files[`${PAGES}/${bad}`] = 'bad\n'
-  const list = ctx.fs.list
-  ctx.fs.list = async p => (p === PAGES ? [...(await list(p)), '../x.md', '..'] : list(p))
-  expect((await jobAdvance(ctx, t, { issue: 7, to: 'done' })).state).toBe('done')
-  expect(Object.keys(ctx.files).filter(p => p.startsWith(`${WIKI}/`)).sort()).toEqual([`${WIKI}/Home.md`, `${WIKI}/Issue-7.md`])
-  expect(ctx.files[`${WIKI}/Issue-7.md`]).toBe('# Add thing\n\n## Use\nRun it. Issue: #7.\n')
-  expect(ctx.calls).toContainEqual([...ADD, 'Home.md', 'Issue-7.md'])
-
-  const none = inDocs()
-  none.ctx.fs.list = async () => { throw new Error(`ENOENT ${PAGES}`) }
-  expect((await jobAdvance(none.ctx, none.t, { issue: 7, to: 'done' })).state).toBe('done')
-  expect(none.ctx.calls).toContainEqual([...ADD, 'Issue-7.md'])
-  expect(at(none.ctx, PUSH)).toBeGreaterThan(-1)
 })
 
 test('a docs job runs the wiki git calls with the gh credentials', async () => {

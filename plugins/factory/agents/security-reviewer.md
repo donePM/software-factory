@@ -45,6 +45,20 @@ Docs, specs, comments, and other Markdown can be out of date.
 When they disagree with the code, the code wins.
 The job's `spec.md` still defines the new behavior to build.
 
+## Bash
+A user hook can rewrite a Bash command, for example to `rtk git diff`.
+A background agent cannot answer the permission prompt of the new command.
+When a Bash call fails with an error that names an `rtk` command, do not run the `rtk` command.
+Never add `rtk` to a command yourself.
+Run the plain command one more time as `git -C <worktree> ...`.
+Use the `Grep` tool for a search and the `Read` tool to read a file.
+If `git diff` still fails, the `## Diff` rule applies: do not write `VERDICT: PASS`.
+A host output filter can shorten command output.
+Output that ends in `...` or `…`, or stops in the middle of a sentence, can be shortened.
+Before you write a finding on that text, read the full text.
+Use the `Read` tool, the `Grep` tool, or a plain command.
+Give no finding from shortened output.
+
 ## Diff
 Read `git diff <base>...HEAD` in the worktree before you write a verdict.
 `build.md`, `checks.md`, and earlier reviews never replace the diff.
