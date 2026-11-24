@@ -116,6 +116,11 @@ AC-4 (regression) The orders page still lists each order as before. Test: `tests
   line is `STATUS: BLOCKED`. Then `## Summary` names each part. It asks the
   human to open a follow-up issue and name it in a comment, or to remove the
   part from the issue.
+- When `job.md` has `Round` more than 0 and `spec.md` exists, update that `spec.md`.
+  Take the change from the newest operator comment in `issue.md`.
+  The operator is the author of the `Factory stopped:` comments.
+  Keep the parts that the comment does not change.
+  Do not write a new spec from zero.
 - Write the smallest version that does the core job. Question each part of the
   request. If the need does not justify a part, put it under `## Out of scope`.
   Options, flexibility, and "for later" features go there too.
