@@ -1,14 +1,14 @@
 import { expect, test } from 'claude-code/testing'
-import { defaultConfig } from '../lib/config.ts'
 import { invoke, makeCtx, SNAPSHOT_TOOLS, TOOLS, type ToolDef } from '../hooks/tools.ts'
 import type { Queue } from '../lib/queue.ts'
 import { buildSnapshot, statusLine, type Snapshot } from '../lib/view.ts'
+import { backlogReplies, files, OPEN, raw } from './support/backlog.ts'
 import { fakeCtx, fakeHost, type Reply } from './support/host.ts'
 
 const Q = (o: Partial<Queue> = {}): Queue => ({ running: [], waiting: [], ready: [], blocked: [], conflicts: [], heldBy: [], slots: 0, next: [], ...o })
 const item = (number: number) => ({ number, title: `t${number}`, priority: 'medium', createdAt: '2026-01-01T00:00:00Z' })
 
-test('buildSnapshot holds slots, running, waiting, ready and time', () => {
+test('buildSnapshot holds repo, slots, running, waiting, ready and time', () => {
   const q = Q({
     running: [{ number: 3, state: 'build' }, { number: 4, state: 'spec' }],
     waiting: [{ number: 42, state: 'approved' }, { number: 43, state: 'needs-human' }, { number: 44, state: 'needs-info' }],
@@ -26,6 +26,7 @@ test('buildSnapshot holds slots, running, waiting, ready and time', () => {
   const jobs = { 3: { round: 2, reviewsDone: ['code' as const] }, 4: { round: null, reviewsDone: [] } }
   const snap = buildSnapshot('o/r', { concurrency: 3, merge: { auto: false } }, data, jobs, new Date('2026-02-03T04:05:06Z'))
   expect(snap).toEqual({
+    repo: 'o/r',
     time: '2026-02-03T04:05:06.000Z',
     slots: { used: 2, total: 3 },
     ready: 2,
@@ -42,25 +43,9 @@ test('buildSnapshot holds slots, running, waiting, ready and time', () => {
   })
 })
 
-const raw = (n: number, labels: string[]) => JSON.stringify({
-  number: n, title: `t${n}`, body: '', labels: ['factory', ...labels].map(name => ({ name })), user: { login: 'a' },
-  created_at: '2026-01-01T00:00:00Z', html_url: `https://github.com/o/r/issues/${n}`, state: 'open',
-})
-const OPEN = 'repos/o/r/issues?labels=factory&state=open&per_page=100'
-const backlogReplies = (open: Partial<Reply['result']> = { stdout: [raw(3, ['factory:build']), raw(42, ['factory:approved']), raw(6, [])].join('\n') }): Reply[] => [
-  { argv: ['gh', 'api', OPEN], result: open },
-  { argv: ['gh', 'api', 'repos/o/r/issues?labels=factory,factory:docs&state=closed&per_page=100'] },
-  { argv: ['gh', 'api', 'repos/o/r/issues?labels=factory,factory:needs-human&state=closed&per_page=100'] },
-  { argv: ['gh', 'api', 'repos/o/r/pulls?head=o:factory/42&state=all&per_page=100'], result: { stdout: JSON.stringify({ number: 50, state: 'open', draft: false, title: 'x', body: '', user: { login: 'a' }, node_id: 'N', html_url: 'https://github.com/o/r/pull/50', head: { ref: 'factory/42', sha: 'abc' }, merged_at: null, merge_commit_sha: null }) } },
-]
-const JOB_MD = '# Job #3\n\n## Job\n- Issue: 3\n- Round: 2\n\n## Route\n- code: sonnet\n- security: opus\n'
-const files = (project = { enabled: true, number: 3 }) => ({
-  '/repo/.factory/config.json': JSON.stringify({ ...defaultConfig('https://github.com/o/r', 'main', []), concurrency: 2, project }),
-  '/repo/.factory/jobs/3/job.md': JOB_MD,
-  '/repo/.factory/jobs/3/round-2/review-code.md': 'VERDICT: PASS\n',
-})
 const stub = (name: string): ToolDef => ({ name, description: 'd', inputSchema: {}, handler: async () => ({ ok: true }) })
 const EXPECTED_SNAPSHOT = {
+  repo: 'o/r',
   time: '2026-01-01T00:00:00.000Z',
   slots: { used: 1, total: 2 },
   ready: 1,
@@ -113,7 +98,7 @@ test('a failed snapshot leaves the tool result unchanged', async () => {
   }
 })
 
-const snap = (o: Partial<Snapshot>): Snapshot => ({ time: 't', slots: { used: 0, total: 3 }, ready: 0, running: [], waiting: [], ...o })
+const snap = (o: Partial<Snapshot>): Snapshot => ({ repo: 'o/r', time: 't', slots: { used: 0, total: 3 }, ready: 0, running: [], waiting: [], ...o })
 const run = (number: number, state: string, round: number | null) => ({ number, title: `t${number}`, state, round, reviewsDone: [] })
 const wait = (number: number, state: string) => ({ number, title: `t${number}`, state, next: 'n', link: 'l' })
 
