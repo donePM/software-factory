@@ -1,9 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 import { defaultConfig } from '../lib/config.ts'
-import { invoke, TOOLS, type ToolDef } from '../hooks/tools.ts'
+import { invoke, makeCtx, SNAPSHOT_TOOLS, TOOLS, type ToolDef } from '../hooks/tools.ts'
 import type { Queue } from '../lib/queue.ts'
-import { buildSnapshot } from '../lib/view.ts'
-import { fakeCtx, type Reply } from './support/host.ts'
+import { buildSnapshot, statusLine, type Snapshot } from '../lib/view.ts'
+import { fakeCtx, fakeHost, type Reply } from './support/host.ts'
 
 const Q = (o: Partial<Queue> = {}): Queue => ({ running: [], waiting: [], ready: [], blocked: [], conflicts: [], slots: 0, next: [], ...o })
 const item = (number: number) => ({ number, title: `t${number}`, priority: 'medium', createdAt: '2026-01-01T00:00:00Z' })
@@ -110,5 +110,102 @@ test('a failed snapshot leaves the tool result unchanged', async () => {
     }
     expect(await invoke(def, ctx, {})).toEqual(expected)
     expect(tried).toEqual(['/repo/.factory/status.json'])
+  }
+})
+
+const snap = (o: Partial<Snapshot>): Snapshot => ({ time: 't', slots: { used: 0, total: 3 }, ready: 0, running: [], waiting: [], ...o })
+const run = (number: number, state: string, round: number | null) => ({ number, title: `t${number}`, state, round, reviewsDone: [] })
+const wait = (number: number, state: string) => ({ number, title: `t${number}`, state, next: 'n', link: 'l' })
+
+test('statusLine shows the slots, the running jobs and the waiting count', () => {
+  const running = [run(42, 'review', 2), run(45, 'build', 1)]
+  const slots = { used: 2, total: 3 }
+  expect(statusLine(snap({ slots, running, waiting: [wait(7, 'approved')] }))).toBe('Factory 2/3 slots · #42 review R2 · #45 build R1 · 1 waits for you')
+  expect(statusLine(snap({ slots, running, waiting: [wait(7, 'approved'), wait(5, 'conflict')] }))).toBe('Factory 2/3 slots · #42 review R2 · #45 build R1 · 2 wait for you')
+})
+
+test('statusLine leaves out a missing round and an empty waiting part', () => {
+  expect(statusLine(snap({ slots: { used: 1, total: 3 }, running: [run(4, 'spec', null)] }))).toBe('Factory 1/3 slots · #4 spec')
+  expect(statusLine(snap({ waiting: [wait(7, 'approved'), wait(8, 'needs-human')] }))).toBe('Factory 0/3 slots · 2 wait for you')
+})
+
+test('statusLine is undefined when nothing runs and nothing waits', () => {
+  expect(statusLine(snap({ ready: 4 }))).toBeUndefined()
+})
+
+const LINE = 'Factory 1/2 slots · #3 build R2 · 1 waits for you'
+
+// The engine loads its own copy of TOOLS, so it runs the real tools. These two need no issue input.
+const ENGINE_TOOLS = ['status', 'cleanup']
+
+// any: the test kit types $ and on per event, and this helper passes them on.
+async function statusLines($: any, on: any, open: Partial<Reply['result']> | undefined, surfaces: readonly string[]) {
+  const lines: Record<string, (string | undefined)[]> = {}
+  let key = ''
+  on('ui.status', async (_$: unknown, e: { text: string | undefined }) => {
+    ;(lines[key] ??= []).push(e.text)
+    return { value: undefined }
+  })
+  fakeHost(on, { files: files({ enabled: false, number: 3 }), replies: [...backlogReplies(open), { argv: ['gh', 'api', '-X', 'GET', 'search/issues'] }] })
+  for (const surface of surfaces) {
+    await $.session.start({ cwd: '/repo', surface, isInteractive: false })
+    for (const name of ENGINE_TOOLS) {
+      key = `${surface} ${name}`
+      expect('isError' in (await $.tool.run({ tool: `mcp__factory__${name}`, tool_use_id: 'u' }))).toBe(false)
+    }
+  }
+  return lines
+}
+const each = (surfaces: string[], line: string | undefined) => Object.fromEntries(surfaces.flatMap(s => ENGINE_TOOLS.map(n => [`${s} ${n}`, [line]])))
+
+// Each listed tool, through invoke with a recording ctx.status.
+async function listedLines(open?: Partial<Reply['result']>) {
+  const lines: Record<string, (string | undefined)[]> = {}
+  for (const name of SNAPSHOT_TOOLS) {
+    const ctx = fakeCtx({ files: files(), replies: backlogReplies(open) })
+    ctx.status = text => void (lines[name] ??= []).push(text)
+    await invoke(stub(name), ctx, {})
+  }
+  return lines
+}
+
+test('the tools set the status line on the terminal and the desktop surface', async ($, on) => {
+  const surfaces = ['terminal', 'desktop']
+  expect(await statusLines($, on, undefined, surfaces)).toEqual(each(surfaces, LINE))
+  expect(await listedLines()).toEqual(Object.fromEntries(SNAPSHOT_TOOLS.map(n => [n, [LINE]])))
+})
+
+test('the tools clear the status line when the factory is idle', async ($, on) => {
+  const idle = { stdout: raw(6, []) }
+  expect(await statusLines($, on, idle, ['terminal'])).toEqual(each(['terminal'], undefined))
+  expect(await listedLines(idle)).toEqual(Object.fromEntries(SNAPSHOT_TOOLS.map(n => [n, [undefined]])))
+})
+
+test('a rejected status line call does not reject', async () => {
+  const ctx = await makeCtx({ session: { root: async () => '/repo' }, ui: { status: () => Promise.reject(new Error('no surface')) } })
+  expect(await ctx.status?.('x')).toBeUndefined()
+})
+
+test('a status line call that returns void still sets the line', async () => {
+  const lines: (string | undefined)[] = []
+  const ctx = await makeCtx({ session: { root: async () => '/repo' }, ui: { status: (text: string | undefined) => void lines.push(text) } })
+  ctx.status?.('x')
+  expect(lines).toEqual(['x'])
+})
+
+test('a failed status line leaves the tool result unchanged', async () => {
+  const status = TOOLS.find(t => t.name === 'status')!
+  const want = await invoke(status, fakeCtx({ files: files({ enabled: false, number: 3 }), replies: backlogReplies() }), {})
+  for (const [def, expected] of [[stub('merge'), { result: JSON.stringify({ ok: true }, null, 2) }], [status, want]] as const) {
+    const ctx = fakeCtx({ files: files({ enabled: false, number: 3 }), replies: backlogReplies() })
+    let called = 0
+    ctx.status = () => {
+      called++
+      throw new Error('no surface')
+    }
+    expect(await invoke(def, ctx, {})).toEqual(expected)
+    expect(called).toBe(1)
+    const written = ctx.files['/repo/.factory/status.json']
+    expect(written === undefined ? undefined : JSON.parse(written)).toEqual(EXPECTED_SNAPSHOT)
   }
 })

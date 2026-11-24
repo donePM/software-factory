@@ -15,6 +15,16 @@ export type Snapshot = {
   waiting: { number: number; title: string; state: string; next: string; link: string }[]
 }
 
+export function statusLine(s: Snapshot): string | undefined {
+  if (s.running.length === 0 && s.waiting.length === 0) return undefined
+  const k = s.waiting.length
+  return [
+    `Factory ${s.slots.used}/${s.slots.total} slots`,
+    ...s.running.map(r => `#${r.number} ${r.state}${r.round === null ? '' : ` R${r.round}`}`),
+    ...(k === 0 ? [] : [k === 1 ? '1 waits for you' : `${k} wait for you`]),
+  ].join(' · ')
+}
+
 export const statusPath = (root: string): string => `${root}/.factory/status.json`
 
 export function buildSnapshot(repo: string, cfg: { concurrency: number; merge: { auto?: boolean } }, d: StatusData, jobs: Record<number, JobRound>, now: Date): Snapshot {
@@ -55,7 +65,9 @@ async function jobRound(ctx: Ctx, n: number): Promise<JobRound> {
 export async function writeSnapshot(ctx: Ctx, repo: string, cfg: Config, d: StatusData): Promise<void> {
   const jobs: Record<number, JobRound> = {}
   for (const r of d.q.running) jobs[r.number] = await jobRound(ctx, r.number)
-  await ctx.fs.write(statusPath(ctx.root), `${JSON.stringify(buildSnapshot(repo, cfg, d, jobs, ctx.now()), null, 2)}\n`)
+  const snapshot = buildSnapshot(repo, cfg, d, jobs, ctx.now())
+  await ctx.fs.write(statusPath(ctx.root), `${JSON.stringify(snapshot, null, 2)}\n`)
+  ctx.status?.(statusLine(snapshot))
 }
 
 // The board stays off: a write for display must not add Backlog cards.
