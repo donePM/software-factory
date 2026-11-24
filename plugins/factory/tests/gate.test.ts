@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { defaultConfig, type Config, type StackRef } from '../lib/config.ts'
 import { planGate, runGate } from '../lib/gate.ts'
+import { renderTexts } from '../lib/texts.ts'
 import type { Detection, Step } from '../lib/stacks/types.ts'
 import type { Ctx } from '../lib/types.ts'
 import { fakeCtx, type Reply } from './support/host.ts'
@@ -195,6 +196,26 @@ test('a missing engine types file is a host problem', async () => {
   expect(r.report).toContain(`## Host problem\n- ${r.host[0]}`)
   const u = await runGate(tsPlugin(69), { worktree: WT, round: 'setup' })
   expect(u.host[0]).toContain('engine types not found for unknown. Found: none.')
+})
+
+const textsPlugin = (files: Record<string, string>): ReturnType<typeof fakeCtx> =>
+  make({ stacks: [{ id: 'claude-plugin', path: 'p' }], ls: 'p/.claude-plugin/plugin.json\n', files: { [`${WT}/p/agents/a.md`]: 'A', ...files } })
+
+test('gate fails when the generated texts module differs from the agent files', async () => {
+  const r = await runGate(textsPlugin({ [`${WT}/p/tests/generated/texts.ts`]: 'old' }), { worktree: WT, round: 'setup' })
+  expect(r.verdict).toBe('FAIL')
+  expect(r.report).toContain(
+    '## Generated files\n- p/tests/generated/texts.ts differs from the agent, skill, and pipeline files. Run `node p/scripts/texts.ts` and commit the file.\n',
+  )
+})
+
+test('gate passes with an up-to-date texts module and checks none without one', async () => {
+  const fresh = await renderTexts(fakeCtx({ files: { [`${WT}/p/agents/a.md`]: 'A' } }).fs, `${WT}/p`)
+  const ok = await runGate(textsPlugin({ [`${WT}/p/tests/generated/texts.ts`]: fresh }), { worktree: WT, round: 'setup' })
+  expect(ok.verdict).toBe('PASS')
+  expect(ok.report).not.toContain('## Generated files')
+  const none = await runGate(textsPlugin({}), { worktree: WT, round: 'setup' })
+  expect(none.verdict).toBe('PASS')
 })
 
 test('a tsc error is not a host problem', async () => {
