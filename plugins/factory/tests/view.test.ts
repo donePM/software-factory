@@ -5,7 +5,7 @@ import type { Queue } from '../lib/queue.ts'
 import { buildSnapshot, statusLine, type Snapshot } from '../lib/view.ts'
 import { fakeCtx, fakeHost, type Reply } from './support/host.ts'
 
-const Q = (o: Partial<Queue> = {}): Queue => ({ running: [], waiting: [], ready: [], blocked: [], conflicts: [], slots: 0, next: [], ...o })
+const Q = (o: Partial<Queue> = {}): Queue => ({ running: [], waiting: [], ready: [], blocked: [], conflicts: [], heldBy: [], slots: 0, next: [], ...o })
 const item = (number: number) => ({ number, title: `t${number}`, priority: 'medium', createdAt: '2026-01-01T00:00:00Z' })
 
 test('buildSnapshot holds slots, running, waiting, ready and time', () => {
