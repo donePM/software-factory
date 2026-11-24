@@ -161,7 +161,7 @@ comments from the issue author and from you reach them.
 ```
 .factory/
   .gitignore                 # ignores all but config.json and checks.local.ts
-  config.json                # tracker, base branch, concurrency, maxRounds, language, docs, protectedPaths (tracked)
+  config.json                # tracker, base branch, concurrency, maxRounds, language, docs, protectedPaths, checks (tracked)
   jobs/<n>/                  # working copy: job.md, issue.md, intake.md, spec.md, round-N/, decision.md, docs.md
   worktrees/<n>/             # one worktree per job, branch factory/<n>
   gate/setup/                # result of the setup gate check

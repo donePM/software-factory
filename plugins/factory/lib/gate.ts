@@ -8,7 +8,9 @@ import { renderTexts, TEXTS_MODULE, TEXTS_SCRIPT } from './texts.ts'
 import type { Ctx } from './types.ts'
 
 export type GateInput = { worktree: string; round: string; base?: string; prTitle?: string; jobDir?: string }
-export type StepResult = Step & { exitCode: number; ms: number; skipped?: string }
+// A custom check of the config runs as a step with the name 'check' and the stack 'custom'.
+type Run = Omit<Step, 'name'> & { name: StepName | 'check' }
+export type StepResult = Run & { exitCode: number; ms: number; skipped?: string }
 export type GateResult = {
   verdict: 'PASS' | 'FAIL'
   steps: StepResult[]
@@ -116,7 +118,7 @@ async function scriptsChanged(ctx: Ctx, wt: string, ds: Detection[], base: ReadF
   return [...new Set(out)]
 }
 
-function fixFor(step: Step, ds: Detection[], wt: string): string {
+function fixFor(step: Pick<Step, 'argv' | 'cwd' | 'stack'>, ds: Detection[], wt: string): string {
   const same = ds.filter(d => d.stack === step.stack)
   const exact = same.filter(d => (d.path === '.' ? wt : `${wt}/${d.path}`) === step.cwd)
   const stack = STACKS.find(s => s.id === step.stack)
@@ -179,7 +181,9 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
     return readIfExists(ctx, `${ctx.root}/${rel}`)
   }
   const missingStacks = refs.filter(r => !all.some(d => d.stack === r.id && d.path === r.path)).map(r => `${r.id} ${r.path}`)
-  const planned = planGate(await resolveSteps(ctx, wt, read, refs, ds), ds)
+  // shortcut: script files of a check are not protected by default, upgrade when operators forget to protect them
+  const checks: Run[] = (cfg.checks ?? []).map(c => ({ name: 'check', argv: ['sh', '-c', c], cwd: wt, source: 'config', stack: 'custom' }))
+  const planned: Run[] = [...planGate(await resolveSteps(ctx, wt, read, refs, ds), ds), ...checks]
   const stale = await staleTexts(ctx, wt, ds)
   const unpinned = await unpinnedActions(ctx, wt)
 
@@ -230,9 +234,9 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   const lines: string[] = [`VERDICT: ${verdict}`, '', '## Summary', '']
   lines.push(`${steps.length - red.length} of ${steps.length} steps passed. Round: ${input.round}.`, '')
   lines.push('| Step | Stack | Command | Exit | Duration |', '| --- | --- | --- | --- | --- |')
-  for (const s of steps) lines.push(`| ${s.name} | ${s.stack} | \`${cell(s.argv.join(' '))}\` | ${s.exitCode} | ${s.ms} ms |`)
+  for (const s of steps) lines.push(`| ${s.name} | ${s.stack} | \`${cell(s.name === 'check' ? (s.argv[2] ?? '') : s.argv.join(' '))}\` | ${s.exitCode} | ${s.ms} ms |`)
   if (engine.length > 0) lines.push('', ...engine)
-  for (const s of red.filter(x => x.exitCode === 127)) lines.push('', `Missing tool for ${s.name}: ${fixFor(s, ds, wt)}`)
+  for (const s of red) if (s.exitCode === 127 && s.name !== 'check') lines.push('', `Missing tool for ${s.name}: ${fixFor(s, ds, wt)}`)
   if (host.length > 0) lines.push('', '## Host problem', ...host.map(h => `- ${h}`))
   if (stale.length > 0) lines.push('', '## Generated files', ...stale.map(s => `- ${s}`))
   if (unpinned.length > 0) lines.push('', '## Unpinned actions', ...unpinned.map(u => `- ${u}`))
