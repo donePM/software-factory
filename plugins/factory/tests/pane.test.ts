@@ -42,6 +42,9 @@ function uiHost(on: On, placed: UiOpenResult = { isPlaced: true }) {
   return { opens, statuses, commands }
 }
 
+const widget = ($: any) => $.ui.mount({ plugin: 'factory', surface: 'desktop', component: 'Pane', requestId: 'factory', props: { ...PROPS, placement: 'widget' } })
+const FULL_KEYS = ['header', 'ready', 'running', 'wait-head', 'wait-link']
+
 const start = ($: any) => $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
 
 test('the pane draws the snapshot on terminal and desktop', async ($, on) => {
@@ -233,7 +236,10 @@ test('factory-pane opens the pane with the repo in the title', async ($, on) => 
   expect(await $.command.run({ command: 'factory-pane', args: '' } as never)).toEqual({})
   delete host.files[STATUS]
   await $.command.run({ command: 'factory-pane', args: '' } as never)
-  expect(opens).toEqual([{ id: 'factory', title: 'Factory · o/r' }, { id: 'factory', title: 'Factory' }])
+  expect(opens).toEqual([
+    { id: 'factory', title: 'Factory · o/r', placement: 'widget' },
+    { id: 'factory', title: 'Factory', placement: 'widget' },
+  ])
 })
 
 test('factory-pane returns the reason when the pane is not placed', async ($, on) => {
@@ -246,7 +252,7 @@ test('an unplaced pane shows the command to open it', async ($, on) => {
   fakeHost(on, { files: { [STATUS]: JSON.stringify(SNAP) } })
   const { opens, statuses } = uiHost(on, { isPlaced: false, reason: 'narrow' })
   await start($)
-  expect(opens).toEqual([{ id: 'factory', title: 'Factory · o/r' }])
+  expect(opens).toEqual([{ id: 'factory', title: 'Factory · o/r', placement: 'widget' }])
   expect(statuses).toEqual(['Factory pane: run /factory-pane to open it.'])
   const ui = await mount($, 'terminal')
   expect(statuses).toEqual(['Factory pane: run /factory-pane to open it.', undefined])
@@ -263,4 +269,69 @@ test('a placed pane pins no status line, and no snapshot opens no pane', async (
   placed.opens.length = 0
   await start($)
   expect(placed.opens).toEqual([])
+})
+
+test('the pane asks for the widget placement', async ($, on) => {
+  fakeHost(on, { files: { [STATUS]: JSON.stringify(SNAP) } })
+  const { opens } = uiHost(on)
+  await start($)
+  await $.command.run({ command: 'factory-pane', args: '' } as never)
+  expect(opens).toEqual([
+    { id: 'factory', title: 'Factory · o/r', placement: 'widget' },
+    { id: 'factory', title: 'Factory · o/r', placement: 'widget' },
+  ])
+})
+
+test('the widget shows slots, running and waiting counts', async ($, on) => {
+  const host = fakeHost(on, { files: { ...CONFIG, [STATUS]: JSON.stringify(SNAP) } })
+  const { waiting: _w, ...old } = SNAP
+  const cases: [unknown, string][] = [
+    [SNAP, '2/3 slots · 2 running · 0 waiting'],
+    [old, '2/3 slots · 2 running · 0 waiting'],
+    [{ ...IDLE, waiting: [waiting(42, 'approved', 'approved: /factory:merge 42', '/factory:merge 42'), waiting(44, 'needs-info', 'needs info', null)] }, '0/3 slots · 0 running · 2 waiting'],
+  ]
+  for (const [snap, text] of cases) {
+    host.files[STATUS] = JSON.stringify(snap)
+    const ui = await widget($)
+    expect(await textOf(ui, 'widget')).toBe(text)
+    for (const key of FULL_KEYS) expect(await ui.find({ key })).toBeUndefined()
+    expect(await ui.find({ type: 'Button' })).toBeUndefined()
+    expect(await ui.find({ type: 'Link' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('the widget shows the first next command as text', async ($, on) => {
+  const host = fakeHost(on, { files: CONFIG })
+  const rows = [waiting(43, 'needs-human', 'needs you', '/factory:run 43'), waiting(5, 'needs-info', 'needs info: author answers in the issue', null)]
+  const cases: [unknown, string | undefined][] = [
+    [{ ...SNAP, waiting: rows }, 'Next: #5 needs info: author answers in the issue'],
+    [{ ...SNAP, waiting: [rows[0]] }, 'Next: #43 /factory:run 43'],
+    [{ ...IDLE, ready: 2 }, 'Next: /factory:run'],
+    [IDLE, 'Next: /factory:add <text>'],
+    [SNAP, undefined],
+  ]
+  for (const [snap, text] of cases) {
+    host.files[STATUS] = JSON.stringify(snap)
+    const ui = await widget($)
+    expect(await textOf(ui, 'widget-next')).toBe(text)
+    expect(await ui.find({ type: 'Button' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('the widget says how to set up or write a snapshot', async ($, on) => {
+  const host = fakeHost(on, { files: { [STATUS]: JSON.stringify(SNAP) } })
+  let ui = await widget($)
+  expect(await textOf(ui, 'setup')).toBe('Setup is not complete. Run /factory:setup.')
+  expect((await ui.findAll({ type: 'Box' })).map((b: FoundElement) => b.key).filter((k: string | undefined) => k !== undefined)).toEqual(['setup'])
+  expect(await ui.find({ type: 'Button' })).toBeUndefined()
+  await ui.unmount()
+  delete host.files[STATUS]
+  Object.assign(host.files, CONFIG)
+  ui = await widget($)
+  expect(await textOf(ui, 'empty')).toBe('No snapshot yet. Run /factory:status to write it.')
+  expect((await ui.findAll({ type: 'Box' })).map((b: FoundElement) => b.key).filter((k: string | undefined) => k !== undefined)).toEqual(['empty'])
+  expect(await ui.find({ type: 'Button' })).toBeUndefined()
+  await ui.unmount()
 })
