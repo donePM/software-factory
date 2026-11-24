@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { defaultConfig } from '../lib/config.ts'
 import { FactoryError } from '../lib/exec.ts'
-import { invoke, serve, TOOLS, type ToolDef } from '../hooks/tools.ts'
+import { invoke, makeCtx, serve, TOOLS, type ToolDef } from '../hooks/tools.ts'
 import { renderJob } from '../lib/jobfile.ts'
 import { fakeCtx, fakeHost, type Reply } from './support/host.ts'
 
@@ -227,4 +227,24 @@ test('tool gate rejects a bad round', async () => {
 test('a tool that returns text sends it unquoted', async () => {
   const r = await invoke(def(async () => 'a\nb'), fakeCtx(), {})
   expect(r).toEqual({ result: 'a\nb' })
+})
+
+test('makeCtx notify calls toast and notify once', async () => {
+  const seen: string[] = []
+  const $ = {
+    session: { root: async () => '/repo' },
+    ui: {
+      toast: (text: string) => {
+        seen.push(`toast ${text}`)
+        throw new Error('no toast')
+      },
+      notify: async (text: string) => {
+        seen.push(`notify ${text}`)
+        throw new Error('no notify')
+      },
+    },
+  }
+  const ctx = await makeCtx($)
+  await ctx.notify?.('#7 approved: /factory:merge 7')
+  expect(seen).toEqual(['toast #7 approved: /factory:merge 7', 'notify #7 approved: /factory:merge 7'])
 })
