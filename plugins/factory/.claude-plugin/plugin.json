@@ -1,7 +1,7 @@
 {
   "name": "factory",
   "displayName": "Software Factory",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "Tool-based software factory: GitHub issues become specs, builds, four parallel reviews, and human-approved merges.",
   "author": {
     "name": "Robert Kummer"
