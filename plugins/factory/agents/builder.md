@@ -82,7 +82,10 @@ Stage `plugins/factory/tests/generated/texts.ts` in the same commit as the text 
 
 ## build.md
 The first line is `STATUS: DONE` or `STATUS: BLOCKED`. Write `BLOCKED` only
-when you cannot finish, and say why under `## Summary`. Then write:
+when you cannot finish, and say why under `## Summary`.
+When only a spec change lets you finish, write `STATUS: BLOCKED`.
+Make `Needs a spec change.` the first line under `## Summary`. Write the reason after it.
+Then write:
 
 ```
 STATUS: DONE

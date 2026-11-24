@@ -805,6 +805,38 @@ test('spec from needs-human after a spec stop keeps the spec and the round', asy
   expect(limit.t.comments).toEqual([])
 })
 
+const blockedBuild = (summary: string): string => `STATUS: BLOCKED\n\n## Summary\n${summary}\n`
+const resume = async (r: Run): Promise<void> => {
+  const ticket = await r.t.get(7)
+  ticket.labels = ['factory', 'factory:needs-human']
+  ticket.comments.push(stopComment(r.t.posts[0]!, 8))
+}
+
+test('a blocked build that asks for a spec change posts a spec stop', async () => {
+  const r = setup('build', { round: 2 }, { [`${DIR}/spec.md`]: SPEC, [`${DIR}/round-2/build.md`]: blockedBuild('\nNeeds a spec change.\nThe spec puts the picked way out of scope.') })
+  const res = await jobAdvance(r.ctx, r.t, { issue: 7, from: 'build', to: 'needs-human', reason: 'The spec puts the picked way out of scope.' })
+  expect(res.state).toBe('needs-human')
+  expect(r.t.posts).toEqual(['Factory stopped: Round 2 needs a spec change.\n\nThe spec puts the picked way out of scope.'])
+  expect(r.t.states).toEqual(['needs-human'])
+  await resume(r)
+  const next = await jobAdvance(r.ctx, r.t, { issue: 7, to: 'spec' })
+  expect(next.state).toBe('spec')
+  expect(next.round).toBe(2)
+  expect(r.t.states).toEqual(['needs-human', 'spec'])
+})
+
+test('a blocked build with another cause posts a free-text stop', async () => {
+  const cases = [blockedBuild('The command npm publish is denied.'), 'STATUS: DONE\n\n## Summary\nNeeds a spec change.\n']
+  for (const build of cases) {
+    const r = setup('build', { round: 2 }, { [`${DIR}/spec.md`]: SPEC, [`${DIR}/round-2/build.md`]: build })
+    await jobAdvance(r.ctx, r.t, { issue: 7, from: 'build', to: 'needs-human', reason: 'stuck' })
+    expect(r.t.posts).toEqual(['Factory stopped: stuck'])
+    await resume(r)
+    await rejects(jobAdvance(r.ctx, r.t, { issue: 7, to: 'spec' }), 'bad-state')
+    expect(r.t.states).toEqual(['needs-human'])
+  }
+})
+
 test('build after a spec update starts the next round, not round 1', async () => {
   const { ctx, t } = setup('spec', { round: 2 }, { [`${DIR}/spec.md`]: SPEC })
   const r = await jobAdvance(ctx, t, { issue: 7, to: 'build' })

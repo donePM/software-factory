@@ -817,3 +817,20 @@ test('code-reviewer flags a texts module that is not regenerated', () => {
   ]) expect(REVIEW_TEXTS).toContain(s)
   for (const s of sentences(REVIEW_TEXTS.replace(/^9\. /, ''))) expect(s.trim().split(/\s+/).length).toBeLessThanOrEqual(20)
 })
+
+const BUILDER_BLOCKED = block(['agents/builder.md'], 'The first line is `STATUS: DONE`', 'Make `Needs a spec change.`')
+const PIPELINE_BUILDER_FINISHED = block(['pipeline.md'], '### builder finished', '  the stop as a spec stop')
+
+test('builder marks a blocked build that needs a spec change', () => {
+  const t = oneLine(BUILDER_BLOCKED)
+  expect(t).toContain('When only a spec change lets you finish, write `STATUS: BLOCKED`.')
+  expect(t).toContain('Make `Needs a spec change.` the first line under `## Summary`. Write the reason after it.')
+  for (const s of sentences(BUILDER_BLOCKED)) expect(s.split(/\s+/).length).toBeLessThanOrEqual(20)
+})
+
+test('pipeline sends a blocked build that needs a spec change to the spec-writer', () => {
+  const t = oneLine(PIPELINE_BUILDER_FINISHED)
+  expect(t).toContain('When the `## Summary` of `build.md` starts with `Needs a spec change.`, `job_advance` marks the stop as a spec stop.')
+  expect(t).toContain('Then the `needs-human` resume goes to `spec`.')
+  for (const s of sentences(PIPELINE_BUILDER_FINISHED.split('\n').slice(1).join('\n'))) expect(s.trim().split(/\s+/).length).toBeLessThanOrEqual(20)
+})
