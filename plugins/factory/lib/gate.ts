@@ -141,6 +141,24 @@ async function staleTexts(ctx: Ctx, wt: string, ds: Detection[]): Promise<string
   return out
 }
 
+const USES = /^\s*(?:-\s+)?uses:\s*(['"]?)([^\s'"#]+)\1\s*(?:#.*)?$/
+const PINNED = /^(\.\/|docker:\/\/)|@[0-9a-fA-F]{40}$/
+
+// Lists each workflow `uses:` value that is not a full commit SHA: a moved tag or branch changes what CI runs.
+// shortcut: line match, not a YAML parser; upgrade when a workflow uses multi-line or flow-style uses values
+async function unpinnedActions(ctx: Ctx, wt: string): Promise<string[]> {
+  const dir = '.github/workflows'
+  const names = (await ctx.fs.list(`${wt}/${dir}`).catch(() => [])).filter(n => /\.ya?ml$/.test(n)).sort()
+  const out: string[] = []
+  for (const n of names) {
+    for (const line of (await ctx.fs.read(`${wt}/${dir}/${n}`)).split('\n')) {
+      const v = USES.exec(line)?.[2]
+      if (v !== undefined && !PINNED.test(v)) out.push(`${dir}/${n}: ${v}`)
+    }
+  }
+  return out
+}
+
 const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, ' ')
 
 export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
@@ -163,6 +181,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   const missingStacks = refs.filter(r => !all.some(d => d.stack === r.id && d.path === r.path)).map(r => `${r.id} ${r.path}`)
   const planned = planGate(await resolveSteps(ctx, wt, read, refs, ds), ds)
   const stale = await staleTexts(ctx, wt, ds)
+  const unpinned = await unpinnedActions(ctx, wt)
 
   const steps: StepResult[] = []
   const outputs: string[] = []
@@ -206,7 +225,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   const red = steps.filter(s => s.exitCode !== 0)
   // A job gate needs the configured stacks: with none, a branch could drop a stack and its checks.
   const noStacks = input.jobDir !== undefined && refs.length === 0
-  const verdict = red.length + stale.length + commits.length + prot.length + dirty.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null || noStacks ? 'FAIL' : 'PASS'
+  const verdict = red.length + stale.length + unpinned.length + commits.length + prot.length + dirty.length + changedScripts.length + missingStacks.length > 0 || steps.length === 0 || titleProblem !== null || noStacks ? 'FAIL' : 'PASS'
 
   const lines: string[] = [`VERDICT: ${verdict}`, '', '## Summary', '']
   lines.push(`${steps.length - red.length} of ${steps.length} steps passed. Round: ${input.round}.`, '')
@@ -216,6 +235,7 @@ export async function runGate(ctx: Ctx, input: GateInput): Promise<GateResult> {
   for (const s of red.filter(x => x.exitCode === 127)) lines.push('', `Missing tool for ${s.name}: ${fixFor(s, ds, wt)}`)
   if (host.length > 0) lines.push('', '## Host problem', ...host.map(h => `- ${h}`))
   if (stale.length > 0) lines.push('', '## Generated files', ...stale.map(s => `- ${s}`))
+  if (unpinned.length > 0) lines.push('', '## Unpinned actions', ...unpinned.map(u => `- ${u}`))
   if (commits.length > 0) {
     lines.push('', '## Commits')
     for (const c of commits) lines.push(`- ${c.sha.slice(0, 12)}: ${c.problem}`)
