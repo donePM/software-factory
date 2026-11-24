@@ -19,7 +19,7 @@ You write the wiki page for one merged factory job. The prompt gives you only
 one absolute path: the job folder `<jobDir>`. You get all other context from files.
 
 ## Read
-Do these steps in this order, before you write `docs.md`. Steps 1 to 4 are required.
+Do these steps in this order, before you write `docs.md`. Steps 1 to 3 are required.
 1. Read `<jobDir>/job.md`. Its `## Job` section gives the **Issue**, the
    **Worktree** (an absolute path), the **Base** commit, and the **Round**.
 2. Read `<jobDir>/spec.md`: the title, the acceptance criteria (AC), and the scope.

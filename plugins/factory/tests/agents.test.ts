@@ -378,7 +378,7 @@ test('documenter example docs.md has a page', () => {
 // shortcut: plugin tests have no fs, so these are copies. Upgrade to a file scan when tests get fs.
 // DOCS_READ, DOCS_RULES, and DOCS_REPORT stand word for word in agents/documenter.md.
 const DOCS_READ = [
-  'Do these steps in this order, before you write `docs.md`. Steps 1 to 4 are required.',
+  'Do these steps in this order, before you write `docs.md`. Steps 1 to 3 are required.',
   '1. Read `<jobDir>/job.md`. Its `## Job` section gives the **Issue**, the',
   '   **Worktree** (an absolute path), the **Base** commit, and the **Round**.',
   '2. Read `<jobDir>/spec.md`: the title, the acceptance criteria (AC), and the scope.',
@@ -417,7 +417,7 @@ test('documenter reads the merged diff and build.md as required steps', () => {
   expect(build).toBeLessThan(decision)
   expect(decision).toBeLessThan(at('<jobDir>/issue.md'))
   expect(lines[diff]).toContain('This step is required.')
-  expect(lines[0]).toContain('Steps 1 to 4 are required.')
+  expect(lines[0]).toContain('Steps 1 to 3 are required.')
 })
 
 test('documenter lets the diff win and blocks on a missing diff', () => {
