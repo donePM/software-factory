@@ -21,5 +21,6 @@ jobs:
       - run: mkdir -p plugins/factory/.claude-plugin/types/claude-code && cp .github/types/claude-code.d.ts plugins/factory/.claude-plugin/types/claude-code/index.d.ts
       - run: claude plugin validate .
       - run: claude plugin validate plugins/factory
+      - run: node plugins/factory/scripts/texts.ts --check
       - run: tsc -p plugins/factory
       - run: claude plugin test plugins/factory
