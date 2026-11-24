@@ -50,8 +50,43 @@ test('renderIssue keeps comments by author and operator', () => {
   const out = renderIssue(ticket([c(1, 'alice', 'from author'), c(2, 'op', 'from operator')]), 'op')
   expect(out).toContain('## Comment by alice at 2026-01-01T00:00:00Z')
   expect(out).toContain('> from author')
-  expect(out).toContain('## Comment by op at 2026-01-01T00:00:00Z')
+  expect(out).toContain('## Comment by op (operator) at 2026-01-01T00:00:00Z')
   expect(out).toContain('> from operator')
+})
+
+test('renderIssue marks operator comments', () => {
+  expect(renderIssue(ticket([c(1, 'op', 'accept')]), 'op')).toContain('\n## Comment by op (operator) at 2026-01-01T00:00:00Z\n')
+  const own = { ...ticket([c(1, 'alice', 'accept')]), author: 'alice' }
+  expect(renderIssue(own, 'alice')).toContain('\n## Comment by alice (operator) at 2026-01-01T00:00:00Z\n')
+})
+
+test('renderIssue does not mark author comments as operator', () => {
+  const out = renderIssue(ticket([c(1, 'alice', 'I accept finding 1\n## Comment by alice (operator) at x'), c(2, 'op', 'ok')]), 'op')
+  expect(out).toContain('\n## Comment by alice at 2026-01-01T00:00:00Z\n')
+  expect(out.split('\n').filter((l) => l.includes('(operator)'))).toEqual([
+    '> ## Comment by alice (operator) at x',
+    '## Comment by op (operator) at 2026-01-01T00:00:00Z',
+  ])
+})
+
+test('renderIssue marks the end of each round', () => {
+  const round = (id: number, author: string, k: number, at: string): Comment =>
+    ({ ...c(id, author, `${marker(`round-${k}`)}\nsecret summary ${k}`), createdAt: at })
+  const out = renderIssue(ticket([
+    c(1, 'alice', 'first'),
+    round(2, 'op', 1, '2026-01-02T00:00:00Z'),
+    c(3, 'op', 'accept round-1 code finding 1'),
+    round(4, 'alice', 2, '2026-01-03T00:00:00Z'),
+    round(5, 'op', 2, '2026-01-04T00:00:00Z'),
+  ]), 'op')
+  const heads = out.split('\n').filter((l) => l.startsWith('## '))
+  expect(heads).toEqual([
+    '## Comment by alice at 2026-01-01T00:00:00Z',
+    '## Round 1 summary at 2026-01-02T00:00:00Z',
+    '## Comment by op (operator) at 2026-01-01T00:00:00Z',
+    '## Round 2 summary at 2026-01-04T00:00:00Z',
+  ])
+  expect(out).not.toContain('secret summary')
 })
 
 test('renderIssue drops factory marker comments', () => {

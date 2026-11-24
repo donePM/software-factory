@@ -8,7 +8,9 @@ export const marker = (name: MarkerName): string => `<!-- factory:${name} -->`
 
 export const withMarker = (name: MarkerName, body: string): string => `${marker(name)}\n${body}`
 
-const firstLine = (body: string): string => body.split(/\r\n|\r|\n/, 1)[0] ?? ''
+export const ROUND_MARKER = /^<!-- factory:round-([1-9][0-9]*) -->\s*$/
+
+export const firstLine = (body: string): string => body.split(/\r\n|\r|\n/, 1)[0] ?? ''
 
 export const isMarkerComment = (c: Comment): boolean => MARKER_LINE.test(firstLine(c.body))
 
